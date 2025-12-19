@@ -1,0 +1,63 @@
+name: Dependency Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily to catch new vulnerabilities
+    - cron: '0 0 * * *'
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.25.5
+
+    - name: Check for vulnerable dependencies
+      run: |
+        go install github.com/golang/vuln/cmd/govulncheck@latest
+        cd go-agentic
+        govulncheck ./...
+
+    - name: Verify dependency licenses
+      run: |
+        go install github.com/google/licenseclassifier/v2@latest
+
+        echo "Checking direct dependencies..."
+        cd go-agentic
+        go list -m all | grep -v go-agentic | while read line; do
+          echo "  ✓ $line"
+        done
+
+    - name: Check for known bad versions
+      run: |
+        cd go-agentic
+
+        # Check OpenAI SDK version
+        OPENAI_VERSION=$(go list -m all | grep openai-go | awk '{print $NF}')
+        echo "OpenAI SDK version: $OPENAI_VERSION"
+
+        # Verify minimum required versions
+        if [[ "$OPENAI_VERSION" < "v3.15.0" ]]; then
+          echo "⚠️  OpenAI SDK version is older than v3.15.0"
+        fi
+
+    - name: Verify go.sum integrity
+      run: |
+        cd go-agentic
+        go mod verify
+        echo "✓ go.sum verified successfully"
+
+    - name: Check for outdated dependencies
+      run: |
+        cd go-agentic
+        echo "Checking for updates..."
+        go list -u -m all

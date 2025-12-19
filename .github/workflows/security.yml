@@ -1,0 +1,76 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.25.5
+
+    - name: Run gosec security scanner
+      uses: securego/gosec@master
+      with:
+        args: '-no-fail -fmt sarif -out results.sarif ./go-agentic'
+
+    - name: Upload security results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: results.sarif
+      if: always()
+
+    - name: Check for exposed secrets
+      run: |
+        # Check for common secret patterns
+        if grep -r "OPENAI_API_KEY\s*=" go-agentic/ examples/ --include="*.go" 2>/dev/null | grep -v "placeholder\|example\|Please create"; then
+          echo "❌ ERROR: Found hardcoded API key pattern"
+          exit 1
+        fi
+
+        # Check for AWS/Azure patterns
+        if grep -r "aws_access_key\|azure_.*_key" go-agentic/ examples/ --include="*.go" 2>/dev/null; then
+          echo "❌ ERROR: Found hardcoded AWS/Azure credentials"
+          exit 1
+        fi
+
+        echo "✓ No hardcoded secrets detected"
+
+    - name: Verify .gitignore coverage
+      run: |
+        echo "Checking .gitignore coverage..."
+        if [ -f ".gitignore" ]; then
+          # Verify .env patterns are in .gitignore
+          if grep -q "\.env" .gitignore; then
+            echo "✓ .env files are properly ignored"
+          else
+            echo "❌ ERROR: .env files not in .gitignore"
+            exit 1
+          fi
+
+          # Verify secret patterns are ignored
+          if grep -qE "secret|key|token|password" .gitignore; then
+            echo "✓ Sensitive patterns are ignored"
+          fi
+        fi
+
+    - name: Check for sensitive file commits
+      run: |
+        # Check git history for sensitive files
+        echo "Checking git history for sensitive files..."
+
+        # Get all files ever committed
+        git log --diff-filter=D --summary | grep "delete mode" | grep -E "\.env|secret|key" && {
+          echo "⚠️  Warning: Found deleted sensitive files in history"
+        } || echo "✓ No sensitive files in git history"

@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ '1.25.5' ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Download dependencies
+      run: |
+        cd go-agentic
+        go mod download
+        go mod verify
+
+    - name: Build library
+      run: |
+        cd go-agentic
+        go build ./...
+
+    - name: Run tests
+      run: |
+        cd go-agentic
+        go test -v -race -cover ./...
+
+    - name: Build examples
+      run: |
+        cd examples
+        go build ./...

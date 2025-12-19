@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25.5']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies (library)
+      run: |
+        cd go-agentic
+        go mod download
+        go mod verify
+
+    - name: Download dependencies (examples)
+      run: |
+        cd examples
+        go mod download
+
+    - name: Build library
+      run: |
+        cd go-agentic
+        go build -v -o /tmp/go-agentic.a ./...
+
+    - name: Build all examples
+      run: |
+        for example in examples/*/; do
+          name=$(basename "$example")
+          echo "Building $name..."
+          cd "$example"
+          go build -v -o "/tmp/${name}-example" ./main.go ./example_*.go
+          echo "✓ $name built"
+          cd /Users/taipm/GitHub/go-agentic
+        done
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts-${{ matrix.go-version }}
+        path: /tmp/*-example
+      if: always()
