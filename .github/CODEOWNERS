@@ -1,0 +1,32 @@
+# CODEOWNERS file for go-agentic
+# This file specifies who should review pull requests that modify different parts of the code
+
+# Default owner for everything
+* @taipm
+
+# Library core
+/go-agentic/*.go @taipm
+
+# Library configuration
+/go-agentic/config.go @taipm
+
+# Examples
+/examples/** @taipm
+
+# Documentation
+*.md @taipm
+/go-agentic/docs/** @taipm
+
+# CI/CD and build
+.github/** @taipm
+Makefile @taipm
+
+# Dependencies and version management
+go.mod @taipm
+go.sum @taipm
+/go-agentic/go.mod @taipm
+/go-agentic/go.sum @taipm
+
+# Security and policies
+SECURITY.md @taipm
+.gitignore @taipm
