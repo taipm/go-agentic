@@ -2,6 +2,7 @@ package agentic
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,10 @@ import (
 func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Message, apiKey string) (*AgentResponse, error) {
 	client := openai.NewClient(option.WithAPIKey(apiKey))
 
+	// Log agent initialization
+	fmt.Printf("[INFO] Agent '%s' (ID: %s) using model '%s' with temperature %.1f\n",
+		agent.Name, agent.ID, agent.Model, agent.Temperature)
+
 	// Build system prompt
 	systemPrompt := buildSystemPrompt(agent)
 
@@ -21,7 +26,7 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 
 	// Create completion request
 	params := openai.ChatCompletionNewParams{
-		Model:    "gpt-4o-mini",
+		Model:    agent.Model,
 		Messages: messages,
 	}
 
@@ -41,9 +46,16 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 	// Extract response content
 	content := message.Content
 
-	// For now, extract tool calls by parsing the response text
-	// This is a workaround until we get the proper tool calling API working
-	toolCalls := extractToolCallsFromText(content, agent)
+	// Try native tool calls first (official OpenAI API)
+	var toolCalls []ToolCall
+	if len(message.ToolCalls) > 0 {
+		toolCalls = parseNativeToolCalls(message.ToolCalls, agent)
+	}
+
+	// Fallback to text parsing if no native tool calls
+	if len(toolCalls) == 0 {
+		toolCalls = extractToolCallsFromText(content, agent)
+	}
 
 	return &AgentResponse{
 		AgentID:   agent.ID,
@@ -79,12 +91,13 @@ func buildSystemPrompt(agent *Agent) string {
 			prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
 		}
 
-		prompt.WriteString("\nWhen you need to use a tool, write it exactly like this (on its own line):\n")
-		prompt.WriteString("ToolName(param1, param2)\n\n")
-		prompt.WriteString("Examples of tool calls:\n")
+		prompt.WriteString("\nWhen you need to use a tool, use the function calling mechanism.\n")
+		prompt.WriteString("The system will handle executing the tool calls you emit.\n")
+		prompt.WriteString("Provide tool calls in the proper format and I will execute them for you.\n\n")
+		prompt.WriteString("Examples of tools you can call:\n")
 		prompt.WriteString("  GetCPUUsage()\n")
-		prompt.WriteString("  PingHost(192.168.1.100)\n")
-		prompt.WriteString("  CheckServiceStatus(nginx)\n\n")
+		prompt.WriteString("  PingHost(host=\"192.168.1.100\")\n")
+		prompt.WriteString("  CheckServiceStatus(service=\"nginx\")\n\n")
 	}
 
 	prompt.WriteString("Instructions:\n")
@@ -231,4 +244,69 @@ func getToolParameterNames(tool *Tool) []string {
 	}
 
 	return paramNames
+}
+
+// parseNativeToolCalls extracts tool calls from OpenAI's native tool_calls field
+// This is the official API mechanism for tool calling
+func parseNativeToolCalls(nativeToolCalls []openai.ChatCompletionMessageToolCallUnion, agent *Agent) []ToolCall {
+	var calls []ToolCall
+
+	validToolNames := make(map[string]*Tool)
+	for _, tool := range agent.Tools {
+		validToolNames[tool.Name] = tool
+	}
+
+	for _, nativeCall := range nativeToolCalls {
+		// Only process function tool calls (not custom tools)
+		if nativeCall.Type != "function" {
+			continue
+		}
+
+		// Get function name and arguments
+		toolName := nativeCall.Function.Name
+		argumentsJSON := nativeCall.Function.Arguments
+
+		// Only process if this is a valid tool for this agent
+		if _, isValid := validToolNames[toolName]; !isValid {
+			continue
+		}
+
+		// Parse arguments from JSON
+		args := make(map[string]interface{})
+		if argumentsJSON != "" {
+			// Parse JSON arguments
+			err := parseJSONArguments(argumentsJSON, args)
+			if err != nil {
+				// Log warning but continue - use empty args
+				fmt.Printf("[WARN] Failed to parse JSON arguments for %s: %v\n", toolName, err)
+			}
+		}
+
+		calls = append(calls, ToolCall{
+			ID:        nativeCall.ID,
+			ToolName:  toolName,
+			Arguments: args,
+		})
+	}
+
+	return calls
+}
+
+// parseJSONArguments parses JSON argument string into map
+func parseJSONArguments(jsonStr string, args map[string]interface{}) error {
+	// Use json.Unmarshal to parse the JSON string
+	var parsedArgs map[string]interface{}
+
+	// Try to parse as JSON object
+	err := json.Unmarshal([]byte(jsonStr), &parsedArgs)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	// Copy parsed arguments to args map
+	for key, value := range parsedArgs {
+		args[key] = value
+	}
+
+	return nil
 }
