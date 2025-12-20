@@ -143,7 +143,7 @@ func runInteractiveLoop(executor *agentic.TeamExecutor) {
 		fmt.Printf("Response: %s\n\n", response.Content)
 
 		if response.IsTerminal {
-			fmt.Println("[Conversation ended - terminal agent reached]\n")
+			fmt.Println("[Conversation ended - terminal agent reached]")
 		}
 	}
 }

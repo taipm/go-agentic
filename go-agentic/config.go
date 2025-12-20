@@ -8,6 +8,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ValidateAgentConfig validates an agent configuration
+func ValidateAgentConfig(config *AgentConfig) error {
+	// Validate Model is not empty
+	if config.Model == "" {
+		return fmt.Errorf("agent config validation failed: Model must be specified (examples: gpt-4o, gpt-4o-mini)")
+	}
+
+	// Validate Temperature is in valid range if specified
+	if config.Temperature != nil {
+		temp := *config.Temperature
+		if temp < 0.0 || temp > 2.0 {
+			return fmt.Errorf("agent config validation failed: Temperature must be between 0.0 and 2.0, got %.1f", temp)
+		}
+	}
+
+	return nil
+}
+
 // LoadTeamConfig loads the team configuration from a YAML file
 func LoadTeamConfig(path string) (*TeamConfig, error) {
 	data, err := os.ReadFile(path)
@@ -55,8 +73,14 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 	if config.Model == "" {
 		config.Model = "gpt-4o-mini"
 	}
-	if config.Temperature == 0 {
-		config.Temperature = 0.7
+	if config.Temperature == nil {
+		defaultTemp := 0.7
+		config.Temperature = &defaultTemp
+	}
+
+	// Validate configuration
+	if err := ValidateAgentConfig(&config); err != nil {
+		return nil, err
 	}
 
 	return &config, nil
@@ -90,6 +114,11 @@ func LoadAgentConfigs(dir string) (map[string]*AgentConfig, error) {
 // CreateAgentFromConfig creates an Agent from an AgentConfig
 // Supports tools map for agent creation
 func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agent {
+	temperature := 0.7 // default
+	if config.Temperature != nil {
+		temperature = *config.Temperature
+	}
+
 	agent := &Agent{
 		ID:             config.ID,
 		Name:           config.Name,
@@ -97,7 +126,7 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 		Backstory:      config.Backstory,
 		Model:          config.Model,
 		SystemPrompt:   config.SystemPrompt,
-		Temperature:    config.Temperature,
+		Temperature:    temperature,
 		IsTerminal:     config.IsTerminal,
 		HandoffTargets: config.HandoffTo,
 		Tools:          []*Tool{},
