@@ -53,7 +53,7 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 
 	// Set defaults
 	if config.Model == "" {
-		config.Model = "gpt-4o"
+		config.Model = "gpt-4o-mini"
 	}
 	if config.Temperature == 0 {
 		config.Temperature = 0.7
