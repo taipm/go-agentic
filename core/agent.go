@@ -4,14 +4,42 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 )
 
+// OpenAI client caching for connection reuse
+var (
+	cachedClients = make(map[string]openai.Client)
+	clientMutex   sync.RWMutex
+)
+
+// getOrCreateOpenAIClient returns a cached OpenAI client or creates a new one
+func getOrCreateOpenAIClient(apiKey string) openai.Client {
+	clientMutex.RLock()
+	if client, exists := cachedClients[apiKey]; exists {
+		clientMutex.RUnlock()
+		return client
+	}
+	clientMutex.RUnlock()
+
+	// Create new client
+	client := openai.NewClient(option.WithAPIKey(apiKey))
+
+	// Cache it
+	clientMutex.Lock()
+	cachedClients[apiKey] = client
+	clientMutex.Unlock()
+
+	return client
+}
+
 // ExecuteAgent runs an agent and returns its response
 func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Message, apiKey string) (*AgentResponse, error) {
-	client := openai.NewClient(option.WithAPIKey(apiKey))
+	// Reuse cached client if available, otherwise create new one
+	client := getOrCreateOpenAIClient(apiKey)
 
 	// Build system prompt
 	systemPrompt := buildSystemPrompt(agent)

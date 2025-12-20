@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // CrewExecutor handles the execution of a crew
@@ -147,10 +148,9 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				Content: resultText,
 			})
 
-			// Feed results back to current agent for analysis
-			input = resultText
-			// Continue loop to let agent process results
-			continue
+			// Don't re-query the agent - proceed directly to routing/handoff
+			// This avoids unnecessary API calls and speeds up execution
+			input = response.Content
 		}
 
 		// Check if current agent is terminal (only after tool execution)
@@ -165,6 +165,51 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			input = response.Content
 			handoffCount++
 			continue
+		}
+
+		// Check for parallel group execution
+		parallelGroup := ce.findParallelGroup(currentAgent.ID, response.Content)
+		if parallelGroup != nil {
+			// Get the agents for this parallel group
+			var parallelAgents []*Agent
+			agentMap := make(map[string]*Agent)
+			for _, agent := range ce.crew.Agents {
+				agentMap[agent.ID] = agent
+			}
+
+			for _, agentID := range parallelGroup.Agents {
+				if agent, exists := agentMap[agentID]; exists {
+					parallelAgents = append(parallelAgents, agent)
+				}
+			}
+
+			if len(parallelAgents) > 0 {
+				// Execute all parallel agents
+				parallelResults, err := ce.ExecuteParallelStream(ctx, response.Content, parallelAgents, streamChan)
+				if err != nil {
+					streamChan <- NewStreamEvent("error", "system", fmt.Sprintf("Parallel execution failed: %v", err))
+					return err
+				}
+
+				// Aggregate results
+				aggregatedInput := ce.aggregateParallelResults(parallelResults)
+
+				// Add aggregated results to history
+				ce.history = append(ce.history, Message{
+					Role:    "user",
+					Content: aggregatedInput,
+				})
+
+				// Move to next agent in the pipeline
+				if parallelGroup.NextAgent != "" {
+					if nextAgent, exists := agentMap[parallelGroup.NextAgent]; exists {
+						currentAgent = nextAgent
+						input = aggregatedInput
+						handoffCount++
+						continue
+					}
+				}
+			}
 		}
 
 		// Check if agent waits for signal (from config)
@@ -414,6 +459,142 @@ func (ce *CrewExecutor) findNextAgent(current *Agent) *Agent {
 	}
 
 	return nil
+}
+
+// ExecuteParallelStream executes multiple agents in parallel and collects their results
+// Used for parallel execution of agents within a parallel group
+func (ce *CrewExecutor) ExecuteParallelStream(
+	ctx context.Context,
+	input string,
+	agents []*Agent,
+	streamChan chan *StreamEvent,
+) (map[string]*AgentResponse, error) {
+
+	// Create a WaitGroup for synchronization
+	var wg sync.WaitGroup
+	resultMap := make(map[string]*AgentResponse)
+	resultChan := make(chan *AgentResponse, len(agents))
+	errorChan := make(chan error, len(agents))
+	mu := sync.Mutex{}
+
+	// Launch all agents in parallel using goroutines
+	for _, agent := range agents {
+		wg.Add(1)
+		go func(ag *Agent) {
+			defer wg.Done()
+
+			// Send agent start event
+			streamChan <- NewStreamEvent("agent_start", ag.Name,
+				fmt.Sprintf("🔄 [Parallel] %s starting...", ag.Name))
+
+			// Execute the agent
+			response, err := ExecuteAgent(ctx, ag, input, ce.history, ce.apiKey)
+			if err != nil {
+				streamChan <- NewStreamEvent("error", ag.Name,
+					fmt.Sprintf("❌ Agent failed: %v", err))
+				errorChan <- fmt.Errorf("agent %s failed: %w", ag.ID, err)
+				return
+			}
+
+			// Send agent response event
+			streamChan <- NewStreamEvent("agent_response", ag.Name, response.Content)
+
+			// Execute tool calls if any
+			if len(response.ToolCalls) > 0 {
+				for _, toolCall := range response.ToolCalls {
+					streamChan <- NewStreamEvent("tool_start", ag.Name,
+						fmt.Sprintf("🔧 [Tool] %s → Executing...", toolCall.ToolName))
+				}
+
+				toolResults := ce.executeCalls(ctx, response.ToolCalls, ag)
+
+				for _, result := range toolResults {
+					status := "✅"
+					if result.Status == "error" {
+						status = "❌"
+					}
+					streamChan <- NewStreamEvent("tool_result", ag.Name,
+						fmt.Sprintf("%s [Tool] %s → %s", status, result.ToolName, result.Output))
+				}
+			}
+
+			resultChan <- response
+		}(agent)
+	}
+
+	// Wait for all agents to complete
+	wg.Wait()
+	close(resultChan)
+	close(errorChan)
+
+	// Collect results
+	for result := range resultChan {
+		mu.Lock()
+		resultMap[result.AgentID] = result
+		mu.Unlock()
+	}
+
+	// Check for errors
+	var errors []error
+	for err := range errorChan {
+		errors = append(errors, err)
+	}
+
+	// Return partial results if some agents succeeded
+	if len(resultMap) > 0 {
+		if len(errors) > 0 {
+			streamChan <- NewStreamEvent("warning", "system",
+				fmt.Sprintf("⚠️ %d agents failed, continuing with %d results",
+					len(errors), len(resultMap)))
+		}
+		return resultMap, nil
+	}
+
+	// All agents failed
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("parallel execution failed: %v", errors[0])
+	}
+
+	return resultMap, nil
+}
+
+// findParallelGroup finds a parallel group configuration for the given agent
+// Returns the parallel group if the agent's signal matches a parallel group target
+func (ce *CrewExecutor) findParallelGroup(agentID string, signalContent string) *ParallelGroupConfig {
+	if ce.crew.Routing == nil || ce.crew.Routing.ParallelGroups == nil {
+		return nil
+	}
+
+	// Check if this agent emits a signal that targets a parallel group
+	if signals, exists := ce.crew.Routing.Signals[agentID]; exists {
+		for _, signal := range signals {
+			// Check if the agent's response contains the signal
+			if strings.Contains(signalContent, signal.Signal) {
+				// Check if this signal targets a parallel group
+				if parallelGroup, exists := ce.crew.Routing.ParallelGroups[signal.Target]; exists {
+					return &parallelGroup
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// aggregateParallelResults combines results from multiple parallel agents into a single input
+func (ce *CrewExecutor) aggregateParallelResults(results map[string]*AgentResponse) string {
+	var sb strings.Builder
+
+	sb.WriteString("\n[📊 PARALLEL EXECUTION RESULTS]\n\n")
+
+	for agentID, result := range results {
+		sb.WriteString(fmt.Sprintf("[%s]\n", agentID))
+		sb.WriteString(fmt.Sprintf("%s\n\n", result.Content))
+	}
+
+	sb.WriteString("[END PARALLEL RESULTS]\n")
+
+	return sb.String()
 }
 
 // ToolResult represents the result of executing a tool

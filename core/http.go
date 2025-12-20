@@ -76,7 +76,8 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Create a channel for streaming events
-	streamChan := make(chan *StreamEvent, 10)
+	// Buffer size of 100 to prevent deadlock with parallel agent execution
+	streamChan := make(chan *StreamEvent, 100)
 	defer close(streamChan)
 
 	// Create a new executor context for this request
@@ -173,6 +174,31 @@ func StartHTTPServer(executor *CrewExecutor, port int) error {
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write([]byte(exampleHTMLClient))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	addr := fmt.Sprintf(":%d", port)
+	log.Printf("🚀 HTTP Server starting on http://localhost:%d", port)
+	log.Printf("📡 SSE Endpoint: http://localhost:%d/api/crew/stream", port)
+	log.Printf("🌐 Web Client: http://localhost:%d", port)
+
+	return http.ListenAndServe(addr, nil)
+}
+
+// StartHTTPServerWithCustomUI starts the HTTP server with custom HTML UI
+func StartHTTPServerWithCustomUI(executor *CrewExecutor, port int, htmlContent string) error {
+	handler := NewHTTPHandler(executor)
+
+	http.HandleFunc("/api/crew/stream", handler.StreamHandler)
+	http.HandleFunc("/health", handler.HealthHandler)
+
+	// Serve custom client UI
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write([]byte(htmlContent))
 			return
 		}
 		http.NotFound(w, r)
