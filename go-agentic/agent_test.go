@@ -3,6 +3,7 @@ package agentic
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	openai "github.com/openai/openai-go/v3"
@@ -963,5 +964,61 @@ func TestBuildOpenAIMessagesEmptyStrings(t *testing.T) {
 
 	if len(messages) == 0 {
 		t.Error("Should create messages even with empty content")
+	}
+}
+
+// TestBuildSystemPromptCustomPrompt tests custom system prompt with variables
+func TestBuildSystemPromptCustomPrompt(t *testing.T) {
+	agent := &Agent{
+		ID:            "agent1",
+		Name:          "TestAgent",
+		Role:          "Helper",
+		Backstory:     "I am helpful",
+		SystemPrompt:  "You are {{name}}, a {{role}}. {{backstory}}",
+		Model:         "gpt-4o-mini",
+		Tools:         []*Tool{},
+	}
+
+	prompt := buildSystemPrompt(agent)
+
+	if !strings.Contains(prompt, "TestAgent") {
+		t.Error("Prompt should contain agent name")
+	}
+
+	if !strings.Contains(prompt, "Helper") {
+		t.Error("Prompt should contain agent role")
+	}
+
+	if !strings.Contains(prompt, "I am helpful") {
+		t.Error("Prompt should contain backstory")
+	}
+}
+
+// TestBuildSystemPromptWithTools tests generic prompt with tools
+func TestBuildSystemPromptWithTools(t *testing.T) {
+	agent := &Agent{
+		ID:        "agent1",
+		Name:      "Agent",
+		Role:      "Helper",
+		Backstory: "Helpful",
+		Model:     "gpt-4o-mini",
+		Tools: []*Tool{
+			{Name: "Tool1", Description: "First tool"},
+			{Name: "Tool2", Description: "Second tool"},
+		},
+	}
+
+	prompt := buildSystemPrompt(agent)
+
+	if !strings.Contains(prompt, "Tool1") {
+		t.Error("Prompt should mention tool name")
+	}
+
+	if !strings.Contains(prompt, "First tool") {
+		t.Error("Prompt should mention tool description")
+	}
+
+	if !strings.Contains(prompt, "function calling mechanism") {
+		t.Error("Should explain function calling for tools")
 	}
 }
