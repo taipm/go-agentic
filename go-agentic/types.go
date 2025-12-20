@@ -113,11 +113,22 @@ type AgentBehavior struct {
 	Description   string `yaml:"description"`
 }
 
+// RoutingRule defines a route from one agent to another based on a trigger
+// TriggerDetector is defined in routing.go and implements trigger detection logic
+// Note: We use this in executor to match agent responses to routing targets
+type RoutingRule struct {
+	FromAgent   string
+	Trigger     interface{} // TriggerDetector interface
+	TargetAgent string
+	Description string
+}
+
 // RoutingConfig defines routing rules for the team
 type RoutingConfig struct {
 	Signals        map[string][]RoutingSignal `yaml:"signals"`
 	Defaults       map[string]string          `yaml:"defaults"`
 	AgentBehaviors map[string]AgentBehavior   `yaml:"agent_behaviors"`
+	CompiledRules  []*RoutingRule             // Compiled rules with TriggerDetector (Phase 3)
 }
 
 // TeamConfig represents the team configuration
