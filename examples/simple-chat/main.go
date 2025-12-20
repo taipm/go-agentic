@@ -7,25 +7,7 @@ import (
 	"strings"
 
 	"github.com/taipm/go-agentic"
-	"gopkg.in/yaml.v3"
 )
-
-type Config struct {
-	Team struct {
-		MaxRounds   int `yaml:"maxRounds"`
-		MaxHandoffs int `yaml:"maxHandoffs"`
-	} `yaml:"team"`
-	Agents []struct {
-		ID          string  `yaml:"id"`
-		Name        string  `yaml:"name"`
-		Role        string  `yaml:"role"`
-		Backstory   string  `yaml:"backstory"`
-		Model       string  `yaml:"model"`
-		Temperature float64 `yaml:"temperature"`
-		IsTerminal  bool    `yaml:"isTerminal"`
-	} `yaml:"agents"`
-	Topics []string `yaml:"topics"`
-}
 
 func main() {
 	// Load API key
@@ -35,16 +17,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load team config
-	cfg := loadConfig("team.yaml")
-
-	// Build team
-	team := buildTeam(cfg)
+	// Load team from YAML (no tools needed for this example)
+	team, err := agentic.LoadTeamFromYAML("team.yaml", agentic.ToolHandlerRegistry{})
+	if err != nil {
+		fmt.Printf("❌ Lỗi tải cấu hình: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Create executor and run
 	executor := agentic.NewTeamExecutor(team, apiKey)
 	fmt.Println("\n🤖 Hệ Thống Thảo Luận Multi-Agent\n" + strings.Repeat("=", 50))
-	for i, topic := range cfg.Topics {
+
+	// Sample topics for demonstration
+	topics := []string{
+		"Những thực hành tốt nhất khi viết code Go là gì?",
+		"Làm thế nào mà các AI agent có thể cải thiện phát triển phần mềm?",
+	}
+
+	for i, topic := range topics {
 		fmt.Printf("\n📌 Chủ đề %d: %s\n%s\n", i+1, topic, strings.Repeat("-", 50))
 		resp, err := executor.Execute(context.Background(), topic)
 		if err == nil {
@@ -54,48 +44,6 @@ func main() {
 		}
 	}
 	fmt.Println("\n" + strings.Repeat("=", 50) + "\n🎉 Hoàn thành!\n")
-}
-
-func loadConfig(path string) *Config {
-	data, _ := os.ReadFile(path)
-	var cfg Config
-	yaml.Unmarshal(data, &cfg)
-	return &cfg
-}
-
-func buildTeam(cfg *Config) *agentic.Team {
-	// Build agents
-	agents := make([]*agentic.Agent, len(cfg.Agents))
-	agentIDs := make([]string, len(cfg.Agents))
-	for i, a := range cfg.Agents {
-		agentIDs[i] = a.ID
-		agents[i] = &agentic.Agent{
-			ID:          a.ID,
-			Name:        a.Name,
-			Role:        a.Role,
-			Backstory:   a.Backstory,
-			Model:       a.Model,
-			Temperature: a.Temperature,
-			IsTerminal:  a.IsTerminal,
-			Tools:       []*agentic.Tool{},
-		}
-	}
-
-	// Build routing
-	routing, _ := agentic.NewRouter().
-		RegisterAgents(agentIDs...).
-		FromAgent("enthusiast").
-		To("expert", agentic.NewKeywordDetector(
-			[]string{"?", "hỏi", "gì", "như thế nào", "tại sao", "cái nào"}, false)).
-		Done().
-		Build()
-
-	return &agentic.Team{
-		Agents:      agents,
-		MaxRounds:   cfg.Team.MaxRounds,
-		MaxHandoffs: cfg.Team.MaxHandoffs,
-		Routing:     routing,
-	}
 }
 
 func getEnvVar(key string) string {
