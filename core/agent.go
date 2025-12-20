@@ -151,6 +151,53 @@ func buildOpenAIMessages(agent *Agent, input string, history []Message, systemPr
 	return messages
 }
 
+// parseToolArguments splits tool arguments respecting nested brackets
+// Handles cases like: collection_name, [1.0, 2.0, 3.0], 5
+func parseToolArguments(argsStr string) []string {
+	var parts []string
+	var current strings.Builder
+	bracketDepth := 0
+	parenDepth := 0
+
+	for _, ch := range argsStr {
+		switch ch {
+		case '[':
+			bracketDepth++
+			current.WriteRune(ch)
+		case ']':
+			bracketDepth--
+			current.WriteRune(ch)
+		case '(':
+			parenDepth++
+			current.WriteRune(ch)
+		case ')':
+			parenDepth--
+			current.WriteRune(ch)
+		case ',':
+			if bracketDepth == 0 && parenDepth == 0 {
+				// This is a top-level comma, so split here
+				part := strings.TrimSpace(current.String())
+				if part != "" {
+					parts = append(parts, part)
+				}
+				current.Reset()
+			} else {
+				// Comma is inside brackets, keep it
+				current.WriteRune(ch)
+			}
+		default:
+			current.WriteRune(ch)
+		}
+	}
+
+	// Add last part
+	if part := strings.TrimSpace(current.String()); part != "" {
+		parts = append(parts, part)
+	}
+
+	return parts
+}
+
 // extractToolCallsFromText extracts tool calls from the response text
 // This uses a simple regex approach: ToolName(args)
 func extractToolCallsFromText(text string, agent *Agent) []ToolCall {
@@ -180,11 +227,11 @@ func extractToolCallsFromText(text string, agent *Agent) []ToolCall {
 						endIdx += startIdx
 						argsStr := line[startIdx+len(toolName)+1 : endIdx]
 
-						// Parse arguments
+						// Parse arguments - handle nested arrays/objects
 						args := make(map[string]interface{})
 						if argsStr != "" {
-							// Split by comma and trim
-							argParts := strings.Split(argsStr, ",")
+							// Split arguments respecting nested brackets
+							argParts := parseToolArguments(argsStr)
 
 							// Map positional arguments to named parameters
 							tool := validToolNames[toolName]
