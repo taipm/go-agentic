@@ -1,0 +1,300 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                     CORE LIBRARY DIAGNOSIS: VISUAL REPORT                      ║
+║                                                                               ║
+║  Question: "Chính xác chưa? Core cần tối thiểu nhưng đầy đủ,                ║
+║             đảm bảo độc lập và sử dụng?"                                     ║
+║                                                                               ║
+║  Answer:   "85% Chính Xác. Cần Sửa 1 Chỗ."                                   ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  CURRENT STRUCTURE ANALYSIS                                                   │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+go-crewai/ (Current - Monolithic)
+│
+├─ ✅ CORE (2,384 lines - PERFECT)
+│  │
+│  ├─ types.go              [84]    Types & structures
+│  ├─ agent.go             [234]    Single agent execution
+│  ├─ crew.go              [398]    Multi-agent orchestration
+│  ├─ config.go            [169]    YAML config loading
+│  ├─ http.go              [187]    HTTP API server
+│  ├─ streaming.go          [54]    SSE event streaming
+│  ├─ html_client.go       [252]    Web UI base
+│  ├─ report.go            [696]    HTML reports
+│  └─ tests.go             [316]    Test utilities
+│
+└─ ❌ EXAMPLE (609 lines - SHOULD NOT BE HERE!)
+   │
+   ├─ example_it_support.go [539]    ← IT-SPECIFIC (PROBLEM!)
+   │  ├─ CreateITSupportCrew()
+   │  ├─ createITSupportTools()
+   │  ├─ GetCPUUsage() tool
+   │  ├─ GetMemoryUsage() tool
+   │  ├─ GetDiskSpace() tool
+   │  ├─ GetSystemInfo() tool
+   │  ├─ GetRunningProcesses() tool
+   │  ├─ PingHost() tool
+   │  ├─ CheckServiceStatus() tool
+   │  └─ ResolveDNS() tool
+   │
+   ├─ cmd/main.go          (~25)    ← IT-specific entry point
+   ├─ cmd/test.go          (~15)    ← IT-specific tests
+   └─ config/              (~30)    ← IT-specific YAML configs
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  EVALUATION SCORECARD                                                         │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+Criterion 1: MINIMAL (should only have essential code)
+   ┌─ Without IT example: 2,384 lines ✅ PERFECT
+   └─ With IT example:    2,993 lines ⚠️  BLOATED
+
+Criterion 2: COMPREHENSIVE (should have all multi-agent features)
+   ✅ Agent definition
+   ✅ Tool system
+   ✅ Orchestration
+   ✅ Routing/signals
+   ✅ Configuration
+   ✅ HTTP API
+   ✅ Streaming/SSE
+   ✅ Web UI
+   ✅ Reporting
+   ✅ Testing utilities
+   Result: ✅ PERFECT
+
+Criterion 3: INDEPENDENT (should not depend on specific domains)
+   ✅ Types - generic
+   ✅ Agent engine - generic
+   ✅ Crew orchestration - generic
+   ✅ Config loader - generic
+   ✅ HTTP API - generic
+   ✅ Streaming - generic
+   ✅ Web UI - generic
+   ✅ Reporting - generic
+   ✅ Tests - generic
+   ❌ example_it_support.go - IT-SPECIFIC (PROBLEM!)
+   Result: ⚠️  MOSTLY OK, BUT...
+
+Criterion 4: IMMEDIATELY USABLE (should work out of the box)
+   ✅ Can import library
+   ✅ Can define agents
+   ✅ Can define tools
+   ✅ Can build crews
+   ✅ Can execute
+   ✅ Can stream events
+   ✅ Can serve web UI
+   Result: ✅ PERFECT
+
+Overall Score: 85% ⚠️
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  THE PROBLEM VISUALIZED                                                       │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+CURRENT STATE (Confusing):
+
+    Package: go-crewai
+    ┌─────────────────────────────────────────────────┐
+    │                                                 │
+    │  ┌──────────────────────────┐                  │
+    │  │ CORE LIBRARY             │  ← What should   │
+    │  │ (2,384 lines)            │    be here       │
+    │  │ ✅ Reusable              │                  │
+    │  │ ✅ Generic               │                  │
+    │  │ ✅ Framework code        │                  │
+    │  └──────────────────────────┘                  │
+    │           MIXED WITH                           │
+    │  ┌──────────────────────────┐                  │
+    │  │ IT SUPPORT EXAMPLE       │  ← Should NOT    │
+    │  │ (539 lines)              │    be here!      │
+    │  │ ❌ IT-specific           │                  │
+    │  │ ❌ CreateITSupportCrew() │                  │
+    │  │ ❌ GetCPUUsage() tool    │                  │
+    │  │ ❌ ... 7 more IT tools   │                  │
+    │  │ ❌ IT entry points       │                  │
+    │  │ ❌ IT configs            │                  │
+    │  └──────────────────────────┘                  │
+    │                                                 │
+    │  User: "What can I reuse?"                     │
+    │  Answer: ???  (unclear!)                       │
+    │                                                 │
+    └─────────────────────────────────────────────────┘
+
+    Problem: Users can't tell what's reusable!
+
+
+DESIRED STATE (Clear):
+
+    Package: go-crewai          │  Package: go-agentic-examples
+    ┌──────────────────────────┐│  ┌──────────────────────────┐
+    │ CORE LIBRARY             ││  │ EXAMPLES                 │
+    │ (2,384 lines) 100% PURE  ││  │ (Multiple projects)      │
+    │                          ││  │                          │
+    │ ✅ types.go              ││  │ ├─ it-support/           │
+    │ ✅ agent.go              ││  │ │  ├─ cmd/main.go        │
+    │ ✅ crew.go               ││  │ │  ├─ internal/crew.go   │
+    │ ✅ config.go             ││  │ │  ├─ internal/tools.go  │
+    │ ✅ http.go               ││  │ │  └─ config/            │
+    │ ✅ streaming.go          ││  │ │                        │
+    │ ✅ html_client.go        ││  │ ├─ customer-service/    │
+    │ ✅ report.go             ││  │ ├─ research-assistant/  │
+    │ ✅ tests.go              ││  │ └─ data-analysis/        │
+    │                          ││  │                          │
+    │ User: "What can I       ││  │ User: "Can I see        │
+    │  reuse?"                ││  │  examples?"              │
+    │ Answer: ALL! ✓          ││  │ Answer: Yes! ✓           │
+    │                          ││  │                          │
+    └──────────────────────────┘│  └──────────────────────────┘
+                                │
+                                └─→ go-crewai (imported)
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  THE FIX (3 STEPS)                                                            │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+STEP 1: REMOVE FROM CORE
+   ❌ Delete: go-crewai/example_it_support.go
+   ❌ Delete: go-crewai/cmd/main.go
+   ❌ Delete: go-crewai/cmd/test.go
+   ❌ Delete: go-crewai/config/ (IT-specific)
+
+STEP 2: ADD TO EXAMPLES
+   ✅ Create: go-agentic-examples/it-support/internal/crew.go
+   ✅ Create: go-agentic-examples/it-support/internal/tools.go
+   ✅ Create: go-agentic-examples/it-support/cmd/main.go
+   ✅ Create: go-agentic-examples/it-support/config/
+
+STEP 3: VERIFY
+   ✅ go-crewai builds clean (2,384 lines)
+   ✅ go-agentic-examples/it-support works
+   ✅ No circular imports
+   ✅ All tests pass
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  BEFORE vs AFTER                                                              │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+BEFORE CLEANUP:
+  go-crewai/ = 2,993 lines
+    Core library:       2,384 lines  (79%)
+    Example code:         539 lines  (18%)
+    Entry/config:          70 lines  (3%)
+
+  Question: "What should I import?"
+  Answer: "Well... everything? But some is IT-specific..."
+  Result: ⚠️  CONFUSING
+
+AFTER CLEANUP:
+  go-crewai/ = 2,384 lines
+    Core library:       2,384 lines  (100%)
+    Example code:           0 lines  (0%)
+
+  go-agentic-examples/ = 3,050+ lines
+    it-support:           539 lines
+    customer-service:     ~700 lines
+    research-assistant:   ~750 lines
+    data-analysis:        ~800 lines
+
+  Question: "What should I import?"
+  Answer: "Import go-crewai. Look at examples for patterns."
+  Result: ✅ CRYSTAL CLEAR
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  CHARACTERISTICS AFTER FIX                                                    │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+MINIMAL ✅
+  Size: 2,384 lines
+  Content: Just what's needed for multi-agent framework
+  Excludes: Domain-specific code, hardcoded examples
+  Result: Perfect balance
+
+COMPREHENSIVE ✅
+  Features:
+    • Multi-agent orchestration ✓
+    • Agent execution engine ✓
+    • Tool system ✓
+    • Dynamic routing ✓
+    • YAML configuration ✓
+    • HTTP API ✓
+    • Real-time SSE streaming ✓
+    • Web UI ✓
+    • Report generation ✓
+    • Test utilities ✓
+  Result: Everything needed
+
+INDEPENDENT ✅
+  Dependencies: OpenAI, YAML (external only)
+  No: Domain-specific code, hardcoded examples
+  Result: Fully generic
+
+USABLE ✅
+  Can import immediately: ✓
+  Can build custom agents: ✓
+  Can define custom tools: ✓
+  Can create crews: ✓
+  Can execute: ✓
+  Result: Production-ready
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  IMPACT OF THE FIX                                                            │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+BEFORE:
+  ├─ Core library clarity:  Low ❌
+  ├─ Reusability:          Medium ⚠️
+  ├─ User confusion:       High ❌
+  └─ Distribution:         Difficult ❌
+
+AFTER:
+  ├─ Core library clarity:  Perfect ✅
+  ├─ Reusability:          High ✅
+  ├─ User confusion:       None ✅
+  └─ Distribution:         Easy ✅
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  VERDICT                                                                      │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+CURRENT STATE:
+   Status: 85% CORRECT
+   Problem: IT example code in core library
+   Scope: 539 lines of code that shouldn't be there
+   Fix: Move to go-agentic-examples/
+
+AFTER FIX:
+   Status: 100% CORRECT
+   Core: Pure 2,384 line framework
+   Examples: Separate go-agentic-examples/ package
+   Result: Perfect for distribution and reuse
+
+TIME TO FIX:
+   • Cleanup: 30 min
+   • Move code: 1 hour
+   • Test & verify: 30 min
+   • Documentation: 30 min
+   ─────────────────────
+   TOTAL: ~3 hours
+
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  RECOMMENDATION                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+✅ PROCEED WITH CLEANUP
+
+This will transform the core library from 85% → 100% correct.
+
+See: CLEANUP_ACTION_PLAN.md for step-by-step guide
+
+Result: Perfect, production-ready core library for distribution!
+

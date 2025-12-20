@@ -1,304 +1,128 @@
-# go-agentic Examples
+# 🚀 Go-Agentic Examples
 
-Complete, production-ready examples demonstrating how to use go-agentic for different use cases.
+This package contains complete example applications demonstrating how to use the go-agentic core library for different domains.
 
-## Quick Start
+## Examples
 
-Each example is a self-contained project. To run any example:
+### 1. IT Support System ✅ Complete
 
-```bash
-cd examples/<example-name>
-cp .env.example .env  # or copy from parent
-export OPENAI_API_KEY="your-key-here"
-go run main.go
-```
+Multi-agent system for IT troubleshooting and system diagnostics with intelligent routing.
+- **Location**: `it-support/`
+- **Agents**:
+  - Orchestrator (My) - Entry point and router
+  - Clarifier (Ngân) - Information gatherer
+  - Executor (Trang) - Technical expert with diagnostic tools
+- **Tools**: 13 diagnostic tools (CPU, Memory, Disk, Network, etc.)
+- **Language**: Vietnamese
+- **How to Run**:
 
-## Examples Overview
+  ```bash
+  cd it-support
+  export OPENAI_API_KEY=your_key_here
+  go run ./cmd/main.go
+  ```
 
-### 1. IT Support 🆘
+- **Documentation**: [it-support/README.md](it-support/README.md)
 
-A system for IT diagnostics and support ticket management.
+### 2. Customer Service System (Coming Soon)
 
-**Use Case**: Automate infrastructure monitoring and support requests
+Multi-agent system for customer support ticket management.
 
-**Agents**:
-- Orchestrator: Routes requests
-- Clarifier: Gathers system details
-- Executor: Runs diagnostics with 12+ tools
+- **Location**: `customer-service/`
+- **Agents**: Intake, Knowledge Base, Resolution
+- **Tools**: CRM, Ticket System, FAQ Search
 
-**Tools**: CPU, Memory, Disk, Network, Services, DNS, Processes, etc.
+### 3. Research Assistant System (Coming Soon)
 
-```bash
-cd it-support
-go run main.go
-```
+Multi-agent system for research and information synthesis.
 
-[Learn more](./it-support/README.md)
+- **Location**: `research-assistant/`
+- **Agents**: Researcher, Analyst, Writer
+- **Tools**: Web Search, Paper Analysis, Citation
 
-### 2. Customer Service 👥
+### 4. Data Analysis System (Coming Soon)
 
-A multi-agent system for handling customer support interactions.
+Multi-agent system for data processing and visualization.
 
-**Use Case**: Automated customer service with knowledge base, refunds, account management
+- **Location**: `data-analysis/`
+- **Agents**: Loader, Analyzer, Visualizer
+- **Tools**: Data Processing, Analysis, Chart Generation
 
-**Agents**:
-- Classifier: Prioritizes requests
-- Resolver: Solves with tools
-- Responder: Professional responses
+## Project Structure
 
-**Tools**: Knowledge base search, account status, order history, refunds, support tickets
-
-```bash
-cd customer-service
-go run main.go
-```
-
-[Learn more](./customer-service/README.md)
-
-### 3. Data Analysis 📊
-
-A team of data analysts for insights and reporting.
-
-**Use Case**: Automated data analysis, reporting, and forecasting
-
-**Agents**:
-- Researcher: Gathers data
-- Analyst: Statistical analysis
-- Synthesizer: Generates insights
-
-**Tools**: Dataset analysis, trend identification, correlation, anomaly detection, forecasting
-
-```bash
-cd data-analysis
-go run main.go
-```
-
-[Learn more](./data-analysis/README.md)
-
-### 4. Research Assistant 🔬
-
-An AI research team for literature review and analysis.
-
-**Use Case**: Academic research, literature review, methodology analysis
-
-**Agents**:
-- Investigator: Searches databases
-- Analyst: Analyzes findings
-- Documentor: Creates reports
-
-**Tools**: Database search, citation analysis, theory comparison, author identification, gap analysis
-
-```bash
-cd research-assistant
-go run main.go
-```
-
-[Learn more](./research-assistant/README.md)
-
-## Architecture Pattern
-
-All examples follow the same multi-agent orchestration pattern:
-
-```
-User Input
-    ↓
-Orchestrator Agent (entry point, analyzes request)
-    ↓
-Optional: Clarifier Agent (gathers more info if needed)
-    ↓
-Executor Agent (performs work with tools, is terminal)
-    ↓
-User Response
-```
-
-## Common Features
-
-### Tool Integration
-
-Each example includes domain-specific tools:
-- IT Support: System commands, diagnostics
-- Customer Service: Database queries, business logic
-- Data Analysis: Statistical functions
-- Research: API integrations
-
-### Interactive CLI
-
-All examples provide an interactive command-line interface:
-
-```
-You: [ask a question]
-Agent: [response based on multi-agent analysis]
-```
-
-### Configuration
-
-Examples can be customized via:
-- `config/crew.yaml`: Agent routing and settings
-- Agent definitions in code
-- Tool implementations
-
-## Directory Structure
-
-```
+```plaintext
 examples/
 ├── it-support/
-│   ├── main.go
+│   ├── cmd/
+│   ├── internal/
 │   ├── config/
-│   ├── example_it_support.go
+│   ├── go.mod
 │   └── README.md
-├── customer-service/
-│   ├── main.go
-│   └── README.md
-├── data-analysis/
-│   ├── main.go
-│   └── README.md
-├── research-assistant/
-│   ├── main.go
-│   └── README.md
-└── README.md
+├── go.mod
+└── README.md (this file)
 ```
 
-## Creating Your Own Example
+## Getting Started
 
-1. **Create directory structure**:
+### Prerequisites
+
+- Go 1.25.2 or later
+- OPENAI_API_KEY environment variable set
+
+### Setup
+
+1. Navigate to an example directory:
+
+   ```bash
+   cd it-support
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   go mod tidy
+   ```
+
+3. Set your OpenAI API key:
+
+   ```bash
+   export OPENAI_API_KEY=your_key_here
+   ```
+
+4. Run the example:
+
+   ```bash
+   go run ./cmd/main.go
+   ```
+
+## Documentation
+
+- **IT Support Example**: [it-support/README.md](it-support/README.md)
+- **Core Library**: [../core/README.md](../core/README.md)
+- **Main Project**: [../README.md](../README.md)
+
+## Key Features of Examples
+
+- **Multi-Agent Orchestration**: Agents work together with signal-based routing
+- **Domain-Specific Tools**: Each example comes with specialized tools
+- **Type Safety**: Built with Go's strong type system
+- **Streaming Support**: Real-time event streaming for agent interactions
+- **Error Handling**: Comprehensive error handling and validation
+- **Configuration**: YAML-based agent and crew configuration
+
+## Development Tips
+
+1. Each example demonstrates best practices for multi-agent systems
+2. Tools have built-in safety checks to prevent dangerous operations
+3. Agents use specialized system prompts for their roles
+4. Configuration files (YAML) can be modified without recompiling
+
+## Testing
+
+Each example can be tested by running:
+
 ```bash
-mkdir examples/my-example
-cd examples/my-example
+go build ./cmd/main.go
 ```
 
-2. **Create main.go** with your crew:
-```go
-package main
-
-import "github.com/taipm/go-agentic"
-
-func main() {
-    // Define your crew
-    crew := &agentic.Crew{
-        Agents: []*agentic.Agent{
-            // Your agents
-        },
-    }
-    
-    // Execute
-    executor := agentic.NewCrewExecutor(crew, apiKey)
-    executor.Execute(context.Background(), userInput)
-}
-```
-
-3. **Define your agents** with custom tools
-
-4. **Add README.md** documenting your example
-
-## Best Practices
-
-### Tool Design
-
-- Keep tools focused on single responsibility
-- Provide clear parameter documentation
-- Return meaningful error messages
-- Use context for cancellation
-
-### Agent Configuration
-
-- Use specific, detailed roles
-- Provide rich backstory context
-- Match temperature to use case (0.5 for analysis, 0.7 for creative)
-- Set `IsTerminal: true` on final agent only
-
-### Error Handling
-
-- Gracefully handle tool failures
-- Provide user-friendly error messages
-- Log detailed errors for debugging
-- Implement retry logic where appropriate
-
-## Extending Examples
-
-### Add Custom Tools
-
-```go
-tool := &agentic.Tool{
-    Name:        "MyTool",
-    Description: "What this does",
-    Parameters: map[string]interface{}{
-        "type": "object",
-        "properties": map[string]interface{}{
-            "param": map[string]interface{}{
-                "type": "string",
-            },
-        },
-    },
-    Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
-        // Implementation
-        return "result", nil
-    },
-}
-```
-
-### Modify Agent Behavior
-
-Edit agent definitions:
-```go
-agent := &agentic.Agent{
-    Role:        "Your custom role",
-    Backstory:   "Detailed background...",
-    Temperature: 0.7, // Adjust creativity
-    // ... other fields
-}
-```
-
-### Integration with External Systems
-
-Connect to APIs, databases, services:
-```go
-Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
-    // Call external API or database
-    data := fetchFromExternal(args)
-    return formatResult(data), nil
-}
-```
-
-## Performance Tips
-
-- **Batch operations**: Group related calls
-- **Cache results**: Store frequently used data
-- **Async tools**: Implement non-blocking operations
-- **Monitor costs**: Track token usage
-
-## Troubleshooting
-
-### Agent not responding
-- Check `IsTerminal` is set correctly
-- Verify agent tools are properly configured
-- Check OpenAI API key and quota
-
-### Tools not being called
-- Ensure tool description is clear
-- Verify tool parameters are documented
-- Check tool handlers for errors
-
-### Slow responses
-- Review agent temperature settings
-- Check for blocking operations
-- Monitor API latency
-
-## Support
-
-For issues or questions:
-1. Check example-specific README
-2. Review parent directory documentation
-3. Check tool implementation examples
-4. Test with simpler input first
-
-## Contributing
-
-To contribute new examples:
-1. Create well-documented code
-2. Include comprehensive README
-3. Add test scenarios
-4. Follow existing patterns
-
-## License
-
-All examples are part of go-agentic and follow the same license.
+Or run with specific inputs to verify functionality.

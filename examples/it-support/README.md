@@ -1,118 +1,249 @@
-# IT Support Example
+# IT Support System Example
 
-A complete example of using go-agentic for IT support and system diagnostics.
+A complete multi-agent IT support system demonstrating the go-crewai library. This example implements an intelligent IT troubleshooting system with three specialized agents working together.
 
-## Overview
+## System Overview
 
-This example demonstrates a multi-agent system that handles IT support requests:
-- **Orchestrator**: Analyzes incoming requests
-- **Clarifier**: Gathers additional information if needed
-- **Executor**: Performs system diagnostics and troubleshooting
+The IT Support System uses a three-agent architecture with signal-based routing:
 
-## Features
-
-- 12+ system diagnostic tools
-- Multi-round tool execution
-- Interactive CLI interface
-- Real-time streaming responses
-
-## Quick Start
-
-### 1. Setup
-
-```bash
-cd examples/it-support
-cp ../.env.example .env
-# Edit .env and add your OPENAI_API_KEY
-```
-
-### 2. Run
-
-```bash
-go run main.go
-# Or: go run main.go --server --port 8081
-```
-
-### 3. Try It
-
-Example requests:
-- "Check my system health"
-- "Why is my CPU high?"
-- "Is nginx running?"
-- "What's my disk space?"
-
-## Available Tools
-
-- **GetCPUUsage** - Current CPU percentage
-- **GetMemoryUsage** - Memory utilization
-- **GetDiskSpace** - Disk usage by path
-- **GetSystemInfo** - OS, hostname, uptime
-- **GetRunningProcesses** - Top processes
-- **PingHost** - Network connectivity
-- **CheckServiceStatus** - Service health
-- **ResolveDNS** - DNS resolution
-- **ExecuteCommand** - Run shell commands
-- **GetSystemDiagnostics** - Full diagnostics
-
-## Configuration
-
-Edit `config/crew.yaml` to customize:
-- Agent roles and behaviors
-- Routing logic
-- Tool availability
-- Max rounds and handoffs
-
-## Web Interface
-
-Run with server mode to use the web UI:
-
-```bash
-go run main.go --server --port 8081
-```
-
-Then open: http://localhost:8081
-
-## Testing
-
-```bash
-go run main.go test
-```
-
-This runs the built-in test suite against the IT support agents.
-
-## Customization
-
-To add new tools:
-
-1. Implement a tool handler function
-2. Add it to `createITSupportTools()`
-3. Update agent configuration
-4. Test with the CLI
-
-Example:
-
-```go
-func customToolHandler(ctx context.Context, args map[string]interface{}) (string, error) {
-    // Your tool logic here
-    return "result", nil
-}
-```
+1. **Orchestrator (My)** - Entry point agent that analyzes IT issues and routes them appropriately
+2. **Clarifier (Ngân)** - Information gatherer that asks clarifying questions when details are unclear
+3. **Executor (Trang)** - Technical expert that diagnoses issues using system diagnostic tools
 
 ## Architecture
 
 ```
-IT Support Crew
-├── Orchestrator (entry point)
-├── Clarifier (info gathering)
-└── Executor (with tools)
-    ├── System Info Tools
-    ├── Network Tools
-    ├── Service Tools
-    └── Diagnostic Tools
+User Input
+    ↓
+Orchestrator (Entry Point)
+    ├─ [ROUTE_EXECUTOR] → Executor (if sufficient info)
+    └─ [ROUTE_CLARIFIER] → Clarifier (if more info needed)
+         ↓
+      Clarifier (gathers info)
+         ↓
+      [KẾT THÚC] → Executor
+         ↓
+      Executor (runs diagnostics) → Terminal Response
 ```
 
-## Learn More
+## Features
 
-- See parent directory README for general go-agentic information
-- Check `config/crew.yaml` for routing configuration
-- Review `example_it_support.go` for tool implementations
+### 13 Diagnostic Tools
+
+The Executor agent has access to comprehensive system diagnostic tools:
+
+**System Information:**
+- `GetSystemInfo()` - OS, hostname, uptime
+- `GetCPUUsage()` - Current CPU usage percentage
+- `GetMemoryUsage()` - Memory consumption
+- `GetDiskSpace(path)` - Disk usage for specific paths
+
+**Advanced Diagnostics:**
+- `CheckMemoryStatus()` - Detailed memory information
+- `CheckDiskStatus(path)` - Detailed disk usage with percentages
+- `GetRunningProcesses(count)` - Top running processes
+- `GetSystemDiagnostics()` - Comprehensive system diagnostics report
+
+**Network Tools:**
+- `PingHost(host, count)` - Test connectivity
+- `ResolveDNS(hostname)` - Hostname to IP resolution
+- `CheckNetworkStatus(host, count)` - Network connectivity verification
+
+**Service Management:**
+- `CheckServiceStatus(service)` - Service status check
+- `ExecuteCommand(command)` - Execute arbitrary shell commands (with safety checks)
+
+### Safety Features
+
+- Dangerous command blocking (prevents `rm -rf`, `mkfs`, `dd if=`, etc.)
+- Context-aware execution (supports cancellation)
+- Parameter validation
+- Cross-platform support (Linux/macOS)
+
+## Project Structure
+
+```
+it-support/
+├── cmd/
+│   └── main.go                 # Entry point
+├── internal/
+│   ├── crew.go                 # Crew definition and agent setup
+│   └── tools.go                # Tool implementations (13 tools)
+├── config/
+│   ├── crew.yaml               # Crew configuration with routing
+│   └── agents/
+│       ├── orchestrator.yaml    # Orchestrator agent config
+│       ├── clarifier.yaml       # Clarifier agent config
+│       └── executor.yaml        # Executor agent config
+├── go.mod                       # Module definition
+├── .env.example                 # Environment variables template
+└── README.md                    # This file
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Go 1.25.2 or later
+- OpenAI API key
+
+### Setup
+
+1. Clone the repository and navigate to the IT support example:
+```bash
+cd go-agentic-examples/it-support
+```
+
+2. Copy and configure environment variables:
+```bash
+cp .env.example .env
+# Edit .env and add your OPENAI_API_KEY
+```
+
+3. Install dependencies:
+```bash
+go mod tidy
+```
+
+### Running the Application
+
+```bash
+export OPENAI_API_KEY=your_key_here
+go run ./cmd/main.go
+```
+
+You'll see:
+```
+=== IT Support System ===
+Describe your IT issue:
+```
+
+Enter your IT issue description. Examples:
+- "Bạn tự lấy thông tin máy hiện tại" (Check my machine)
+- "Check localhost" (Diagnose local system)
+- "Server 192.168.1.50 không ping được" (Server not responding)
+- "CPU cao" (High CPU usage)
+
+## Usage Examples
+
+### Example 1: Auto-diagnose Local Machine
+```
+User: "Bạn tự lấy thông tin máy hiện tại"
+Orchestrator: Routes to Executor immediately (detected localhost keyword)
+Executor: Runs GetSystemDiagnostics() and provides analysis
+```
+
+### Example 2: Remote Server Issue
+```
+User: "Server 192.168.1.50 không ping được"
+Orchestrator: Routes to Executor (has specific IP and issue)
+Executor: Pings host and provides diagnostic results
+```
+
+### Example 3: Vague Issue
+```
+User: "Máy tính của tôi chậm"
+Orchestrator: Routes to Clarifier (needs more details)
+Clarifier: Asks clarifying questions about the issue
+User: Provides more details
+Clarifier: Routes to Executor after gathering sufficient info
+Executor: Runs diagnostics and recommends solutions
+```
+
+## Configuration
+
+### Agent Configuration Files
+
+Each agent is configured via YAML:
+- **Orchestrator** (`orchestrator.yaml`): Routing rules and pattern matching
+- **Clarifier** (`clarifier.yaml`): Information gathering protocol
+- **Executor** (`executor.yaml`): Tool access and diagnostics procedures
+
+### Crew Configuration
+
+The `crew.yaml` defines:
+- Entry point (orchestrator)
+- Maximum handoffs between agents (5)
+- Maximum conversation rounds (10)
+- Signal-based routing rules
+- Agent-specific behaviors
+
+## Development
+
+### Adding New Tools
+
+To add a new diagnostic tool:
+
+1. Implement the tool function in `internal/tools.go`:
+```go
+func myNewTool(ctx context.Context, args map[string]interface{}) (string, error) {
+    // Implementation
+    return result, nil
+}
+```
+
+2. Add the tool to `createITSupportTools()`:
+```go
+{
+    Name:        "MyNewTool",
+    Description: "Tool description",
+    Parameters: map[string]interface{}{
+        "type":       "object",
+        "properties": map[string]interface{}{
+            // Define parameters
+        },
+    },
+    Handler: myNewTool,
+}
+```
+
+3. Update `executor.yaml` to include the new tool in the tools list
+
+### Modifying Agent Behavior
+
+Edit the corresponding YAML file:
+- Change agent prompts in `system_prompt` field
+- Adjust temperature for different response styles
+- Update routing rules in `crew.yaml`
+
+## Testing
+
+Build the example:
+```bash
+go build ./cmd/main.go
+```
+
+Run tests:
+```bash
+go test ./...
+```
+
+## Language
+
+The IT Support System is configured to work primarily in **Vietnamese (Tiếng Việt)**. All agent prompts, system instructions, and example dialogues use Vietnamese.
+
+## Error Handling
+
+The system handles:
+- Missing OPENAI_API_KEY environment variable
+- Network timeouts and failures
+- Invalid command parameters
+- Dangerous command attempts
+- Tool execution errors
+
+## Performance
+
+- Minimal latency with streaming support
+- Efficient tool execution with context cancellation
+- Scalable multi-agent orchestration
+- Support for concurrent requests
+
+## License
+
+Part of the go-agentic project. See LICENSE for details.
+
+## Related Files
+
+- Core Library: [../../go-crewai/README.md](../../go-crewai/README.md)
+- Examples Overview: [../README.md](../README.md)
+- Main README: [../../README.md](../../README.md)

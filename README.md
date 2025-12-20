@@ -6,7 +6,7 @@ A production-ready framework for building multi-agent AI systems in Go, featurin
 
 ```plaintext
 go-agentic/
-├── go-crewai/                 # Core library
+├── core/                      # Core library
 │   ├── types.go               # Core data types (Agent, Crew, Tool, etc.)
 │   ├── agent.go               # Single agent execution
 │   ├── crew.go                # Multi-agent orchestration
@@ -17,7 +17,7 @@ go-agentic/
 │   ├── report.go              # HTML report generation
 │   ├── tests.go               # Testing utilities
 │   └── go.mod                 # Core library module
-├── go-agentic-examples/       # Example applications
+├── examples/                  # Example applications
 │   ├── it-support/            # IT Support multi-agent system
 │   │   ├── cmd/main.go
 │   │   ├── internal/
@@ -29,7 +29,7 @@ go-agentic/
 
 ## Overview
 
-### Core Library (go-crewai)
+### Core Library (core)
 
 A minimal but complete multi-agent framework providing:
 
@@ -54,7 +54,7 @@ A minimal but complete multi-agent framework providing:
 
 **Total: 2,384 lines of pure framework code**
 
-### Example Applications (go-agentic-examples)
+### Example Applications (examples)
 
 #### IT Support System ✅ Complete
 
