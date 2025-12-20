@@ -13,8 +13,9 @@ This is the **simplest example** of using go-agentic with **2 agents** that auto
 - 📋 **YAML Configuration (Cấu Hình YAML)** - Easy to customize
 - 🎯 **Minimal Setup (Thiết Lập Tối Thiểu)** - No tools needed
 - 📚 **Easy to Understand (Dễ Hiểu)** - Perfect for learning
+- 🔄 **Phase 3: Declarative Routing DSL** - Automatic agent routing based on trigger detection
 
-## 🏗️ Architecture
+## 🏗️ Architecture with Phase 3 Routing
 
 ```
 Initial Topic / Chủ Đề Ban Đầu
@@ -25,26 +26,27 @@ Initial Topic / Chủ Đề Ban Đầu
 │  Đặt câu hỏi thâm sâu   │
 └──────────┬──────────────┘
            ↓
+    [TriggerDetector]
+    Detect: "?", "hỏi", "gì", "như thế nào"
+    Matches response? → YES
+           ↓
 ┌─────────────────────────┐
 │  Chuyên Gia             │
 │  (Expert)               │
 │  Cung cấp câu trả lời   │
-└──────────┬──────────────┘
-           ↓
-┌─────────────────────────┐
-│  Người Tò Mò            │
-│  (Enthusiast)           │
-│  Hỏi tiếp theo          │
-└──────────┬──────────────┘
-           ↓
-┌─────────────────────────┐
-│  Chuyên Gia             │
-│  (Expert)               │
-│  Câu trả lời cuối cùng  │
+│  (isTerminal: true)     │
 └──────────┬──────────────┘
            ↓
     Response Ready
 ```
+
+**How Routing Works:**
+
+1. Enthusiast asks a question (containing "?", "hỏi", etc.)
+2. TriggerDetector (Phase 3) detects question keywords
+3. Router automatically routes to Expert
+4. Expert provides final answer (isTerminal = true)
+5. Conversation ends
 
 ## 🎭 Agents / Các Agent
 
@@ -59,6 +61,67 @@ Initial Topic / Chủ Đề Ban Đầu
 - **Behavior / Hành Động**: Provides comprehensive answers in Vietnamese, shares expertise
 - **IsTerminal**: `true` (final response ends the conversation)
 - **Temperature**: 0.7 (balanced, consistent responses)
+
+## 🔄 Phase 3: Declarative Routing DSL
+
+This example demonstrates **Phase 3** of go-agentic's UX improvements: **Declarative Routing DSL** with automatic trigger detection.
+
+### Routing Configuration
+
+```go
+// Build routing with Phase 3 declarative API
+routingConfig, _ := agentic.NewRouter().
+    RegisterAgents("enthusiast", "expert").              // Register valid agents
+    FromAgent("enthusiast").                             // Start route from enthusiast
+    To("expert",                                         // Route to expert
+       agentic.NewKeywordDetector(                       // When response contains...
+           []string{"?", "hỏi", "gì", "như thế nào"},  // Vietnamese question keywords
+           false,                                        // Case-insensitive
+       ),
+    ).
+    Done().                                              // Complete this route
+    Build()                                              // Compile and validate
+```
+
+### How It Works
+
+| Component | Role | Example |
+| --- | --- | --- |
+| **RouterBuilder** | Fluent API for routing | `NewRouter()` |
+| **RegisterAgents()** | Validate agent IDs | Ensures "enthusiast" and "expert" exist |
+| **FromAgent()** | Start route definition | Routes originating from "enthusiast" |
+| **KeywordDetector** | Trigger detector (Phase 3) | Detects "?", "hỏi", etc. in responses |
+| **To()** | Define target agent | Routes to "expert" when trigger matches |
+| **Done()** | Complete this route | Returns to builder for more routes |
+| **Build()** | Compile rules | Validates and creates RoutingConfig |
+
+### Trigger Detectors Available (Phase 3)
+
+```go
+// Detect keywords in response
+agentic.NewKeywordDetector([]string{"error", "bug"}, false)
+
+// Detect using regex patterns
+agentic.NewPatternDetector(`\[ERROR:\s*\d+\]`)
+
+// Detect explicit signals [SIGNAL: name]
+agentic.NewSignalDetector("resolved")
+
+// Detect line prefixes
+agentic.NewPrefixDetector([]string{"ACTION:", "INFO:"}, false)
+
+// Combine detectors (OR logic)
+agentic.NewAnyDetector(detector1, detector2, ...)
+
+// Require all conditions (AND logic)
+agentic.NewAllDetector(detector1, detector2, ...)
+
+// Default route (always matches)
+agentic.NewAlwaysDetector()
+
+// Disabled route (never matches)
+agentic.NewNeverDetector()
+```
 
 ## 📋 YAML Configuration
 
@@ -192,27 +255,33 @@ simple-chat/
 
 ### main.go Structure:
 
-1. **Type Definitions** (Lines 1-30)
-   - `Config` struct - Main configuration
-   - `AgentConfig` struct - Individual agent configuration
+1. **Environment Setup** (Lines 13-20)
+   - Load API key from `.env`
+   - Validate required environment
 
-2. **main()** (Lines 32-68)
-   - Load environment variables
-   - Load YAML configuration
-   - Create crew from config
-   - Execute conversations
+2. **Load Configuration** (Lines 22-41)
+   - Read `team.yaml` file
+   - Parse agents and topics
 
-3. **loadConfig()** (Lines 70-85)
-   - Read and parse `crew.yaml`
-   - Return configuration object
-
-4. **createCrewFromConfig()** (Lines 87-115)
+3. **Create Agents** (Lines 43-51)
    - Convert YAML agents to Agent objects
-   - Create and return Crew
+   - Initialize with empty tools
 
-5. **loadEnvFile()** (Lines 117-136)
-   - Read `.env` file
-   - Set environment variables
+4. **Phase 3: Build Routing Configuration** (Lines 53-61)
+   - Create RouterBuilder with `NewRouter()`
+   - Register agent IDs: "enthusiast", "expert"
+   - Define route: enthusiast → expert when question detected
+   - Use KeywordDetector to match: "?", "hỏi", "gì", "như thế nào"
+   - Build and compile routing rules
+
+5. **Create Team & Executor** (Lines 63-70)
+   - Combine agents and routing configuration
+   - Create TeamExecutor with OpenAI API key
+
+6. **Execute Conversations** (Lines 72-82)
+   - Loop through topics
+   - Run executor for each topic
+   - Print results
 
 ## 🇻🇳 Vietnamese Features / Đặc Điểm Tiếng Việt
 
@@ -314,6 +383,8 @@ This example demonstrates:
 ✅ Easy customization without code changes
 ✅ Automatic agent-to-agent conversation
 ✅ Clean, understandable code structure
+✅ **Phase 3: Declarative Routing DSL** with TriggerDetector
+✅ Automatic routing based on keyword detection
 
 ---
 

@@ -50,21 +50,36 @@ func main() {
 		}
 	}
 
-	// Create team and executor
-	team := &agentic.Team{Agents: agents, MaxRounds: cfg.Team.MaxRounds, MaxHandoffs: cfg.Team.MaxHandoffs}
+	// Build routing configuration (Phase 3: Declarative Routing DSL)
+	// Route enthusiast -> expert when asking questions
+	// Expert provides final response (isTerminal: true)
+	routingConfig, _ := agentic.NewRouter().
+		RegisterAgents("enthusiast", "expert").
+		FromAgent("enthusiast").
+		To("expert", agentic.NewKeywordDetector([]string{"?", "hỏi", "gì", "như thế nào"}, false)).
+		Done().
+		Build()
+
+	// Create team and executor with routing
+	team := &agentic.Team{
+		Agents:      agents,
+		MaxRounds:   cfg.Team.MaxRounds,
+		MaxHandoffs: cfg.Team.MaxHandoffs,
+		Routing:     routingConfig,
+	}
 	executor := agentic.NewTeamExecutor(team, key)
 
 	// Run discussions
-	fmt.Println("\n🤖 Hệ Thống Thảo Luận Multi-Agent\n" + strings.Repeat("=", 50))
+	fmt.Println("\n🤖 Hệ Thống Thảo Luận Multi-Agent (Phase 3: Declarative Routing)\n" + strings.Repeat("=", 60))
 	for i, topic := range cfg.Topics {
-		fmt.Printf("\n📌 Chủ đề %d: %s\n%s\n", i+1, topic, strings.Repeat("-", 50))
+		fmt.Printf("\n📌 Chủ đề %d: %s\n%s\n", i+1, topic, strings.Repeat("-", 60))
 		if response, err := executor.Execute(context.Background(), topic); err == nil {
 			fmt.Printf("✅ Kết Quả:\n%s\n", response)
 		} else {
 			fmt.Printf("❌ Lỗi: %v\n", err)
 		}
 	}
-	fmt.Println("\n" + strings.Repeat("=", 50) + "\n🎉 Hoàn thành!\n")
+	fmt.Println("\n" + strings.Repeat("=", 60) + "\n🎉 Hoàn thành!\n")
 }
 
 func loadEnv() {
