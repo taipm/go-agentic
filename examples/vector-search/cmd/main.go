@@ -147,27 +147,37 @@ func displayStreamEvent(event *crewai.StreamEvent) {
 	// Add timestamp for performance tracking
 	timestamp := event.Timestamp.Format("15:04:05.000")
 
+	// Hide long embedding vectors in tool_result
+	content := event.Content
+	if event.Type == "tool_result" && strings.Contains(content, "Embedding generated") {
+		// Extract just the first line (summary) and hide the JSON vector
+		lines := strings.Split(content, "\n")
+		if len(lines) > 1 {
+			content = lines[0] + " (vector hidden for readability)"
+		}
+	}
+
 	switch event.Type {
 	case "start":
-		fmt.Printf("[%s] 🚀 %s\n", timestamp, event.Content)
+		fmt.Printf("[%s] 🚀 %s\n", timestamp, content)
 	case "agent_start":
-		fmt.Printf("[%s] 🔄 [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] 🔄 [%s] %s\n", timestamp, event.Agent, content)
 	case "agent_response":
-		fmt.Printf("[%s] 💬 [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] 💬 [%s] %s\n", timestamp, event.Agent, content)
 	case "tool_start":
-		fmt.Printf("[%s] 🔧 [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] 🔧 [%s] %s\n", timestamp, event.Agent, content)
 	case "tool_result":
-		fmt.Printf("[%s] ✅ [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] ✅ [%s] %s\n", timestamp, event.Agent, content)
 	case "pause":
-		fmt.Printf("[%s] ⏸️  [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] ⏸️  [%s] %s\n", timestamp, event.Agent, content)
 	case "warning":
-		fmt.Printf("[%s] ⚠️  [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] ⚠️  [%s] %s\n", timestamp, event.Agent, content)
 	case "error":
-		fmt.Printf("[%s] ❌ [%s] %s\n", timestamp, event.Agent, event.Content)
+		fmt.Printf("[%s] ❌ [%s] %s\n", timestamp, event.Agent, content)
 	case "done":
-		fmt.Printf("[%s] ✨ %s\n", timestamp, event.Content)
+		fmt.Printf("[%s] ✨ %s\n", timestamp, content)
 	default:
-		fmt.Printf("[%s] 📝 [%s - %s] %s\n", timestamp, event.Type, event.Agent, event.Content)
+		fmt.Printf("[%s] 📝 [%s - %s] %s\n", timestamp, event.Type, event.Agent, content)
 	}
 }
 
