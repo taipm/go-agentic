@@ -41,20 +41,27 @@ func main() {
 	data, _ := os.ReadFile("team.yaml")
 	yaml.Unmarshal(data, &cfg)
 
-	// Build agents and routing in one go
+	// Build agents from config
 	agents := make([]*agentic.Agent, len(cfg.Agents))
 	for i, a := range cfg.Agents {
 		agents[i] = &agentic.Agent{
-			ID: a.ID, Name: a.Name, Role: a.Role, Backstory: a.Backstory,
-			Model: a.Model, Temperature: a.Temperature, IsTerminal: a.IsTerminal,
+			ID:          a.ID,
+			Name:        a.Name,
+			Role:        a.Role,
+			Backstory:   a.Backstory,
+			Model:       a.Model,
+			Temperature: a.Temperature,
+			IsTerminal:  a.IsTerminal,
+			Tools:       []*agentic.Tool{}, // No tools for this simple example
 		}
 	}
 
-	// Phase 3: Declarative routing with trigger detection
+	// Phase 3: Declarative routing - route enthusiast → expert on questions
 	routing, _ := agentic.NewRouter().
 		RegisterAgents("enthusiast", "expert").
 		FromAgent("enthusiast").
-		To("expert", agentic.NewKeywordDetector([]string{"?", "hỏi", "gì"}, false)).
+		To("expert", agentic.NewKeywordDetector(
+			[]string{"?", "hỏi", "gì", "như thế nào", "tại sao", "cái nào"}, false)).
 		Done().
 		Build()
 
