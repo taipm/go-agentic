@@ -1,102 +1,172 @@
-# Security Policy
+# Security Guidelines for go-agentic
 
-## Reporting Security Vulnerabilities
+This document outlines security best practices for developers working with the go-agentic library, particularly when handling API keys and sensitive credentials.
 
-If you discover a security vulnerability in go-agentic, please email security@example.com instead of using the issue tracker. Please include the following details:
+## Environment Variables and API Keys
 
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+### Critical: Never Commit Secrets
 
-## Security Practices
+The repository is configured to **never** commit environment files containing secrets:
 
-### Environment Variables
-- Never commit `.env` files to the repository
-- All `.env` files are in `.gitignore`
-- Use environment variables for sensitive configuration
-- Example: `OPENAI_API_KEY` must be set via environment, not in code
+- `.env` files are excluded from git tracking
+- `.env.local` and `.env.*.local` files are excluded
+- All API keys must be loaded from environment variables at runtime
 
-### API Keys and Credentials
-- No hardcoded API keys, passwords, or tokens
-- All credentials must come from environment variables
-- Use `.env.example` as template for required variables
+### Setup for Development
 
-### Dependencies
-- All dependencies are locked in `go.sum`
-- Regular security audits via `govulncheck`
-- Dependencies are verified on every build
-- OpenAI SDK is kept up-to-date (v3.15.0)
+1. **Copy the template file:**
+   ```bash
+   cp examples/it-support/.env.example examples/it-support/.env
+   ```
 
-### Code Review
-- All code changes go through GitHub Actions checks:
-  - Unit tests (race detection enabled)
-  - Security scanning with gosec
-  - Code quality checks with golangci-lint
-  - Go fmt and go vet verification
-  - Dependency vulnerability scanning
+2. **Add your API key:**
+   ```bash
+   # Edit examples/it-support/.env
+   OPENAI_API_KEY=sk-proj-your-actual-api-key-here
+   ```
 
-### CI/CD Security
-- GitHub Actions workflows enforce security checks
-- All commits must pass security, quality, and test gates
-- Release process includes final security verification
-- Automatic scanning of dependencies daily
+3. **Verify it's excluded from git:**
+   ```bash
+   git status
+   # Should NOT show your .env file
+   ```
+
+### Supported API Providers
+
+Currently, go-agentic integrates with:
+
+- **OpenAI**: Requires `OPENAI_API_KEY` environment variable
+  - Get your key from: https://platform.openai.com/account/api-keys
+  - Keys should be kept secret and rotated regularly
+  - Never share keys in pull requests, issues, or documentation
+
+## Secret Scanning and Prevention
+
+### Pre-commit Checks
+
+To prevent accidental secret commits, configure git hooks:
+
+```bash
+# Install a secret scanner (example using detect-secrets)
+pip install detect-secrets
+
+# Scan your repository
+detect-secrets scan --baseline .secrets.baseline
+
+# Before committing, verify no secrets are staged
+detect-secrets audit .secrets.baseline
+```
+
+### If You Accidentally Commit a Secret
+
+1. **Immediately revoke the exposed key:**
+   - For OpenAI: Visit https://platform.openai.com/account/api-keys and delete the exposed key
+
+2. **Remove from git history:**
+   ```bash
+   # Option 1: Use git-filter-branch (careful!)
+   git filter-branch --force --index-filter \
+     "git rm --cached --ignore-unmatch examples/it-support/.env" \
+     --prune-empty --tag-name-filter cat -- --all
+
+   # Option 2: Use BFG Repo-Cleaner (recommended)
+   bfg --delete-files .env
+   ```
+
+3. **Force push to update remote:**
+   ```bash
+   git push --force-with-lease origin main
+   ```
+
+4. **Notify collaborators** to re-pull the cleaned history
+
+## Code Review Checklist
+
+When reviewing PRs, ensure:
+
+- [ ] No `.env` files in the diff
+- [ ] No hardcoded API keys in code
+- [ ] No API keys in test fixtures or example code
+- [ ] No secrets in commit messages
+- [ ] Configuration uses environment variables, not defaults
+
+## Testing with Sensitive Data
+
+### Mock External Services
+
+Use mocking for tests involving API calls:
+
+```go
+// Good: Mock the OpenAI client
+mockClient := &mockOpenAIClient{
+    // Mock implementation
+}
+executor := &TeamExecutor{
+    client: mockClient, // Inject mock instead of real client
+}
+
+// Bad: Real API calls in tests
+executor := NewTeamExecutor(team, os.Getenv("OPENAI_API_KEY"))
+```
+
+### Test Fixtures
+
+- Never include real API keys in test files
+- Use placeholder values like `sk-proj-test-key-here`
+- Keep test fixtures in memory, not committed files
+
+## Deployment Security
+
+### Environment Variables in CI/CD
+
+Configure secrets in your CI/CD platform (GitHub Actions, GitLab CI, etc.):
+
+```yaml
+# GitHub Actions Example
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
 
 ### Secrets Management
-- GitHub Secrets are used for sensitive data
-- No credentials in workflow files
-- Token rotation on regular schedule
-- Audit logs reviewed for anomalies
 
-## Security Checklist
+For production deployments:
 
-Every commit must pass:
-- ✅ No hardcoded secrets (gosec)
-- ✅ No vulnerable dependencies (govulncheck)
-- ✅ Code quality standards (golangci-lint)
-- ✅ All tests pass (race-safe)
-- ✅ Proper formatting (go fmt)
-- ✅ Module integrity (go mod verify)
+- Use platform-provided secrets management (AWS Secrets Manager, Azure Key Vault, etc.)
+- Rotate API keys regularly (quarterly minimum)
+- Audit key access and usage
+- Use service-specific keys with minimal required permissions
+- Consider key versioning strategies
 
-## Threat Model
+## Reporting Security Issues
 
-### Addressed Risks
-1. **Exposed credentials** - Mitigated with .gitignore and secret scanning
-2. **Vulnerable dependencies** - Mitigated with govulncheck and daily scans
-3. **Code injection** - Mitigated with static analysis and code review
-4. **Configuration issues** - Mitigated with YAML validation and testing
+If you discover a security vulnerability:
 
-### Out of Scope
-- Runtime exploitation
-- Supply chain attacks (dependencies assumed trusted)
-- Physical security
-- Social engineering
+1. **Do NOT** open a public issue
+2. **Do NOT** commit or push the vulnerability
+3. **Contact maintainers privately** with:
+   - Description of the vulnerability
+   - Steps to reproduce
+   - Suggested fix if available
 
-## Compliance
+See the repository's security policy for responsible disclosure details.
 
-### Supported Go Versions
-- Go 1.25.5 (current)
-- Backward compatibility: Go 1.23+ recommended
+## Resources
 
-### Dependency Policy
-- OpenAI SDK: v3.15.0+
-- YAML: v3.0.1+
-- All indirect dependencies verified
+- [OpenAI API Security](https://platform.openai.com/docs/guides/production-best-practices)
+- [OWASP: Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
+- [GitHub: Removing Sensitive Data](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
+- [Git Secrets](https://github.com/awslabs/git-secrets)
+- [Detect Secrets](https://github.com/Yelp/detect-secrets)
 
-## Version Support
+## Summary
 
-| Version | Status | Security Updates |
-|---------|--------|------------------|
-| v0.0.1-alpha.1 | Active | Until v1.0.0 |
+**Golden Rules:**
 
-## Security Updates
-
-Security updates will be released as soon as possible after discovery. Users should:
-1. Enable GitHub notifications for releases
-2. Subscribe to security advisories
-3. Update dependencies regularly
-4. Test in staging before production
-
-## Questions?
-
-For security questions or concerns, please reach out to the maintainers directly.
+1. ✅ Always use `.env.example` as a template
+2. ✅ Load secrets from environment variables
+3. ✅ Check `.gitignore` before committing
+4. ✅ Review diffs for accidental secrets
+5. ✅ Rotate keys if exposure is suspected
+6. ❌ Never hardcode secrets
+7. ❌ Never commit `.env` files
+8. ❌ Never share keys in public repositories
