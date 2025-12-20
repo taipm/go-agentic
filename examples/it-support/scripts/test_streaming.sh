@@ -3,7 +3,7 @@
 # Test script for SSE streaming endpoint
 # Usage: ./test_streaming.sh
 
-echo "🧪 Testing go-crewai SSE Streaming Implementation"
+echo "🧪 Testing go-agentic IT Support SSE Streaming"
 echo "=================================================="
 
 # Colors for output
@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Test 1: Build check
 echo -e "\n${BLUE}[TEST 1] Build Check${NC}"
-if go build -v ./... 2>&1 | grep -q "github.com/taipm/go-crewai"; then
+if go build -v ./... 2>&1 | grep -q "github.com/taipm/go-agentic"; then
     echo -e "${GREEN}✅ Build successful${NC}"
 else
     echo "❌ Build failed"
