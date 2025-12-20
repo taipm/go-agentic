@@ -1,6 +1,7 @@
 package agentic
 
 import (
+	"context"
 	"testing"
 
 	openai "github.com/openai/openai-go/v3"
@@ -377,5 +378,261 @@ func TestParseJSONArgumentsInvalid(t *testing.T) {
 
 	if err == nil {
 		t.Error("Expected error for invalid JSON")
+	}
+}
+
+// ============ Test Story 2b.1: Validate Tool Parameters Against JSON Schema ============
+
+// TestValidateToolParametersBasic tests validation with required parameters
+func TestValidateToolParametersBasic(t *testing.T) {
+	tool := &Tool{
+		Name: "PingHost",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"host": map[string]interface{}{
+					"type": "string",
+				},
+			},
+			"required": []interface{}{"host"},
+		},
+	}
+
+	// Valid arguments
+	args := map[string]interface{}{"host": "192.168.1.100"}
+	if err := validateToolParameters(tool, args); err != nil {
+		t.Errorf("Expected validation to pass, got error: %v", err)
+	}
+
+	// Missing required parameter
+	argsEmpty := map[string]interface{}{}
+	if err := validateToolParameters(tool, argsEmpty); err == nil {
+		t.Error("Expected validation to fail for missing required parameter")
+	}
+}
+
+// TestValidateToolParametersTypeString tests string type validation
+func TestValidateToolParametersTypeString(t *testing.T) {
+	tool := &Tool{
+		Name: "GetService",
+		Parameters: map[string]interface{}{
+			"properties": map[string]interface{}{
+				"service": map[string]interface{}{
+					"type": "string",
+				},
+			},
+		},
+	}
+
+	// Valid string argument
+	if err := validateToolParameters(tool, map[string]interface{}{"service": "nginx"}); err != nil {
+		t.Errorf("Expected validation to pass for string, got: %v", err)
+	}
+
+	// Invalid non-string argument
+	if err := validateToolParameters(tool, map[string]interface{}{"service": 123}); err == nil {
+		t.Error("Expected validation to fail for non-string value")
+	}
+}
+
+// TestValidateToolParametersTypeNumber tests numeric type validation
+func TestValidateToolParametersTypeNumber(t *testing.T) {
+	tool := &Tool{
+		Name: "CheckThreshold",
+		Parameters: map[string]interface{}{
+			"properties": map[string]interface{}{
+				"threshold": map[string]interface{}{
+					"type": "number",
+				},
+			},
+		},
+	}
+
+	// Valid numeric arguments
+	validArgs := []map[string]interface{}{
+		{"threshold": float64(80.5)},
+		{"threshold": 100},
+	}
+	for _, args := range validArgs {
+		if err := validateToolParameters(tool, args); err != nil {
+			t.Errorf("Expected validation to pass for number, got: %v", err)
+		}
+	}
+
+	// Invalid non-numeric argument
+	if err := validateToolParameters(tool, map[string]interface{}{"threshold": "high"}); err == nil {
+		t.Error("Expected validation to fail for non-numeric value")
+	}
+}
+
+// TestValidateToolParametersTypeBoolean tests boolean type validation
+func TestValidateToolParametersTypeBoolean(t *testing.T) {
+	tool := &Tool{
+		Name: "ConfigService",
+		Parameters: map[string]interface{}{
+			"properties": map[string]interface{}{
+				"enabled": map[string]interface{}{
+					"type": "boolean",
+				},
+			},
+		},
+	}
+
+	// Valid boolean arguments
+	if err := validateToolParameters(tool, map[string]interface{}{"enabled": true}); err != nil {
+		t.Errorf("Expected validation to pass for boolean true, got: %v", err)
+	}
+	if err := validateToolParameters(tool, map[string]interface{}{"enabled": false}); err != nil {
+		t.Errorf("Expected validation to pass for boolean false, got: %v", err)
+	}
+
+	// Invalid non-boolean argument
+	if err := validateToolParameters(tool, map[string]interface{}{"enabled": 1}); err == nil {
+		t.Error("Expected validation to fail for non-boolean value")
+	}
+}
+
+// TestValidateToolParametersMultipleFields tests validation with multiple parameters
+func TestValidateToolParametersMultipleFields(t *testing.T) {
+	tool := &Tool{
+		Name: "ComplexTool",
+		Parameters: map[string]interface{}{
+			"properties": map[string]interface{}{
+				"host": map[string]interface{}{
+					"type": "string",
+				},
+				"port": map[string]interface{}{
+					"type": "number",
+				},
+				"timeout": map[string]interface{}{
+					"type": "number",
+				},
+			},
+			"required": []interface{}{"host", "port"},
+		},
+	}
+
+	// Valid with all arguments
+	args := map[string]interface{}{
+		"host":    "localhost",
+		"port":    8080.0,
+		"timeout": 30.0,
+	}
+	if err := validateToolParameters(tool, args); err != nil {
+		t.Errorf("Expected validation to pass, got: %v", err)
+	}
+
+	// Valid with only required arguments
+	requiredOnly := map[string]interface{}{
+		"host": "localhost",
+		"port": 8080.0,
+	}
+	if err := validateToolParameters(tool, requiredOnly); err != nil {
+		t.Errorf("Expected validation to pass with only required args, got: %v", err)
+	}
+
+	// Invalid: missing required parameter
+	missingRequired := map[string]interface{}{
+		"host": "localhost",
+	}
+	if err := validateToolParameters(tool, missingRequired); err == nil {
+		t.Error("Expected validation to fail for missing required 'port' parameter")
+	}
+
+	// Invalid: wrong type for port
+	wrongType := map[string]interface{}{
+		"host": "localhost",
+		"port": "8080",
+	}
+	if err := validateToolParameters(tool, wrongType); err == nil {
+		t.Error("Expected validation to fail for port with wrong type")
+	}
+}
+
+// TestValidateToolParametersNoSchema tests validation with no schema defined
+func TestValidateToolParametersNoSchema(t *testing.T) {
+	tool := &Tool{
+		Name: "SimpleCall",
+		// No Parameters defined
+	}
+
+	// Should pass validation even with arbitrary arguments
+	if err := validateToolParameters(tool, map[string]interface{}{"any": "value"}); err != nil {
+		t.Errorf("Expected validation to pass for tool with no schema, got: %v", err)
+	}
+
+	// Should pass with empty arguments
+	if err := validateToolParameters(tool, map[string]interface{}{}); err != nil {
+		t.Errorf("Expected validation to pass for tool with no schema and no args, got: %v", err)
+	}
+}
+
+// ============ Test Story 2b.2: Integration Into Tool Execution ============
+
+// TestValidateToolParametersIntegration tests validation prevents invalid handler calls
+func TestValidateToolParametersIntegration(t *testing.T) {
+	tool := &Tool{
+		Name: "ValidatedTool",
+		Parameters: map[string]interface{}{
+			"properties": map[string]interface{}{
+				"value": map[string]interface{}{
+					"type": "number",
+				},
+			},
+			"required": []interface{}{"value"},
+		},
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			return "success", nil
+		},
+	}
+
+	// Valid arguments should call handler
+	validArgs := map[string]interface{}{"value": 42.0}
+	err := validateToolParameters(tool, validArgs)
+	if err != nil {
+		t.Errorf("Expected validation to pass for valid args, got: %v", err)
+	}
+
+	// Invalid arguments should fail validation before handler call
+	invalidArgs := map[string]interface{}{}
+	err = validateToolParameters(tool, invalidArgs)
+	if err == nil {
+		t.Error("Expected validation to fail for missing required parameter")
+	}
+}
+
+// TestValidateToolParametersErrorMessages tests that error messages are clear
+func TestValidateToolParametersErrorMessages(t *testing.T) {
+	tool := &Tool{
+		Name: "ClearErrorsTool",
+		Parameters: map[string]interface{}{
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type": "string",
+				},
+				"age": map[string]interface{}{
+					"type": "number",
+				},
+			},
+			"required": []interface{}{"name", "age"},
+		},
+	}
+
+	// Test missing required parameter error
+	missingErr := validateToolParameters(tool, map[string]interface{}{"name": "John"})
+	if missingErr == nil {
+		t.Fatal("Expected error for missing required parameter")
+	}
+	if !contains(missingErr.Error(), "age") {
+		t.Errorf("Error should mention missing parameter 'age', got: %v", missingErr)
+	}
+
+	// Test type mismatch error
+	typeErr := validateToolParameters(tool, map[string]interface{}{"name": 123, "age": 25.0})
+	if typeErr == nil {
+		t.Fatal("Expected error for type mismatch")
+	}
+	if !contains(typeErr.Error(), "name") {
+		t.Errorf("Error should mention parameter 'name', got: %v", typeErr)
 	}
 }

@@ -310,3 +310,125 @@ func parseJSONArguments(jsonStr string, args map[string]interface{}) error {
 
 	return nil
 }
+
+// validateToolParameters validates tool arguments against the tool's parameter schema
+// Returns error if validation fails, nil if validation passes
+func validateToolParameters(tool *Tool, arguments map[string]interface{}) error {
+	if tool == nil {
+		return fmt.Errorf("tool is nil")
+	}
+
+	// If no parameters defined, no validation needed
+	if tool.Parameters == nil {
+		return nil
+	}
+
+	requiredParams := extractRequiredParams(tool.Parameters)
+	propsSchema := extractPropertiesSchema(tool.Parameters)
+
+	// Check all required parameters are present
+	if err := checkRequiredParams(requiredParams, arguments); err != nil {
+		return err
+	}
+
+	// Validate each provided argument
+	return validateArgumentTypes(propsSchema, arguments)
+}
+
+// extractRequiredParams gets the list of required parameter names
+func extractRequiredParams(parameters map[string]interface{}) []string {
+	var required []string
+	if reqList, ok := parameters["required"]; ok {
+		if reqInterface, ok := reqList.([]interface{}); ok {
+			for _, item := range reqInterface {
+				if str, ok := item.(string); ok {
+					required = append(required, str)
+				}
+			}
+		}
+	}
+	return required
+}
+
+// extractPropertiesSchema gets the properties schema map
+func extractPropertiesSchema(parameters map[string]interface{}) map[string]interface{} {
+	if props, ok := parameters["properties"]; ok {
+		if propsMap, ok := props.(map[string]interface{}); ok {
+			return propsMap
+		}
+	}
+	return nil
+}
+
+// checkRequiredParams validates that all required parameters are present
+func checkRequiredParams(required []string, arguments map[string]interface{}) error {
+	for _, param := range required {
+		if _, exists := arguments[param]; !exists {
+			return fmt.Errorf("missing required parameter: %s", param)
+		}
+	}
+	return nil
+}
+
+// validateArgumentTypes validates the types of provided arguments
+func validateArgumentTypes(propsSchema map[string]interface{}, arguments map[string]interface{}) error {
+	for paramName, paramValue := range arguments {
+		if propsSchema == nil {
+			continue
+		}
+
+		schema, ok := propsSchema[paramName].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if err := validateParameterType(paramName, paramValue, schema); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateParameterType validates a single parameter value against its type schema
+func validateParameterType(paramName string, paramValue interface{}, paramSchema map[string]interface{}) error {
+	// Get the expected type from schema
+	paramType, hasType := paramSchema["type"]
+	if !hasType {
+		// No type constraint, validation passes
+		return nil
+	}
+
+	expectedType, ok := paramType.(string)
+	if !ok {
+		// Type is not a string, can't validate
+		return nil
+	}
+
+	switch expectedType {
+	case "string":
+		if _, ok := paramValue.(string); !ok {
+			return fmt.Errorf("parameter %s: expected string, got %T", paramName, paramValue)
+		}
+	case "integer", "number":
+		switch paramValue.(type) {
+		case float64, int, int32, int64:
+			// Valid numeric types
+		default:
+			return fmt.Errorf("parameter %s: expected %s, got %T", paramName, expectedType, paramValue)
+		}
+	case "boolean":
+		if _, ok := paramValue.(bool); !ok {
+			return fmt.Errorf("parameter %s: expected boolean, got %T", paramName, paramValue)
+		}
+	case "array":
+		if _, ok := paramValue.([]interface{}); !ok {
+			return fmt.Errorf("parameter %s: expected array, got %T", paramName, paramValue)
+		}
+	case "object":
+		if _, ok := paramValue.(map[string]interface{}); !ok {
+			return fmt.Errorf("parameter %s: expected object, got %T", paramName, paramValue)
+		}
+	}
+
+	return nil
+}

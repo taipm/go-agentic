@@ -279,6 +279,16 @@ func (te *TeamExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 			continue
 		}
 
+		// Validate tool parameters before execution
+		if validationErr := validateToolParameters(tool, call.Arguments); validationErr != nil {
+			results = append(results, ToolResult{
+				ToolName: call.ToolName,
+				Status:   "error",
+				Output:   fmt.Sprintf("Parameter validation failed: %v", validationErr),
+			})
+			continue
+		}
+
 		output, err := tool.Handler(ctx, call.Arguments)
 		if err != nil {
 			results = append(results, ToolResult{
