@@ -17,7 +17,7 @@ This is the **simplest example** of using go-agentic with **2 agents** that auto
 
 ## 🏗️ Architecture with Phase 3 Routing
 
-```
+```text
 Initial Topic / Chủ Đề Ban Đầu
         ↓
 ┌─────────────────────────┐
@@ -51,12 +51,14 @@ Initial Topic / Chủ Đề Ban Đầu
 ## 🎭 Agents / Các Agent
 
 ### 1. Người Tò Mò (Enthusiast)
+
 - **Role / Vai Trò**: Curious learner who asks insightful questions
 - **Behavior / Hành Động**: Explores ideas in Vietnamese, engages in meaningful discussion
 - **IsTerminal**: `false` (can pass to next agent)
 - **Temperature**: 0.8 (more creative and varied responses)
 
 ### 2. Chuyên Gia (Expert)
+
 - **Role / Vai Trò**: Subject matter expert with deep knowledge
 - **Behavior / Hành Động**: Provides comprehensive answers in Vietnamese, shares expertise
 - **IsTerminal**: `true` (final response ends the conversation)
@@ -173,7 +175,7 @@ go run main.go
 
 ### Expected Output / Kết Quả Mong Đợi
 
-```
+```text
 🤖 Hệ Thống Thảo Luận Multi-Agent Đơn Giản
 ==================================================
 
@@ -241,7 +243,7 @@ agents:
 
 ## 📁 File Structure / Cấu Trúc File
 
-```
+```text
 simple-chat/
 ├── main.go              # Application logic (Ngôn ngữ lập trình)
 ├── crew.yaml            # Configuration file (File cấu hình)
@@ -253,76 +255,68 @@ simple-chat/
 
 ## 🔍 Understanding the Code
 
-### main.go Structure
+### main.go - Ultra-Minimal Design
 
-The code is organized into 3 main steps:
+The code is just **2 functions** totaling **58 lines**:
 
-1. **Load API Key** (Lines 31-36)
+**1. main()** - The Core Application (Lines 12-47)
 
-   ```go
-   apiKey := getEnvVar("OPENAI_API_KEY")
-   if apiKey == "" {
-       fmt.Println("❌ Lỗi: OPENAI_API_KEY không được thiết lập")
-       os.Exit(1)
-   }
-   ```
+```go
+// Load API key
+apiKey := getEnvVar("OPENAI_API_KEY")
 
-2. **Load Team Config** (Lines 38-42)
+// Load team from YAML using library function
+team, _ := agentic.LoadTeamFromYAML("team.yaml", agentic.ToolHandlerRegistry{})
 
-   ```go
-   cfg := loadConfig("team.yaml")
-   team := buildTeam(cfg)
-   executor := agentic.NewTeamExecutor(team, apiKey)
-   ```
+// Create executor and run
+executor := agentic.NewTeamExecutor(team, apiKey)
 
-3. **Run Conversations** (Lines 46-56)
+// Execute sample topics
+for i, topic := range topics {
+    resp, _ := executor.Execute(context.Background(), topic)
+    // Print results
+}
+```
 
-   ```go
-   for i, topic := range cfg.Topics {
-       resp, err := executor.Execute(context.Background(), topic)
-       // Print results
-   }
-   ```
+That's it! No custom structs, no helper functions needed.
 
-### Helper Functions
+**2. getEnvVar()** - Environment Helper (Lines 49-57)
 
-**loadConfig()** (Lines 59-63)
+- Reads `.env` file
+- Extracts API key
+- Simple string parsing
 
-- Reads and parses `team.yaml`
-- Returns Config struct with agents, routing, and topics
-- Abstracts YAML handling complexity
+### How the Library Handles Everything
 
-**buildTeam()** (Lines 66-98)
+| What | Before | Now |
+| --- | --- | --- |
+| **YAML Loading** | `loadConfig()` (4 lines) | `agentic.LoadTeamFromYAML()` |
+| **Agent Creation** | `buildTeam()` (30 lines) | `LoadTeamFromYAML()` handles it |
+| **Routing Setup** | Manual Phase 3 DSL | `LoadTeamFromYAML()` builds it |
+| **Config Struct** | Custom `Config` struct | Not needed |
+| **Total Code** | 110 lines | 58 lines |
 
-- Converts YAML agent configs to Agent objects
-- Extracts agent IDs automatically from config
-- **Phase 3: Builds routing** using declarative DSL
+### The Philosophy
 
-  ```go
-  routing, _ := agentic.NewRouter().
-      RegisterAgents(agentIDs...).
-      FromAgent("enthusiast").
-      To("expert", agentic.NewKeywordDetector(
-          []string{"?", "hỏi", "gì", "như thế nào", "tại sao", "cái nào"}, false)).
-      Done().
-      Build()
-  ```
+> **The library should do the work, not the user.**
 
-- Returns ready-to-use Team object with agents, routing, and conversation limits
+Before: Users wrote `loadConfig()` and `buildTeam()`
+Now: Users just call `LoadTeamFromYAML()` and run
 
 ### Key Takeaway
 
-Users only interact with **3 things**:
+Users only need to:
 
-1. Edit `team.yaml` to define agents and topics
+1. Edit `team.yaml` - define agents, topics, routing
 2. Set `OPENAI_API_KEY` in `.env`
 3. Run `go run main.go`
 
-All the complexity is hidden in helper functions!
+The library handles everything else!
 
 ## 🇻🇳 Vietnamese Features / Đặc Điểm Tiếng Việt
 
 All messages and prompts are in Vietnamese:
+
 - Agent names: Người Tò Mò, Chuyên Gia
 - Agent roles and backstories in Vietnamese
 - Output messages in Vietnamese
@@ -332,6 +326,7 @@ All messages and prompts are in Vietnamese:
 ## ✅ Security / Bảo Mật
 
 ⚠️ **Never commit your actual API keys!**
+
 - `.env` file is ignored by git
 - Always use `.env.example` as template
 - For more security guidelines, see `/SECURITY.md`
@@ -383,6 +378,7 @@ A: Increase `maxRounds` and `maxHandoffs` in `crew.yaml`.
 ## 🆘 Troubleshooting / Khắc Phục Sự Cố
 
 ### Problem: "OPENAI_API_KEY environment variable not set"
+
 **Solution**: Create `.env` file with your API key
 
 ```bash
@@ -391,6 +387,7 @@ cp .env.example .env
 ```
 
 ### Problem: "cannot read file crew.yaml"
+
 **Solution**: Make sure `crew.yaml` is in the same directory as `main.go`
 
 ```bash
@@ -399,7 +396,9 @@ ls crew.yaml
 ```
 
 ### Problem: Agents speaking in English instead of Vietnamese
+
 **Solution**: The agents' backstory instructs them to speak Vietnamese. If they're not:
+
 - Check your `crew.yaml` has proper Vietnamese instructions
 - Try rephrasing the topic in Vietnamese
 
