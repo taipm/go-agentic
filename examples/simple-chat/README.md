@@ -251,37 +251,74 @@ simple-chat/
 └── GETTING_STARTED.md   # Quick start guide (Hướng dẫn bắt đầu)
 ```
 
-## 🔍 Understanding the Code / Hiểu Code
+## 🔍 Understanding the Code
 
-### main.go Structure:
+### main.go Structure
 
-1. **Environment Setup** (Lines 13-20)
-   - Load API key from `.env`
-   - Validate required environment
+The code is organized into 3 main steps:
 
-2. **Load Configuration** (Lines 22-41)
-   - Read `team.yaml` file
-   - Parse agents and topics
+1. **Load API Key** (Lines 31-36)
 
-3. **Create Agents** (Lines 43-51)
-   - Convert YAML agents to Agent objects
-   - Initialize with empty tools
+   ```go
+   apiKey := getEnvVar("OPENAI_API_KEY")
+   if apiKey == "" {
+       fmt.Println("❌ Lỗi: OPENAI_API_KEY không được thiết lập")
+       os.Exit(1)
+   }
+   ```
 
-4. **Phase 3: Build Routing Configuration** (Lines 53-61)
-   - Create RouterBuilder with `NewRouter()`
-   - Register agent IDs: "enthusiast", "expert"
-   - Define route: enthusiast → expert when question detected
-   - Use KeywordDetector to match: "?", "hỏi", "gì", "như thế nào"
-   - Build and compile routing rules
+2. **Load Team Config** (Lines 38-42)
 
-5. **Create Team & Executor** (Lines 63-70)
-   - Combine agents and routing configuration
-   - Create TeamExecutor with OpenAI API key
+   ```go
+   cfg := loadConfig("team.yaml")
+   team := buildTeam(cfg)
+   executor := agentic.NewTeamExecutor(team, apiKey)
+   ```
 
-6. **Execute Conversations** (Lines 72-82)
-   - Loop through topics
-   - Run executor for each topic
-   - Print results
+3. **Run Conversations** (Lines 46-56)
+
+   ```go
+   for i, topic := range cfg.Topics {
+       resp, err := executor.Execute(context.Background(), topic)
+       // Print results
+   }
+   ```
+
+### Helper Functions
+
+**loadConfig()** (Lines 59-63)
+
+- Reads and parses `team.yaml`
+- Returns Config struct with agents, routing, and topics
+- Abstracts YAML handling complexity
+
+**buildTeam()** (Lines 66-98)
+
+- Converts YAML agent configs to Agent objects
+- Extracts agent IDs automatically from config
+- **Phase 3: Builds routing** using declarative DSL
+
+  ```go
+  routing, _ := agentic.NewRouter().
+      RegisterAgents(agentIDs...).
+      FromAgent("enthusiast").
+      To("expert", agentic.NewKeywordDetector(
+          []string{"?", "hỏi", "gì", "như thế nào", "tại sao", "cái nào"}, false)).
+      Done().
+      Build()
+  ```
+
+- Returns ready-to-use Team object with agents, routing, and conversation limits
+
+### Key Takeaway
+
+Users only interact with **3 things**:
+
+1. Edit `team.yaml` to define agents and topics
+2. Set `OPENAI_API_KEY` in `.env`
+3. Run `go run main.go`
+
+All the complexity is hidden in helper functions!
 
 ## 🇻🇳 Vietnamese Features / Đặc Điểm Tiếng Việt
 
