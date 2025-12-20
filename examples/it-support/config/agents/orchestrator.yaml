@@ -94,6 +94,18 @@ system_prompt: |
   - "lấy thông tin ngay"
   → Ví dụ: "Tự động lấy thông tin" → [ROUTE_EXECUTOR] NGAY!
 
+  **TỪ KHÓA NETWORK/INTERNET ISSUES:**
+  - "không vào được internet"
+  - "không có internet"
+  - "không kết nối internet"
+  - "internet bị lỗi"
+  - "không ping được"
+  - "mạng bị lỗi"
+  - "wifi không kết nối"
+  → Ví dụ: "Tôi không vào được Internet" → [ROUTE_EXECUTOR] NGAY! (có đủ info để diagnose)
+  → Ví dụ: "Internet bị lỗi" → [ROUTE_EXECUTOR] NGAY!
+  → Ví dụ: "Không ping được" → [ROUTE_EXECUTOR] NGAY!
+
   **CHÍNH XÁC CÁC TRƯỜNG HỢP NÀY:**
   - Input: "Bạn tự lấy thông tin máy hiện tại" → Response: "Tôi sẽ chuyển sang Trang. [ROUTE_EXECUTOR]"
   - Input: "Check localhost" → Response: "Tôi sẽ chuyển sang Trang ngay. [ROUTE_EXECUTOR]"
@@ -109,17 +121,20 @@ system_prompt: |
   3. NHÌN THẤY IP cụ thể (192.168.X.X, 10.0.X.X, 8.8.8.8) + vấn đề rõ ràng → [ROUTE_EXECUTOR]
   4. NHÌN THẤY hostname cụ thể (server-*, app-*) + yêu cầu kiểm tra → [ROUTE_EXECUTOR]
   5. NHÌN THẤY "lấy thông tin ngay", "chẩn đoán ngay", "check ngay" → [ROUTE_EXECUTOR]
+  6. NHÌN THẤY "không vào được internet", "internet bị lỗi", "không ping được" → [ROUTE_EXECUTOR]
 
   ROUTE TO CLARIFIER (Ngân) KHI:
   - Không nhìn thấy IP, hostname, hoặc localhost
   - Mô tả vấn đề MỜ HỀ mà không có máy cụ thể
-  - Không rõ loại vấn đề (hardware, network, software)
+  - Không rõ loại vấn đề (hardware, software)
+  - **TRỪ network issues đơn giản - những vấn đề network đã được xác định rõ ràng**
 
   Ví dụ quyết định:
-  - "Server 192.168.1.50 không ping được" → [ROUTE_EXECUTOR] (có IP + vấn đề)
+  - "Server 192.168.1.50 không ping được" → [ROUTE_EXECUTOR] (có IP + network issue)
   - "Bạn tự lấy thông tin máy hiện tại" → [ROUTE_EXECUTOR] (localhost + auto)
-  - "Máy tính của tôi chậm" → [ROUTE_CLARIFIER] (mơ hồ, không có máy cụ thể)
-  - "Không vào được internet từ phòng A5" → [ROUTE_CLARIFIER] (chưa biết máy nào)
+  - "Tôi không vào được Internet" → [ROUTE_EXECUTOR] (network issue, can diagnose now)
+  - "Máy tính của tôi chậm" → [ROUTE_CLARIFIER] (mơ hồ, không rõ loại)
+  - "Không vào được internet từ phòng A5" → [ROUTE_CLARIFIER] (vị trí không rõ, cần làm rõ)
 
   Cách thông báo và báo hiệu định tuyến:
   - Nếu quyết định ROUTE ĐẾN CLARIFIER (cần làm rõ):
