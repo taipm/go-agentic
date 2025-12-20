@@ -10,7 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config structure for team.yaml
 type Config struct {
 	Team struct {
 		MaxRounds   int `yaml:"maxRounds"`
@@ -29,46 +28,21 @@ type Config struct {
 }
 
 func main() {
-	// Load environment and config
-	os.Setenv("OPENAI_API_KEY", getEnvVar("OPENAI_API_KEY"))
-	if os.Getenv("OPENAI_API_KEY") == "" {
+	// Load API key
+	apiKey := getEnvVar("OPENAI_API_KEY")
+	if apiKey == "" {
 		fmt.Println("❌ Lỗi: OPENAI_API_KEY không được thiết lập")
 		os.Exit(1)
 	}
 
-	// Parse YAML config
-	var cfg Config
-	data, _ := os.ReadFile("team.yaml")
-	yaml.Unmarshal(data, &cfg)
+	// Load team config
+	cfg := loadConfig("team.yaml")
 
-	// Build agents from config
-	agents := make([]*agentic.Agent, len(cfg.Agents))
-	for i, a := range cfg.Agents {
-		agents[i] = &agentic.Agent{
-			ID:          a.ID,
-			Name:        a.Name,
-			Role:        a.Role,
-			Backstory:   a.Backstory,
-			Model:       a.Model,
-			Temperature: a.Temperature,
-			IsTerminal:  a.IsTerminal,
-			Tools:       []*agentic.Tool{}, // No tools for this simple example
-		}
-	}
+	// Build team
+	team := buildTeam(cfg)
 
-	// Phase 3: Declarative routing - route enthusiast → expert on questions
-	routing, _ := agentic.NewRouter().
-		RegisterAgents("enthusiast", "expert").
-		FromAgent("enthusiast").
-		To("expert", agentic.NewKeywordDetector(
-			[]string{"?", "hỏi", "gì", "như thế nào", "tại sao", "cái nào"}, false)).
-		Done().
-		Build()
-
-	// Create team with routing and run
-	team := &agentic.Team{Agents: agents, MaxRounds: cfg.Team.MaxRounds, MaxHandoffs: cfg.Team.MaxHandoffs, Routing: routing}
-	executor := agentic.NewTeamExecutor(team, os.Getenv("OPENAI_API_KEY"))
-
+	// Create executor and run
+	executor := agentic.NewTeamExecutor(team, apiKey)
 	fmt.Println("\n🤖 Hệ Thống Thảo Luận Multi-Agent\n" + strings.Repeat("=", 50))
 	for i, topic := range cfg.Topics {
 		fmt.Printf("\n📌 Chủ đề %d: %s\n%s\n", i+1, topic, strings.Repeat("-", 50))
@@ -82,7 +56,48 @@ func main() {
 	fmt.Println("\n" + strings.Repeat("=", 50) + "\n🎉 Hoàn thành!\n")
 }
 
-// getEnvVar reads from .env file
+func loadConfig(path string) *Config {
+	data, _ := os.ReadFile(path)
+	var cfg Config
+	yaml.Unmarshal(data, &cfg)
+	return &cfg
+}
+
+func buildTeam(cfg *Config) *agentic.Team {
+	// Build agents
+	agents := make([]*agentic.Agent, len(cfg.Agents))
+	agentIDs := make([]string, len(cfg.Agents))
+	for i, a := range cfg.Agents {
+		agentIDs[i] = a.ID
+		agents[i] = &agentic.Agent{
+			ID:          a.ID,
+			Name:        a.Name,
+			Role:        a.Role,
+			Backstory:   a.Backstory,
+			Model:       a.Model,
+			Temperature: a.Temperature,
+			IsTerminal:  a.IsTerminal,
+			Tools:       []*agentic.Tool{},
+		}
+	}
+
+	// Build routing
+	routing, _ := agentic.NewRouter().
+		RegisterAgents(agentIDs...).
+		FromAgent("enthusiast").
+		To("expert", agentic.NewKeywordDetector(
+			[]string{"?", "hỏi", "gì", "như thế nào", "tại sao", "cái nào"}, false)).
+		Done().
+		Build()
+
+	return &agentic.Team{
+		Agents:      agents,
+		MaxRounds:   cfg.Team.MaxRounds,
+		MaxHandoffs: cfg.Team.MaxHandoffs,
+		Routing:     routing,
+	}
+}
+
 func getEnvVar(key string) string {
 	data, _ := os.ReadFile(".env")
 	for _, line := range strings.Split(string(data), "\n") {
