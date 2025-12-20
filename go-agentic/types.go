@@ -94,7 +94,8 @@ type Team struct {
 	Tasks       []*Task
 	MaxRounds   int
 	MaxHandoffs int
-	Routing     *RoutingConfig // Routing configuration from team.yaml
+	Routing     *RoutingConfig                // Routing configuration from team.yaml
+	RoutingRules []UnifiedRoutingRule        // Routing rules from unified config
 }
 
 // RoutingSignal defines a signal that can be emitted by an agent

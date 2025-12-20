@@ -1,0 +1,245 @@
+# IT Support Team - Unified Configuration
+# Single YAML file replacing multiple config files
+# Demonstrates simplified configuration approach with fluent builder patterns
+
+team:
+  name: "IT Support Team"
+  config:
+    maxRounds: 10
+    maxHandoffs: 3
+
+agents:
+  # Router agent - entry point that directs requests
+  router:
+    id: "router"
+    name: "Support Router"
+    role: "Triage and route IT support requests"
+    backstory: |
+      You are an experienced IT support coordinator.
+      Your responsibility is to understand the nature of IT issues
+      and route them to the appropriate specialist team member.
+      Be professional, empathetic, and efficient in your triage process.
+    model: "gpt-4o-mini"
+    temperature: 0.5
+    isTerminal: false
+    tools: []
+
+  # Hardware specialist
+  hardware:
+    id: "hardware"
+    name: "Hardware Specialist"
+    role: "Diagnose and resolve hardware-related issues"
+    backstory: |
+      You are an expert in computer hardware troubleshooting.
+      You have deep knowledge of CPUs, RAM, storage devices,
+      peripherals, and network hardware. You provide clear diagnostic
+      steps and practical solutions to hardware problems.
+    model: "gpt-4o-mini"
+    temperature: 0.6
+    isTerminal: false
+    tools:
+      - get_system_info
+      - ping_host
+      - check_disk_space
+
+  # Software specialist
+  software:
+    id: "software"
+    name: "Software Specialist"
+    role: "Handle software installation, updates, and compatibility issues"
+    backstory: |
+      You are a software specialist with extensive experience
+      in application installation, configuration, and troubleshooting.
+      You understand dependency management, version compatibility,
+      and licensing issues. You provide step-by-step guidance.
+    model: "gpt-4o-mini"
+    temperature: 0.6
+    isTerminal: false
+    tools:
+      - list_installed_apps
+      - check_app_version
+      - verify_licenses
+
+  # Network specialist
+  network:
+    id: "network"
+    name: "Network Specialist"
+    role: "Troubleshoot network connectivity and performance"
+    backstory: |
+      You are a network troubleshooting expert with knowledge of
+      TCP/IP, DNS, VPN, firewalls, and network diagnostics.
+      You guide users through connectivity issues with clear,
+      actionable steps. You're patient and detail-oriented.
+    model: "gpt-4o-mini"
+    temperature: 0.6
+    isTerminal: false
+    tools:
+      - ping_host
+      - trace_route
+      - check_dns
+
+  # Resolution agent - provides final summary
+  resolver:
+    id: "resolver"
+    name: "Support Resolver"
+    role: "Summarize findings and provide final resolution"
+    backstory: |
+      You are a senior IT support specialist responsible for
+      consolidating diagnostic information and providing clear,
+      actionable resolutions to end users. You ensure all solutions
+      are documented and user-friendly. You're the final step
+      in our support process.
+    model: "gpt-4o-mini"
+    temperature: 0.5
+    isTerminal: true
+    tools:
+      - log_ticket
+      - send_summary
+
+# Shared tools - centralized definition
+tools:
+  # System information tools
+  get_system_info:
+    name: "GetSystemInfo"
+    description: "Retrieve system hardware and OS information"
+    parameters:
+      type: "object"
+      properties:
+        details:
+          type: "string"
+          description: "Type of info (cpu, memory, disk, os)"
+
+  ping_host:
+    name: "PingHost"
+    description: "Check connectivity to a host or IP address"
+    parameters:
+      type: "object"
+      properties:
+        target:
+          type: "string"
+          description: "Target hostname or IP to ping"
+      required:
+        - target
+
+  check_disk_space:
+    name: "CheckDiskSpace"
+    description: "Check available disk space"
+    parameters:
+      type: "object"
+      properties: {}
+
+  # Software tools
+  list_installed_apps:
+    name: "ListInstalledApps"
+    description: "List installed applications"
+    parameters:
+      type: "object"
+      properties:
+        filter:
+          type: "string"
+          description: "Optional filter for app names"
+
+  check_app_version:
+    name: "CheckAppVersion"
+    description: "Check installed version of an application"
+    parameters:
+      type: "object"
+      properties:
+        app_name:
+          type: "string"
+          description: "Name of the application"
+      required:
+        - app_name
+
+  verify_licenses:
+    name: "VerifyLicenses"
+    description: "Verify software licenses and validity"
+    parameters:
+      type: "object"
+      properties:
+        app_name:
+          type: "string"
+          description: "Name of the application to check"
+
+  # Network tools
+  trace_route:
+    name: "TraceRoute"
+    description: "Trace network route to a destination"
+    parameters:
+      type: "object"
+      properties:
+        destination:
+          type: "string"
+          description: "Target hostname or IP"
+      required:
+        - destination
+
+  check_dns:
+    name: "CheckDNS"
+    description: "Check DNS resolution"
+    parameters:
+      type: "object"
+      properties:
+        domain:
+          type: "string"
+          description: "Domain to check DNS for"
+      required:
+        - domain
+
+  # Resolution tools
+  log_ticket:
+    name: "LogTicket"
+    description: "Log the support ticket with resolution"
+    parameters:
+      type: "object"
+      properties:
+        ticket_id:
+          type: "string"
+          description: "Support ticket identifier"
+        resolution:
+          type: "string"
+          description: "The resolution provided"
+
+  send_summary:
+    name: "SendSummary"
+    description: "Send summary to user"
+    parameters:
+      type: "object"
+      properties:
+        summary:
+          type: "string"
+          description: "Summary to send to user"
+
+# Routing configuration - defines how agents hand off to each other
+routing:
+  type: "signal"
+  rules:
+    - from_agent: "router"
+      trigger: "hardware_issue"
+      target_agent: "hardware"
+      description: "Route hardware issues to hardware specialist"
+
+    - from_agent: "router"
+      trigger: "software_issue"
+      target_agent: "software"
+      description: "Route software issues to software specialist"
+
+    - from_agent: "router"
+      trigger: "network_issue"
+      target_agent: "network"
+      description: "Route network issues to network specialist"
+
+    - from_agent: "hardware"
+      trigger: "resolved"
+      target_agent: "resolver"
+      description: "Hardware specialist done, pass to resolver"
+
+    - from_agent: "software"
+      trigger: "resolved"
+      target_agent: "resolver"
+      description: "Software specialist done, pass to resolver"
+
+    - from_agent: "network"
+      trigger: "resolved"
+      target_agent: "resolver"
+      description: "Network specialist done, pass to resolver"
