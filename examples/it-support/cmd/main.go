@@ -18,9 +18,6 @@ func main() {
 	port := flag.Int("port", 8081, "HTTP server port (only used with --server)")
 	flag.Parse()
 
-	// Create the IT Support crew
-	crew := internal.CreateITSupportCrew()
-
 	// Get API key from environment
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -28,8 +25,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create crew executor
-	executor := agenticcore.NewCrewExecutor(crew, apiKey)
+	// Load crew and routing configuration from YAML files
+	// This ensures crew.Routing is properly set for signal-based routing
+	allTools := internal.GetAllITSupportTools()
+	configDir := "config"
+	executor, err := agenticcore.NewCrewExecutorFromConfig(apiKey, configDir, allTools)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing crew: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Check if server mode is requested
 	if *serverMode {

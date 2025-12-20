@@ -15,6 +15,7 @@ type CrewExecutor struct {
 }
 
 // NewCrewExecutor creates a new crew executor
+// Note: crew.Routing MUST be set for signal-based routing to work
 func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 	// Find entry agent (first agent that's not terminal)
 	var entryAgent *Agent
@@ -31,6 +32,48 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 		entryAgent: entryAgent,
 		history:    []Message{},
 	}
+}
+
+// NewCrewExecutorFromConfig creates a crew executor by loading configuration from files
+// This is the recommended way to initialize a crew with routing configuration
+// tools: map of available tools that can be assigned to agents (can be empty map if no tools needed)
+func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool) (*CrewExecutor, error) {
+	// Load crew configuration (includes routing config)
+	crewConfig, err := LoadCrewConfig(fmt.Sprintf("%s/crew.yaml", configDir))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load crew config: %w", err)
+	}
+
+	// Load agent configurations
+	agentDir := fmt.Sprintf("%s/agents", configDir)
+	agentConfigs, err := LoadAgentConfigs(agentDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load agent configs: %w", err)
+	}
+
+	// Create agents from config with provided tools
+	var agents []*Agent
+	for _, agentID := range crewConfig.Agents {
+		if config, exists := agentConfigs[agentID]; exists {
+			agent := CreateAgentFromConfig(config, tools)
+			agents = append(agents, agent)
+		}
+	}
+
+	if len(agents) == 0 {
+		return nil, fmt.Errorf("no agents loaded from configuration")
+	}
+
+	// Create crew with routing configuration
+	crew := &Crew{
+		Agents:      agents,
+		MaxRounds:   crewConfig.Settings.MaxRounds,
+		MaxHandoffs: crewConfig.Settings.MaxHandoffs,
+		Routing:     crewConfig.Routing, // ← Routing loaded from YAML
+	}
+
+	// Create and return executor
+	return NewCrewExecutor(crew, apiKey), nil
 }
 
 // ExecuteStream runs the crew with streaming events
