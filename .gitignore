@@ -1,0 +1,48 @@
+# Environment files (NEVER commit these!)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Go
+bin/
+dist/
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+go.work
+
+# Build artifacts
+coverage.out
+coverage.html
+*.test
+*.prof
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Project-specific
+main
+crewai
+it-support
+go-crewai
+/examples/*/main
+/examples/*/*.out
