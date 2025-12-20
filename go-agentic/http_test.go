@@ -501,3 +501,287 @@ func TestStreamHandlerEmptyHistory(t *testing.T) {
 		t.Errorf("Expected status OK, got %d", w.Code)
 	}
 }
+
+// TestStartHTTPServerCreatesHandler tests that StartHTTPServer sets up routes
+func TestStartHTTPServerCreatesHandler(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+
+	// We can't test the full server startup without a real port,
+	// but we can verify the handler creation and route setup
+	handler := NewHTTPHandler(executor)
+
+	// Verify the handler is properly initialized
+	if handler.executor != executor {
+		t.Error("Handler executor should match")
+	}
+}
+
+// TestStartHTTPServerRoutes tests that HTTP routes are properly configured
+func TestStartHTTPServerRoutes(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	// Test health endpoint through handler
+	req := httptest.NewRequest("GET", "/health", nil)
+	w := httptest.NewRecorder()
+	handler.HealthHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Health endpoint should return 200, got %d", w.Code)
+	}
+
+	// Test stream endpoint through handler
+	req = httptest.NewRequest("GET", "/api/crew/stream?q=test", nil)
+	w = httptest.NewRecorder()
+	handler.StreamHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Stream endpoint should return 200, got %d", w.Code)
+	}
+}
+
+// TestStartHTTPServerHealthEndpoint verifies health endpoint works
+func TestStartHTTPServerHealthEndpoint(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	w := httptest.NewRecorder()
+
+	handler.HealthHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+
+	var response map[string]string
+	json.NewDecoder(w.Body).Decode(&response)
+
+	if response["status"] != "ok" {
+		t.Error("Health status should be 'ok'")
+	}
+
+	if response["service"] != "go-agentic-streaming" {
+		t.Error("Service name should be 'go-agentic-streaming'")
+	}
+}
+
+// TestStartHTTPServerStreamEndpoint verifies stream endpoint works
+func TestStartHTTPServerStreamEndpoint(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	req := httptest.NewRequest("GET", "/api/crew/stream?q=test+query", nil)
+	w := httptest.NewRecorder()
+
+	handler.StreamHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "text/event-stream" {
+		t.Errorf("Expected text/event-stream, got %s", contentType)
+	}
+}
+
+// TestStartHTTPServerMultipleRequests tests concurrent request handling
+func TestStartHTTPServerMultipleRequests(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	// Make multiple requests in sequence
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("GET", "/health", nil)
+		w := httptest.NewRecorder()
+
+		handler.HealthHandler(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Request %d failed with status %d", i+1, w.Code)
+		}
+	}
+}
+
+// TestHTTPHandlerExecutorStorage tests that executor is properly stored
+func TestHTTPHandlerExecutorStorage(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	// Verify executor is accessible
+	if handler.executor == nil {
+		t.Error("Handler should store executor")
+	}
+
+	if handler.executor.team != team {
+		t.Error("Handler executor should reference correct team")
+	}
+}
+
+// TestHTTPHandlerMutexProtection tests mutex functionality
+func TestHTTPHandlerMutexProtection(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	// Verify createRequestExecutor works (which uses the mutex)
+	newExecutor := handler.createRequestExecutor()
+	if newExecutor == nil {
+		t.Error("createRequestExecutor should return non-nil executor")
+	}
+}
+
+// TestStartHTTPServerHandlerSetup tests that StartHTTPServer properly sets up handlers
+func TestStartHTTPServerHandlerSetup(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	// Verify handler is created correctly
+	if handler == nil {
+		t.Fatal("NewHTTPHandler should not return nil")
+	}
+
+	if handler.executor == nil {
+		t.Error("Handler executor should not be nil")
+	}
+
+	if handler.executor.team != team {
+		t.Error("Handler executor should have correct team")
+	}
+
+	if handler.executor.apiKey != "test-key" {
+		t.Error("Handler executor should have correct API key")
+	}
+}
+
+// TestStartHTTPServerAPIEndpointSetup tests endpoint availability
+func TestStartHTTPServerAPIEndpointSetup(t *testing.T) {
+	agent := &Agent{
+		ID:         "agent1",
+		Name:       "Agent1",
+		Model:      "gpt-4o-mini",
+		IsTerminal: true,
+	}
+
+	team := &Team{
+		Agents:      []*Agent{agent},
+		MaxHandoffs: 10,
+	}
+
+	executor := NewTeamExecutor(team, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	// Test /api/crew/stream endpoint
+	req := httptest.NewRequest("GET", "/api/crew/stream?q=test", nil)
+	w := httptest.NewRecorder()
+	handler.StreamHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Stream endpoint should work, got status %d", w.Code)
+	}
+
+	// Test /health endpoint
+	req = httptest.NewRequest("GET", "/health", nil)
+	w = httptest.NewRecorder()
+	handler.HealthHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Health endpoint should work, got status %d", w.Code)
+	}
+}

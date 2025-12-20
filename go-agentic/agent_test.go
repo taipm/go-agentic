@@ -812,3 +812,156 @@ func TestErrorContextPreservation(t *testing.T) {
 		t.Error("Wrapped error should include suggested action")
 	}
 }
+
+// TestBuildOpenAIMessagesBasic tests basic message construction
+func TestBuildOpenAIMessagesBasic(t *testing.T) {
+	agent := &Agent{
+		ID:    "test-agent",
+		Name:  "TestAgent",
+		Role:  "Helper",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	history := []Message{}
+	input := "Hello, how are you?"
+	systemPrompt := "You are a helpful assistant"
+
+	messages := buildOpenAIMessages(agent, input, history, systemPrompt)
+
+	// Should have exactly 2 messages: system + user input
+	if len(messages) != 2 {
+		t.Errorf("Expected 2 messages, got %d", len(messages))
+	}
+}
+
+// TestBuildOpenAIMessagesWithHistory tests message construction with history
+func TestBuildOpenAIMessagesWithHistory(t *testing.T) {
+	agent := &Agent{
+		ID:    "test-agent",
+		Name:  "TestAgent",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	history := []Message{
+		{Role: "user", Content: "Previous question"},
+		{Role: "assistant", Content: "Previous answer"},
+	}
+	input := "New question"
+	systemPrompt := "You are helpful"
+
+	messages := buildOpenAIMessages(agent, input, history, systemPrompt)
+
+	// Should have: system + 2 history + user input = 4 messages
+	if len(messages) != 4 {
+		t.Errorf("Expected 4 messages with history, got %d", len(messages))
+	}
+}
+
+// TestBuildOpenAIMessagesEmptyHistory tests with no history
+func TestBuildOpenAIMessagesEmptyHistory(t *testing.T) {
+	agent := &Agent{
+		ID:    "agent",
+		Name:  "Agent",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	messages := buildOpenAIMessages(agent, "Test input", []Message{}, "System prompt")
+
+	// Should have: system + user input = 2 messages
+	if len(messages) != 2 {
+		t.Errorf("Expected 2 messages, got %d", len(messages))
+	}
+}
+
+// TestBuildOpenAIMessagesMultipleHistory tests with multiple history items
+func TestBuildOpenAIMessagesMultipleHistory(t *testing.T) {
+	agent := &Agent{
+		ID:    "agent",
+		Name:  "Agent",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	history := []Message{
+		{Role: "user", Content: "Q1"},
+		{Role: "assistant", Content: "A1"},
+		{Role: "user", Content: "Q2"},
+		{Role: "assistant", Content: "A2"},
+	}
+
+	messages := buildOpenAIMessages(agent, "Q3", history, "System")
+
+	// Should have: system + 4 history + user = 6 messages
+	if len(messages) != 6 {
+		t.Errorf("Expected 6 messages, got %d", len(messages))
+	}
+}
+
+// TestBuildOpenAIMessagesSystemMessageInHistory tests system messages in history
+func TestBuildOpenAIMessagesSystemMessageInHistory(t *testing.T) {
+	agent := &Agent{
+		ID:    "agent",
+		Name:  "Agent",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	history := []Message{
+		{Role: "user", Content: "Question"},
+		{Role: "system", Content: "Tool result"},
+	}
+
+	messages := buildOpenAIMessages(agent, "Next question", history, "System")
+
+	// Should have: system + 2 history + user = 4 messages
+	if len(messages) != 4 {
+		t.Errorf("Expected 4 messages with system message in history, got %d", len(messages))
+	}
+}
+
+// TestBuildOpenAIMessagesInvalidRole tests unknown role handling
+func TestBuildOpenAIMessagesInvalidRole(t *testing.T) {
+	agent := &Agent{
+		ID:    "agent",
+		Name:  "Agent",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	history := []Message{
+		{Role: "unknown_role", Content: "Some content"},
+	}
+
+	// Should not panic with unknown role
+	messages := buildOpenAIMessages(agent, "Input", history, "System")
+
+	// Should gracefully ignore unknown role
+	if len(messages) < 2 {
+		t.Error("Should handle unknown role gracefully")
+	}
+}
+
+// TestBuildOpenAIMessagesEmptyStrings tests with empty content
+func TestBuildOpenAIMessagesEmptyStrings(t *testing.T) {
+	agent := &Agent{
+		ID:    "agent",
+		Name:  "Agent",
+		Model: "gpt-4o",
+		Tools: []*Tool{},
+	}
+
+	history := []Message{
+		{Role: "user", Content: ""},
+		{Role: "assistant", Content: ""},
+	}
+
+	// Should handle empty strings without panic
+	messages := buildOpenAIMessages(agent, "", history, "")
+
+	if len(messages) == 0 {
+		t.Error("Should create messages even with empty content")
+	}
+}
