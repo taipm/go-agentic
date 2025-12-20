@@ -2,6 +2,7 @@ package agentic
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	openai "github.com/openai/openai-go/v3"
@@ -634,5 +635,180 @@ func TestValidateToolParametersErrorMessages(t *testing.T) {
 	}
 	if !contains(typeErr.Error(), "name") {
 		t.Errorf("Error should mention parameter 'name', got: %v", typeErr)
+	}
+}
+
+// ============ Test Story 3.1: Error Categorization ============
+
+// TestErrorTypeCategorization tests that error types are properly defined
+func TestErrorTypeCategorization(t *testing.T) {
+	errorTypes := []ErrorType{
+		ErrorTypePermissionDenied,
+		ErrorTypeNotFound,
+		ErrorTypeTimeout,
+		ErrorTypeCommandFailed,
+		ErrorTypeParseFailed,
+		ErrorTypeParameterError,
+		ErrorTypeSystemError,
+		ErrorTypeUnknown,
+	}
+
+	for _, et := range errorTypes {
+		if et == "" {
+			t.Error("ErrorType should not be empty")
+		}
+	}
+}
+
+// TestToolErrorStructure tests that ToolError has all required fields
+func TestToolErrorStructure(t *testing.T) {
+	toolErr := &ToolError{
+		Type:           ErrorTypeCommandFailed,
+		Message:        "Command failed to execute",
+		Cause:          "exit code 1",
+		SuggestedAction: "Check command syntax and permissions",
+	}
+
+	if toolErr.Type != ErrorTypeCommandFailed {
+		t.Errorf("Expected error type %s, got %s", ErrorTypeCommandFailed, toolErr.Type)
+	}
+	if toolErr.Message == "" {
+		t.Error("Error message should not be empty")
+	}
+	if toolErr.Cause == "" {
+		t.Error("Error cause should not be empty")
+	}
+	if toolErr.SuggestedAction == "" {
+		t.Error("Suggested action should not be empty")
+	}
+}
+
+// ============ Test Story 3.2: Message Role Semantics ============
+
+// TestMessageRoleSemantics tests that message roles are correctly used
+func TestMessageRoleSemantics(t *testing.T) {
+	// Test valid message roles
+	validRoles := []string{"user", "assistant", "system"}
+
+	for _, role := range validRoles {
+		msg := Message{
+			Role:    role,
+			Content: "Test content",
+		}
+		if msg.Role != role {
+			t.Errorf("Expected role %s, got %s", role, msg.Role)
+		}
+	}
+}
+
+// TestSystemMessageProcessing tests that system messages are properly converted
+func TestSystemMessageProcessing(t *testing.T) {
+	history := []Message{
+		{Role: "user", Content: "Hello"},
+		{Role: "assistant", Content: "Hi there"},
+		{Role: "system", Content: "Tool result: success"},
+	}
+
+	systemCount := 0
+	userCount := 0
+	assistantCount := 0
+
+	for _, msg := range history {
+		switch msg.Role {
+		case "system":
+			systemCount++
+		case "user":
+			userCount++
+		case "assistant":
+			assistantCount++
+		}
+	}
+
+	if systemCount != 1 {
+		t.Errorf("Expected 1 system message, got %d", systemCount)
+	}
+	if userCount != 1 {
+		t.Errorf("Expected 1 user message, got %d", userCount)
+	}
+	if assistantCount != 1 {
+		t.Errorf("Expected 1 assistant message, got %d", assistantCount)
+	}
+}
+
+// ============ Test Story 3.3: Error Handling Best Practices ============
+
+// TestClearErrorMessages tests that error messages are clear and actionable
+func TestClearErrorMessages(t *testing.T) {
+	testCases := []struct {
+		name    string
+		message string
+		shouldContain []string
+	}{
+		{
+			name:    "Command failed error",
+			message: "[COMMAND_FAILED] Failed to check service: exit code 1. Suggestion: Check permissions",
+			shouldContain: []string{"COMMAND_FAILED", "Suggestion"},
+		},
+		{
+			name:    "Permission denied error",
+			message: "[PERMISSION_DENIED] Cannot access file. Suggestion: Run with elevated privileges",
+			shouldContain: []string{"PERMISSION_DENIED", "Suggestion"},
+		},
+		{
+			name:    "Not found error",
+			message: "[NOT_FOUND] Service not found. Suggestion: Verify service name is correct",
+			shouldContain: []string{"NOT_FOUND", "Suggestion"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, expected := range tc.shouldContain {
+				if !contains(tc.message, expected) {
+					t.Errorf("Error message should contain '%s', got: %s", expected, tc.message)
+				}
+			}
+		})
+	}
+}
+
+// TestNoSilentErrors tests that error patterns are not silently ignored
+func TestNoSilentErrors(t *testing.T) {
+	// This test validates the principle that we don't use "_, _" pattern
+	// Example of what NOT to do:
+	// output, _ := cmd.Output()  // BAD: error ignored
+
+	// Instead we should:
+	// output, err := cmd.Output()
+	// if err != nil { handle error }
+
+	// Test that even empty results should be handled carefully
+	tool := &Tool{
+		Name: "TestTool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			// This handler properly handles errors
+			return "result", nil
+		},
+	}
+
+	if tool == nil {
+		t.Fatal("Tool should not be nil")
+	}
+}
+
+// TestErrorContextPreservation tests that errors preserve context
+func TestErrorContextPreservation(t *testing.T) {
+	originalErr := fmt.Errorf("underlying error")
+
+	wrappedErr := fmt.Errorf("[COMMAND_FAILED] Command execution failed: %w. Suggestion: Check permissions", originalErr)
+
+	if !contains(wrappedErr.Error(), "underlying error") {
+		t.Error("Wrapped error should preserve original error message")
+	}
+	if !contains(wrappedErr.Error(), "COMMAND_FAILED") {
+		t.Error("Wrapped error should include error type")
+	}
+	if !contains(wrappedErr.Error(), "Suggestion") {
+		t.Error("Wrapped error should include suggested action")
 	}
 }

@@ -127,6 +127,9 @@ func buildOpenAIMessages(agent *Agent, input string, history []Message, systemPr
 			messages = append(messages, openai.UserMessage(msg.Content))
 		case "assistant":
 			messages = append(messages, openai.AssistantMessage(msg.Content))
+		case "system":
+			// Tool results and other system messages
+			messages = append(messages, openai.SystemMessage(msg.Content))
 		}
 	}
 

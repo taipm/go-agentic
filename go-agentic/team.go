@@ -98,9 +98,9 @@ func (te *TeamExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			// Format results for feedback
 			resultText := formatToolResults(toolResults)
 
-			// Add results to history
+			// Add results to history with "system" role (tool results are system feedback)
 			te.history = append(te.history, Message{
-				Role:    "user",
+				Role:    "system",
 				Content: resultText,
 			})
 
@@ -188,9 +188,9 @@ func (te *TeamExecutor) Execute(ctx context.Context, input string) (*TeamRespons
 			resultText := formatToolResults(toolResults)
 			fmt.Println(resultText)
 
-			// Add results to history
+			// Add results to history with "system" role (tool results are system feedback)
 			te.history = append(te.history, Message{
-				Role:    "user",
+				Role:    "system",
 				Content: resultText,
 			})
 

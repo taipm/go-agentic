@@ -367,7 +367,11 @@ func checkServiceStatusHandler(ctx context.Context, args map[string]interface{})
 
 	if runtime.GOOS == "darwin" {
 		cmd := exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("launchctl list | grep %s", service))
-		output, _ := cmd.Output()
+		output, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("[COMMAND_FAILED] Failed to check service status on macOS: %w. "+
+				"Suggestion: Run with elevated privileges (sudo) or check if launchctl is available", err)
+		}
 		if len(output) > 0 {
 			return fmt.Sprintf("Service %s is running", service), nil
 		}
@@ -375,7 +379,11 @@ func checkServiceStatusHandler(ctx context.Context, args map[string]interface{})
 	}
 
 	cmd := exec.CommandContext(ctx, "systemctl", "is-active", service)
-	output, _ := cmd.Output()
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("[COMMAND_FAILED] Failed to check service status: %w. "+
+			"Suggestion: Run with elevated privileges (sudo) or check if systemctl is available", err)
+	}
 
 	if strings.Contains(strings.TrimSpace(string(output)), "active") {
 		return fmt.Sprintf("Service %s is running", service), nil

@@ -48,6 +48,29 @@ type ToolCall struct {
 	Arguments map[string]interface{}
 }
 
+// ErrorType categorizes different types of errors for better diagnostics
+type ErrorType string
+
+const (
+	// Command execution errors
+	ErrorTypePermissionDenied ErrorType = "PERMISSION_DENIED"
+	ErrorTypeNotFound         ErrorType = "NOT_FOUND"
+	ErrorTypeTimeout          ErrorType = "TIMEOUT"
+	ErrorTypeCommandFailed    ErrorType = "COMMAND_FAILED"
+	ErrorTypeParseFailed      ErrorType = "PARSE_FAILED"
+	ErrorTypeParameterError   ErrorType = "PARAMETER_ERROR"
+	ErrorTypeSystemError      ErrorType = "SYSTEM_ERROR"
+	ErrorTypeUnknown          ErrorType = "UNKNOWN"
+)
+
+// ToolError represents a structured error from tool execution
+type ToolError struct {
+	Type           ErrorType // Error classification
+	Message        string    // Human-readable error message
+	Cause          string    // Underlying error or reason
+	SuggestedAction string    // How to fix/resolve the error
+}
+
 // AgentResponse represents a response from an agent
 type AgentResponse struct {
 	AgentID   string
@@ -124,7 +147,7 @@ type AgentConfig struct {
 	Model        string                 `yaml:"model"`
 	SystemPrompt string                 `yaml:"system_prompt"`
 	Tools        []string               `yaml:"tools"`
-	Temperature  float64                `yaml:"temperature"`
+	Temperature  *float64               `yaml:"temperature"`
 	IsTerminal   bool                   `yaml:"is_terminal"`
 	HandoffTo    []string               `yaml:"handoff_to"`
 	Config       map[string]interface{} `yaml:"config"`
