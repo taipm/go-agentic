@@ -107,6 +107,8 @@ go mod tidy
 
 ### Running the Application
 
+#### CLI Mode (Interactive)
+
 ```bash
 export OPENAI_API_KEY=your_key_here
 go run ./cmd/main.go
@@ -114,7 +116,7 @@ go run ./cmd/main.go
 
 You'll see:
 ```
-=== IT Support System ===
+=== IT Support System (CLI) ===
 Describe your IT issue:
 ```
 
@@ -123,6 +125,30 @@ Enter your IT issue description. Examples:
 - "Check localhost" (Diagnose local system)
 - "Server 192.168.1.50 không ping được" (Server not responding)
 - "CPU cao" (High CPU usage)
+
+#### Web Server Mode with Real-time Streaming
+
+```bash
+export OPENAI_API_KEY=your_key_here
+go run ./cmd/main.go --server --port 8081
+```
+
+Then open browser to:
+
+- **Web Client**: [http://localhost:8081](http://localhost:8081)
+- **SSE Endpoint**: [http://localhost:8081/api/crew/stream](http://localhost:8081/api/crew/stream)
+
+The web client includes:
+
+- **Real-time SSE streaming** of agent interactions
+- **Preset scenarios** for quick testing (Máy chậm, Không Internet, Network lỗi, Disk đầy, RAM cao)
+- **Conversation history** management
+- **Live event visualization** with color-coded event types
+
+**Flags:**
+
+- `--server`: Enable HTTP server mode (default: CLI mode)
+- `--port N`: Set server port (default: 8081)
 
 ## Usage Examples
 
@@ -244,6 +270,6 @@ Part of the go-agentic project. See LICENSE for details.
 
 ## Related Files
 
-- Core Library: [../../go-crewai/README.md](../../go-crewai/README.md)
+- Core Library: [../../core/README.md](../../core/README.md)
 - Examples Overview: [../README.md](../README.md)
 - Main README: [../../README.md](../../README.md)
