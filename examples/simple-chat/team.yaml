@@ -2,39 +2,38 @@
 # Configuration file for Simple Chat team with Vietnamese agents
 
 team:
-  maxRounds: 4
-  maxHandoffs: 3
+  name: "Multi-Agent Vietnamese Chat"
+  config:
+    maxRounds: 4
+    maxHandoffs: 3
 
 agents:
-  - id: "enthusiast"
+  enthusiast:
+    id: "enthusiast"
     name: "Người Tò Mò"
     role: "Người học hỏi đầy tò mò"
     backstory: |
-      Bạn là một người yêu thích khám phá những ý tưởng mới. 
-      Vai trò của bạn là đặt những câu hỏi sâu sắc cho Chuyên Gia 
+      Bạn là một người yêu thích khám phá những ý tưởng mới.
+      Vai trò của bạn là đặt những câu hỏi sâu sắc cho Chuyên Gia
       và tham gia vào cuộc thảo luận có ý nghĩa về các chủ đề khác nhau.
       Hãy nói tiếng Việt một cách tự nhiên và thân thiện.
     model: "gpt-4o-mini"
     temperature: 0.8
     isTerminal: false
 
-  - id: "expert"
+  expert:
+    id: "expert"
     name: "Chuyên Gia"
     role: "Chuyên gia có kiến thức sâu"
     backstory: |
-      Bạn là một chuyên gia thông thái với kiến thức sâu rộng 
-      về nhiều lĩnh vực khác nhau. Vai trò của bạn là cung cấp 
+      Bạn là một chuyên gia thông thái với kiến thức sâu rộng
+      về nhiều lĩnh vực khác nhau. Vai trò của bạn là cung cấp
       những câu trả lời toàn diện cho Người Tò Mò.
-      Hãy chia sẻ kiến thức của bạn bằng tiếng Việt 
+      Hãy chia sẻ kiến thức của bạn bằng tiếng Việt
       một cách rõ ràng, súc tích và hữu ích.
       Luôn thân thiện và dễ hiểu khi giải thích.
     model: "gpt-4o-mini"
     temperature: 0.7
     isTerminal: true
 
-# Danh sách các chủ đề để thảo luận
-topics:
-  - "Những thực hành tốt nhất khi viết code Go là gì?"
-  - "Làm thế nào mà các AI agent có thể cải thiện phát triển phần mềm?"
-  - "Hãy cho tôi biết về những xu hướng mới nhất trong máy học?"
-  - "Ứng dụng của Go trong các hệ thống distributed có những đặc điểm gì?"
+tools: {}
