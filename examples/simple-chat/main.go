@@ -19,12 +19,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load config from crew.yaml
+	// Load config from team.yaml
 	var cfg struct {
-		Crew struct {
+		Team struct {
 			MaxRounds   int `yaml:"maxRounds"`
 			MaxHandoffs int `yaml:"maxHandoffs"`
-		} `yaml:"crew"`
+		} `yaml:"team"`
 		Agents []struct {
 			ID          string  `yaml:"id"`
 			Name        string  `yaml:"name"`
@@ -37,7 +37,7 @@ func main() {
 		Topics []string `yaml:"topics"`
 	}
 
-	data, _ := os.ReadFile("crew.yaml")
+	data, _ := os.ReadFile("team.yaml")
 	yaml.Unmarshal(data, &cfg)
 
 	// Create agents from config
@@ -50,9 +50,9 @@ func main() {
 		}
 	}
 
-	// Create crew and executor
-	crew := &agentic.Crew{Agents: agents, MaxRounds: cfg.Crew.MaxRounds, MaxHandoffs: cfg.Crew.MaxHandoffs}
-	executor := agentic.NewTeamExecutor(crew, key)
+	// Create team and executor
+	team := &agentic.Team{Agents: agents, MaxRounds: cfg.Team.MaxRounds, MaxHandoffs: cfg.Team.MaxHandoffs}
+	executor := agentic.NewTeamExecutor(team, key)
 
 	// Run discussions
 	fmt.Println("\n🤖 Hệ Thống Thảo Luận Multi-Agent\n" + strings.Repeat("=", 50))
