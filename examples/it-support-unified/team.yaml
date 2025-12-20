@@ -1,39 +1,23 @@
-# IT Support Team - Unified Configuration
-# Single YAML file replacing multiple config files
-# Demonstrates simplified configuration approach with fluent builder patterns
+# IT Support Team - Simplified Configuration
+# Demonstrates 2-agent support system with Phase 3 routing
 
 team:
   name: "IT Support Team"
   config:
-    maxRounds: 10
-    maxHandoffs: 3
+    maxRounds: 8
+    maxHandoffs: 2
 
 agents:
-  # Router agent - entry point that directs requests
-  router:
-    id: "router"
-    name: "Support Router"
-    role: "Triage and route IT support requests"
+  # Initial responder - handles ticket triage and diagnostics
+  responder:
+    id: "responder"
+    name: "Support Responder"
+    role: "Diagnose IT support issues and gather information"
     backstory: |
-      You are an experienced IT support coordinator.
-      Your responsibility is to understand the nature of IT issues
-      and route them to the appropriate specialist team member.
-      Be professional, empathetic, and efficient in your triage process.
-    model: "gpt-4o-mini"
-    temperature: 0.5
-    isTerminal: false
-    tools: []
-
-  # Hardware specialist
-  hardware:
-    id: "hardware"
-    name: "Hardware Specialist"
-    role: "Diagnose and resolve hardware-related issues"
-    backstory: |
-      You are an expert in computer hardware troubleshooting.
-      You have deep knowledge of CPUs, RAM, storage devices,
-      peripherals, and network hardware. You provide clear diagnostic
-      steps and practical solutions to hardware problems.
+      You are an experienced IT support specialist.
+      Your role is to quickly understand the issue, perform diagnostics,
+      and provide initial guidance or escalate to the resolver if needed.
+      Use available tools to gather system information and test connectivity.
     model: "gpt-4o-mini"
     temperature: 0.6
     isTerminal: false
@@ -41,73 +25,36 @@ agents:
       - get_system_info
       - ping_host
       - check_disk_space
-
-  # Software specialist
-  software:
-    id: "software"
-    name: "Software Specialist"
-    role: "Handle software installation, updates, and compatibility issues"
-    backstory: |
-      You are a software specialist with extensive experience
-      in application installation, configuration, and troubleshooting.
-      You understand dependency management, version compatibility,
-      and licensing issues. You provide step-by-step guidance.
-    model: "gpt-4o-mini"
-    temperature: 0.6
-    isTerminal: false
-    tools:
       - list_installed_apps
       - check_app_version
-      - verify_licenses
-
-  # Network specialist
-  network:
-    id: "network"
-    name: "Network Specialist"
-    role: "Troubleshoot network connectivity and performance"
-    backstory: |
-      You are a network troubleshooting expert with knowledge of
-      TCP/IP, DNS, VPN, firewalls, and network diagnostics.
-      You guide users through connectivity issues with clear,
-      actionable steps. You're patient and detail-oriented.
-    model: "gpt-4o-mini"
-    temperature: 0.6
-    isTerminal: false
-    tools:
-      - ping_host
       - trace_route
       - check_dns
 
-  # Resolution agent - provides final summary
+  # Resolution specialist - provides final solution
   resolver:
     id: "resolver"
     name: "Support Resolver"
-    role: "Summarize findings and provide final resolution"
+    role: "Provide final resolution and document the ticket"
     backstory: |
-      You are a senior IT support specialist responsible for
-      consolidating diagnostic information and providing clear,
-      actionable resolutions to end users. You ensure all solutions
-      are documented and user-friendly. You're the final step
-      in our support process.
+      You are a senior IT support specialist who consolidates diagnostic
+      information and provides clear, actionable resolutions to end users.
+      You ensure solutions are well-documented, practical, and user-friendly.
     model: "gpt-4o-mini"
     temperature: 0.5
     isTerminal: true
     tools:
       - log_ticket
       - send_summary
+      - verify_licenses
 
 # Shared tools - centralized definition
 tools:
-  # System information tools
   get_system_info:
     name: "GetSystemInfo"
     description: "Retrieve system hardware and OS information"
     parameters:
       type: "object"
-      properties:
-        details:
-          type: "string"
-          description: "Type of info (cpu, memory, disk, os)"
+      properties: {}
 
   ping_host:
     name: "PingHost"
@@ -118,8 +65,6 @@ tools:
         target:
           type: "string"
           description: "Target hostname or IP to ping"
-      required:
-        - target
 
   check_disk_space:
     name: "CheckDiskSpace"
@@ -128,16 +73,12 @@ tools:
       type: "object"
       properties: {}
 
-  # Software tools
   list_installed_apps:
     name: "ListInstalledApps"
     description: "List installed applications"
     parameters:
       type: "object"
-      properties:
-        filter:
-          type: "string"
-          description: "Optional filter for app names"
+      properties: {}
 
   check_app_version:
     name: "CheckAppVersion"
@@ -148,8 +89,6 @@ tools:
         app_name:
           type: "string"
           description: "Name of the application"
-      required:
-        - app_name
 
   verify_licenses:
     name: "VerifyLicenses"
@@ -159,9 +98,8 @@ tools:
       properties:
         app_name:
           type: "string"
-          description: "Name of the application to check"
+          description: "Name of the application"
 
-  # Network tools
   trace_route:
     name: "TraceRoute"
     description: "Trace network route to a destination"
@@ -171,8 +109,6 @@ tools:
         destination:
           type: "string"
           description: "Target hostname or IP"
-      required:
-        - destination
 
   check_dns:
     name: "CheckDNS"
@@ -183,63 +119,17 @@ tools:
         domain:
           type: "string"
           description: "Domain to check DNS for"
-      required:
-        - domain
 
-  # Resolution tools
   log_ticket:
     name: "LogTicket"
     description: "Log the support ticket with resolution"
     parameters:
       type: "object"
-      properties:
-        ticket_id:
-          type: "string"
-          description: "Support ticket identifier"
-        resolution:
-          type: "string"
-          description: "The resolution provided"
+      properties: {}
 
   send_summary:
     name: "SendSummary"
     description: "Send summary to user"
     parameters:
       type: "object"
-      properties:
-        summary:
-          type: "string"
-          description: "Summary to send to user"
-
-# Routing configuration - defines how agents hand off to each other
-routing:
-  type: "signal"
-  rules:
-    - from_agent: "router"
-      trigger: "hardware_issue"
-      target_agent: "hardware"
-      description: "Route hardware issues to hardware specialist"
-
-    - from_agent: "router"
-      trigger: "software_issue"
-      target_agent: "software"
-      description: "Route software issues to software specialist"
-
-    - from_agent: "router"
-      trigger: "network_issue"
-      target_agent: "network"
-      description: "Route network issues to network specialist"
-
-    - from_agent: "hardware"
-      trigger: "resolved"
-      target_agent: "resolver"
-      description: "Hardware specialist done, pass to resolver"
-
-    - from_agent: "software"
-      trigger: "resolved"
-      target_agent: "resolver"
-      description: "Software specialist done, pass to resolver"
-
-    - from_agent: "network"
-      trigger: "resolved"
-      target_agent: "resolver"
-      description: "Network specialist done, pass to resolver"
+      properties: {}
