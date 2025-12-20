@@ -1,342 +1,429 @@
-# Getting Started with Simple Chat Example
+# Getting Started with Simple Chat Example / Bắt Đầu với Ví Dụ Chat Đơn Giản
 
-This guide will help you run the simplest go-agentic example in just 5 minutes.
+This guide will help you run the simplest go-agentic example with **YAML configuration** and **Vietnamese agents** in just 5 minutes.
 
-## Prerequisites
+Hướng dẫn này sẽ giúp bạn chạy ví dụ go-agentic đơn giản nhất với **cấu hình YAML** và **các agent nói tiếng Việt** chỉ trong 5 phút.
+
+## Prerequisites / Yêu Cầu
 
 - Go 1.25 or later
-- OpenAI API key (get one from https://platform.openai.com/account/api-keys)
+- OpenAI API key (from https://platform.openai.com/account/api-keys)
 
-## Quick Start (5 minutes)
+## Quick Start (5 minutes) / Bắt Đầu Nhanh (5 phút)
 
-### Step 1: Get Your API Key
+### Step 1: Get Your API Key / Lấy API Key
 
 1. Go to https://platform.openai.com/account/api-keys
 2. Create a new API key (or use an existing one)
 3. Copy it to clipboard
 
-### Step 2: Create .env File
+### Step 2: Create .env File / Tạo File .env
 
 ```bash
-# From the simple-chat directory
 cp .env.example .env
 ```
 
-Then open `.env` and replace `sk-proj-your-api-key-here` with your actual API key:
+Open `.env` and add your API key:
 
 ```env
-OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxx
+OPENAI_API_KEY=sk-proj-your-actual-key-here
 ```
 
-**⚠️ Security Warning:**
-- `.env` is ignored by git (see `.gitignore`)
-- Never commit your actual API key!
-- Never share it in pull requests or documentation
-
-### Step 3: Install Dependencies
+### Step 3: Install Dependencies / Cài Đặt Phụ Thuộc
 
 ```bash
 go mod download
 ```
 
-### Step 4: Run the Example
+### Step 4: Run the Example / Chạy Ví Dụ
 
 ```bash
 go run main.go
 ```
 
-## Expected Output
+## Expected Output / Kết Quả Mong Đợi
 
 ```
-🤖 Simple Multi-Agent Chat System
+🤖 Hệ Thống Thảo Luận Multi-Agent Đơn Giản
 ==================================================
 
-📌 Topic: What are the best practices for writing Go code?
+📌 Chủ đề 1: Những thực hành tốt nhất khi viết code Go là gì?
 --------------------------------------------------
-✅ Final Response:
-[Expert's comprehensive answer...]
 
-📌 Topic: How can AI agents improve software development?
---------------------------------------------------
-✅ Final Response:
-[Expert's thoughts on AI agents...]
+[Người Tò Mò]: Khi viết code Go, những thực hành tốt nhất là gì?
 
-📌 Topic: Tell me about the latest trends in machine learning
---------------------------------------------------
-✅ Final Response:
-[Expert's insights on ML trends...]
+[Chuyên Gia]: Có rất nhiều thực hành tốt nhất mà bạn nên biết...
+
+✅ Kết Quả Cuối Cùng:
+[Final response from Expert in Vietnamese]
+
+...
 ```
 
-## What's Happening?
+## Understanding the Flow / Hiểu Cách Hoạt Động
 
-The example creates a crew with 2 agents that automatically have a conversation:
+The example creates a crew with 2 Vietnamese-speaking agents:
 
-1. **Enthusiast** (first agent)
-   - Asks insightful questions about the topic
-   - Keeps the conversation going
-   - Can pass to the Expert agent
+1. **Người Tò Mò** (Enthusiast)
+   - Asks insightful questions
+   - Explores ideas
+   - Can pass to Expert
 
-2. **Expert** (second agent)
+2. **Chuyên Gia** (Expert)
    - Provides knowledgeable answers
-   - Gives the final response
-   - Terminal agent (stops the conversation)
+   - Gives final response
+   - Terminal agent (stops conversation)
 
-The conversation flows like this:
+**Conversation Flow:**
 
 ```
-Enthusiast: "Great topic! I'm curious about..."
-     ↓
-Expert: "Good question! Here's what I know..."
-     ↓
-Enthusiast: "Can you tell me more about..."
-     ↓
-Expert: "Absolutely! In detail, this means..."
-     ↓ (End - Expert is terminal agent)
+Người Tò Mò: "Hãy cho tôi biết về..."
+    ↓
+Chuyên Gia: "Tất nhiên! Đây là những điều bạn cần biết..."
+    ↓
+Người Tò Mò: "Bạn có thể giải thích thêm về..."
+    ↓
+Chuyên Gia: "Chắc chắn! Chi tiết như sau..."
+    ↓ (End - Expert is terminal)
 ```
 
-## Troubleshooting
+## YAML Configuration / Cấu Hình YAML
+
+The crew is configured in `crew.yaml`:
+
+```yaml
+crew:
+  maxRounds: 4          # Max conversation rounds
+  maxHandoffs: 3        # Max handoffs between agents
+
+agents:
+  - id: "enthusiast"
+    name: "Người Tò Mò"
+    role: "Người học hỏi đầy tò mò"
+    backstory: |
+      Bạn là một người yêu thích khám phá những ý tưởng mới...
+    model: "gpt-4o-mini"
+    temperature: 0.8
+    isTerminal: false
+
+  - id: "expert"
+    name: "Chuyên Gia"
+    role: "Chuyên gia có kiến thức sâu"
+    backstory: |
+      Bạn là một chuyên gia thông thái...
+    model: "gpt-4o-mini"
+    temperature: 0.7
+    isTerminal: true
+
+topics:
+  - "Những thực hành tốt nhất khi viết code Go là gì?"
+  - "Làm thế nào mà các AI agent có thể cải thiện phát triển phần mềm?"
+  - "..."
+```
+
+## Key Features of YAML Config / Các Tính Năng Chính của Cấu Hình YAML
+
+✅ **No Recompiling Required** - Change config without rebuilding
+✅ **Easy to Customize** - Non-developers can modify topics
+✅ **Flexible** - Add agents, change parameters easily
+✅ **Clear Structure** - All config in one readable file
+✅ **Vietnamese Support** - Full UTF-8 support for Vietnamese text
+
+## Customization / Tùy Chỉnh
+
+### Add More Topics / Thêm Chủ Đề
+
+Edit `crew.yaml`:
+
+```yaml
+topics:
+  - "Chủ đề của bạn ở đây"
+  - "Một chủ đề khác"
+  - "Và thêm nữa..."
+```
+
+### Change Agent Names and Personalities / Thay Đổi Tên và Tính Cách
+
+Edit `crew.yaml`:
+
+```yaml
+agents:
+  - id: "expert"
+    name: "Tiến Sĩ Thông Minh"
+    role: "Một chuyên gia về công nghệ"
+    backstory: "Bạn là một tiến sĩ với kinh nghiệm 20 năm..."
+```
+
+### Longer Conversations / Cuộc Trò Chuyện Dài Hơn
+
+Edit `crew.yaml`:
+
+```yaml
+crew:
+  maxRounds: 6        # More rounds
+  maxHandoffs: 4      # More handoffs
+```
+
+### Different Models / Model Khác
+
+Edit `crew.yaml`:
+
+```yaml
+agents:
+  - id: "expert"
+    model: "gpt-4o"           # More capable
+    # or
+    model: "gpt-3.5-turbo"    # Cheaper
+```
+
+### More Creative Responses / Phản Hồi Sáng Tạo Hơn
+
+Edit `crew.yaml`:
+
+```yaml
+agents:
+  - id: "enthusiast"
+    temperature: 0.9    # Higher = more creative (0.0-1.0)
+```
+
+## How the Code Works / Cách Code Hoạt Động
+
+### main.go Structure:
+
+**Step 1: Load Environment**
+```go
+loadEnvFile()  // Reads .env file
+apiKey := os.Getenv("OPENAI_API_KEY")
+```
+
+**Step 2: Load Configuration**
+```go
+config, err := loadConfig("crew.yaml")  // Parse YAML
+```
+
+**Step 3: Create Crew from Config**
+```go
+crew := createCrewFromConfig(config)  // Convert YAML to Agent objects
+```
+
+**Step 4: Run Conversations**
+```go
+executor := agentic.NewTeamExecutor(crew, apiKey)
+response, err := executor.Execute(ctx, topic)  // Each topic
+```
+
+## Troubleshooting / Khắc Phục Sự Cố
 
 ### Problem: "OPENAI_API_KEY environment variable not set"
 
-**Solution:** Make sure you've created the `.env` file with your actual API key:
-
+**Solution:**
 ```bash
-# Check if .env exists
-ls -la .env
-
-# If not, create it
 cp .env.example .env
-
-# Then edit it with your API key
-nano .env
+nano .env  # Add your API key
 ```
 
-### Problem: "module not found: github.com/taipm/go-agentic"
+### Problem: "cannot unmarshal"
 
-**Solution:** Make sure `go.mod` has the correct path. Check that:
+**Cause:** `crew.yaml` has incorrect YAML syntax
+
+**Solution:** Check YAML formatting:
+- Indentation must be spaces (not tabs)
+- No trailing colons
+- Quotes around multiline strings
+
+### Problem: "Agents speaking in English"
+
+**Cause:** The backstory instructs agents to speak Vietnamese
+
+**Solution:** Make sure `crew.yaml` has proper Vietnamese instructions in backstory fields
+
+### Problem: "module not found"
+
+**Solution:**
+```bash
+go mod download
+go mod tidy
+```
+
+### Problem: "file crew.yaml not found"
+
+**Solution:** Make sure file is in same directory as main.go
 
 ```bash
-# From simple-chat directory
-cat go.mod | grep replace
+# Verify
+ls crew.yaml  # Should show crew.yaml
 
-# Should show:
-# replace github.com/taipm/go-agentic => ../../go-agentic
-
-# Verify the path exists
-ls ../../go-agentic/go.mod
+# If not, you're in wrong directory
+pwd  # Check current directory
 ```
 
-### Problem: "No such file or directory: .env"
-
-**Solution:** The program tries to load `.env` if it exists, but will also work with environment variables:
-
-```bash
-# Option 1: Create .env file (recommended for development)
-cp .env.example .env
-nano .env
-
-# Option 2: Use environment variable directly
-export OPENAI_API_KEY="sk-proj-your-key-here"
-go run main.go
-
-# Option 3: Inline environment variable
-OPENAI_API_KEY="sk-proj-your-key-here" go run main.go
-```
-
-### Problem: "OpenAI API error" or rate limiting
-
-**Solution:** 
-- Check your API key is correct
-- Check you have remaining credits at https://platform.openai.com/account/usage
-- Wait a moment and try again (rate limiting)
-- Use `gpt-4o-mini` model (cheaper than gpt-4)
-
-### Problem: Agent responses seem cut off or incomplete
-
-**Solution:** This is normal! The crew has:
-- `MaxRounds: 3` - Maximum 3 conversation rounds
-- `MaxHandoffs: 2` - Maximum 2 handoffs between agents
-
-To see longer conversations, modify `main.go`:
-
-```go
-crew := &agentic.Crew{
-    Agents:      []*agentic.Agent{enthusiast, expert},
-    MaxRounds:   5,      // Increase for longer conversations
-    MaxHandoffs: 3,      // Increase for more back-and-forth
-}
-```
-
-## Customization Examples
-
-### Add More Topics
-
-Edit the `topics` slice in `main.go`:
-
-```go
-topics := []string{
-    "Your custom topic here",
-    "Another interesting topic",
-    "And one more...",
-}
-```
-
-### Change Agent Personalities
-
-Modify the agent's `Backstory` and `Role`:
-
-```go
-enthusiast := &agentic.Agent{
-    ID:          "enthusiast",
-    Name:        "Curious Student",
-    Role:        "A student eager to learn",
-    Backstory:   "You are a diligent student with lots of curiosity...",
-    Temperature: 0.8,  // Higher = more creative, varied responses
-    IsTerminal:  false,
-}
-```
-
-### Adjust Creativity
-
-The `Temperature` parameter controls how creative responses are:
-
-```go
-Temperature: 0.3,  // More focused, consistent
-Temperature: 0.7,  // Balanced (default)
-Temperature: 0.9,  // More creative, varied
-```
-
-### Change the Model
-
-Replace `"gpt-4o-mini"` with other OpenAI models:
-
-```go
-// Faster, cheaper
-Model: "gpt-4o-mini",
-
-// More capable
-Model: "gpt-4o",
-
-// Standard GPT-4
-Model: "gpt-4-turbo",
-
-// Older, cheaper
-Model: "gpt-3.5-turbo",
-```
-
-## Next Steps
-
-1. **Explore the code** - Read through `main.go` to understand the structure
-2. **Try customizations** - Modify topics, agents, or behaviors
-3. **Read the README** - See `README.md` for more details
-4. **Build something** - Use this as a template for your own multi-agent system
-5. **Check other examples** - Look at `customer-service` for a more complex example
-
-## File Structure
+## File Structure Explained / Giải Thích Cấu Trúc File
 
 ```
 simple-chat/
-├── main.go           # The application (readable, ~130 lines)
-├── .env.example      # Template (copy to .env)
-├── go.mod            # Dependencies
-├── go.sum            # Checksums
-├── README.md         # Full documentation
-└── GETTING_STARTED.md # This file
+├── main.go              # Application code (~140 lines)
+│   ├── Type definitions (Config, AgentConfig)
+│   ├── main() - Load env, config, create crew
+│   ├── loadConfig() - Parse crew.yaml
+│   ├── createCrewFromConfig() - Build agents
+│   └── loadEnvFile() - Load .env
+│
+├── crew.yaml            # Configuration file (~70 lines)
+│   ├── crew settings (maxRounds, maxHandoffs)
+│   ├── agents definitions (Người Tò Mò, Chuyên Gia)
+│   └── topics for discussion
+│
+├── .env.example         # Template
+│   └── OPENAI_API_KEY=sk-proj-...
+│
+├── go.mod & go.sum      # Dependencies
+├── README.md            # Full documentation
+└── GETTING_STARTED.md   # This file
 ```
 
-## Key Files Explained
+## Code Examples / Ví Dụ Code
 
-### main.go
+### Load and Parse YAML
 
-The entire application in one file:
-
-- **Line 1-10**: Imports
-- **Line 12-28**: main() function
-  - Loads .env file
-  - Gets API key
-  - Creates crew
-  - Runs agent conversation
-- **Line 30-56**: createSimpleChatCrew()
-  - Defines Enthusiast agent
-  - Defines Expert agent
-  - Creates crew with MaxRounds and MaxHandoffs
-- **Line 58-77**: loadEnvFile()
-  - Reads .env file
-  - Sets environment variables
-
-### .env.example
-
-Template showing what environment variables are needed:
-
-```env
-OPENAI_API_KEY=sk-proj-your-api-key-here
+```go
+// loadConfig reads and parses crew.yaml
+func loadConfig(filename string) (*Config, error) {
+    data, err := os.ReadFile(filename)
+    if err != nil {
+        return nil, err
+    }
+    var config Config
+    yaml.Unmarshal(data, &config)
+    return &config, nil
+}
 ```
 
-Copy to `.env` and fill in your actual API key.
+### Create Crew from Config
 
-## Security Best Practices
+```go
+// Convert YAML config to Agent objects
+func createCrewFromConfig(config *Config) *agentic.Crew {
+    agents := make([]*agentic.Agent, len(config.Agents))
+    
+    for i, agentCfg := range config.Agents {
+        agents[i] = &agentic.Agent{
+            ID:          agentCfg.ID,
+            Name:        agentCfg.Name,
+            Role:        agentCfg.Role,
+            Backstory:   agentCfg.Backstory,
+            Model:       agentCfg.Model,
+            Temperature: agentCfg.Temperature,
+            IsTerminal:  agentCfg.IsTerminal,
+        }
+    }
+    
+    return &agentic.Crew{
+        Agents:      agents,
+        MaxRounds:   config.Crew.MaxRounds,
+        MaxHandoffs: config.Crew.MaxHandoffs,
+    }
+}
+```
 
-✅ **Do:**
+## Vietnamese Language Features / Tính Năng Tiếng Việt
+
+All text is in Vietnamese:
+- 🤖 Agent names: Người Tò Mò, Chuyên Gia
+- 💬 Conversation between agents
+- 📝 Agent roles and backstories
+- ✅ Error messages
+- 📋 Output formatting
+
+## Security Best Practices / Thực Hành Bảo Mật
+
+✅ **Do / Nên làm:**
 - Use `.env.example` as template
 - Never commit `.env` file
 - Rotate API keys regularly
 - Check `.gitignore` excludes `.env`
-- Use specific API keys for development
 
-❌ **Don't:**
+❌ **Don't / Không nên:**
 - Hardcode API keys in code
 - Commit `.env` files
-- Share API keys via email/chat
-- Reuse API keys across services
+- Share API keys via email
+- Reuse keys across projects
 
-## Getting Help
+## Next Steps / Bước Tiếp Theo
 
-If you have issues:
+1. **Customize the Topics / Tùy Chỉnh Chủ Đề**
+   - Edit the topics list in `crew.yaml`
+   - Try your own questions
 
-1. Check this guide's Troubleshooting section
-2. Read the main `README.md` in this directory
-3. See `/SECURITY.md` for security issues
-4. Check the go-agentic main documentation
-5. Review error messages carefully
+2. **Modify Agent Behavior / Thay Đổi Hành Vi Agent**
+   - Change Temperature values
+   - Edit backstories
+   - Change agent names
 
-## What to Do Next
-
-After successfully running this example:
-
-1. **Modify the example:**
-   - Change topics
-   - Add more agents
-   - Add tools to agents
-   - Increase conversation rounds
-
-2. **Explore other examples:**
-   - `customer-service` - Real-world customer support workflow
-   - `it-support` - IT help desk automation
-   - `research-assistant` - Multi-step research
-   - `data-analysis` - Data analysis workflow
-
-3. **Build your own:**
-   - Design your own agents
+3. **Add More Agents / Thêm Nhiều Agent Hơn**
+   - Add new entries to `agents` section
    - Define their roles and responsibilities
-   - Create custom tools
-   - Implement your business logic
 
-## Tips for Success
+4. **Explore Other Examples / Khám Phá Các Ví Dụ Khác**
+   - customer-service (3 agents, with tools)
+   - it-support (real-world IT workflow)
+   - research-assistant (multi-step process)
 
-1. **Start small** - This example is intentionally minimal
-2. **Understand the agents** - Read their Role and Backstory
-3. **Try customizations** - Modify Temperature, MaxRounds, etc.
-4. **Check the output** - See how agents interact
-5. **Read the code** - It's well-commented and readable
+5. **Build Your Own / Xây Dựng Của Riêng Bạn**
+   - Create custom YAML configurations
+   - Design your own multi-agent systems
+   - Add specialized tools
+
+## Tips for Success / Mẹo Thành Công
+
+1. ✅ Start with default config - understand it first
+2. ✅ Make one change at a time - see the effect
+3. ✅ Use descriptive agent names in Vietnamese
+4. ✅ Write clear backstories - guides agent behavior
+5. ✅ Test with different topics
+6. ✅ Monitor costs - keep an eye on API usage
+
+## Getting Help / Nhận Trợ Giúp
+
+- **README.md** - Full documentation
+- **crew.yaml** - Configuration examples
+- **main.go** - Code implementation
+- **/SECURITY.md** - Security guidelines
+- go-agentic main documentation
+
+## Key Advantages of YAML Config / Lợi Thế Của Cấu Hình YAML
+
+| Feature | Benefit |
+|---------|---------|
+| **No Code Changes** | Modify crew without recompiling |
+| **Non-Developer Friendly** | Business users can customize |
+| **Easy to Version Control** | Configuration changes are tracked |
+| **Multi-Language Support** | Full UTF-8 for any language |
+| **Readable Format** | Easy to understand and modify |
+| **Flexible** | Add agents, topics without coding |
+
+## Summary / Tóm Tắt
+
+This example demonstrates:
+
+✅ Loading configuration from YAML
+✅ Creating agents dynamically from config
+✅ Multi-language support (Vietnamese)
+✅ Easy customization without code changes
+✅ Clean, understandable code structure
+✅ Professional error handling
+✅ Best practices for configuration management
 
 ---
 
-**Ready to run?**
+**Ready to run? / Sẵn sàng chạy?**
 
 ```bash
 cp .env.example .env
 # Edit .env with your API key
+# Chỉnh sửa .env với API key của bạn
+
 go run main.go
 ```
 
 Good luck! 🚀
+Chúc bạn thành công! 🚀
