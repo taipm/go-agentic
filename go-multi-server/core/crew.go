@@ -89,6 +89,7 @@ type CrewExecutor struct {
 	Verbose        bool   // If true, print agent responses and tool results to stdout
 	ResumeAgentID  string // If set, execution will start from this agent instead of entry agent
 	ToolTimeouts   *ToolTimeoutConfig // ✅ FIX for Issue #11: Timeout configuration
+	Metrics        *MetricsCollector  // ✅ FIX for Issue #14: Metrics collection for observability
 }
 
 // NewCrewExecutor creates a new crew executor
@@ -109,6 +110,7 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 		entryAgent:   entryAgent,
 		history:      []Message{},
 		ToolTimeouts: NewToolTimeoutConfig(), // ✅ FIX for Issue #11: Initialize timeout config
+		Metrics:      NewMetricsCollector(),  // ✅ FIX for Issue #14: Initialize metrics collector
 	}
 }
 
@@ -213,11 +215,26 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		// Send agent start event
 		streamChan <- NewStreamEvent("agent_start", currentAgent.Name, fmt.Sprintf("🔄 Starting %s...", currentAgent.Name))
 
+		// ✅ FIX for Issue #14: Start tracking agent execution time
+		agentStartTime := time.Now()
+
 		// Execute current agent
 		response, err := ExecuteAgent(ctx, currentAgent, input, ce.history, ce.apiKey)
+		agentEndTime := time.Now()
+		agentDuration := agentEndTime.Sub(agentStartTime)
+
 		if err != nil {
 			streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
+			// ✅ FIX for Issue #14: Record failed agent execution
+			if ce.Metrics != nil {
+				ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
+			}
 			return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
+		}
+
+		// ✅ FIX for Issue #14: Record successful agent execution
+		if ce.Metrics != nil {
+			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, true)
 		}
 
 		// Send agent response event
@@ -615,6 +632,12 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 				StartTime: startTime,
 				EndTime:   endTime,
 			})
+		}
+
+		// ✅ FIX for Issue #14: Record metrics in MetricsCollector for production observability
+		if ce.Metrics != nil {
+			success := err == nil
+			ce.Metrics.RecordToolExecution(tool.Name, duration, success)
 		}
 
 		if err != nil {

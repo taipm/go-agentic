@@ -292,6 +292,37 @@ func (h *HTTPHandler) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ✅ FIX for Issue #14: MetricsHandler returns collected metrics in requested format
+func (h *HTTPHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
+	// Get format parameter (default: json, options: json, prometheus)
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "json"
+	}
+
+	// Get metrics from executor
+	if h.executor == nil || h.executor.Metrics == nil {
+		http.Error(w, "Metrics not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Export metrics in requested format
+	metricsData, err := h.executor.Metrics.ExportMetrics(format)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to export metrics: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set appropriate content type based on format
+	if format == "prometheus" {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+	}
+
+	w.Write([]byte(metricsData))
+}
+
 // ✅ Wrapper methods for thread-safe state modifications
 // These methods ensure all writes to CrewExecutor fields go through Write locks
 // This prevents race conditions between StreamHandlers and configuration changes

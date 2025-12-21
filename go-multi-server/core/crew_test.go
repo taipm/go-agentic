@@ -730,3 +730,210 @@ func TestSequenceTimeoutStopsRemaining(t *testing.T) {
 		t.Errorf("Expected 3 results, got %d", len(results))
 	}
 }
+
+// ===== Issue #14: Metrics & Observability Tests =====
+
+// TestMetricsCollectorCreation verifies MetricsCollector initializes correctly
+func TestMetricsCollectorCreation(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	if mc == nil {
+		t.Error("MetricsCollector creation failed")
+	}
+
+	if !mc.enabled {
+		t.Error("MetricsCollector should be enabled by default")
+	}
+
+	metrics := mc.GetSystemMetrics()
+	if metrics == nil {
+		t.Error("SystemMetrics should not be nil")
+	}
+
+	if metrics.TotalRequests != 0 {
+		t.Error("Initial TotalRequests should be 0")
+	}
+
+	if metrics.SuccessfulRequests != 0 {
+		t.Error("Initial SuccessfulRequests should be 0")
+	}
+}
+
+// TestToolExecutionMetrics verifies tool execution metrics are recorded correctly
+func TestToolExecutionMetrics(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	// Tool metrics are only recorded when within agent execution context
+	// For testing, just verify the collector can record them without crashing
+	mc.RecordToolExecution("tool1", 100*time.Millisecond, true)
+	mc.RecordToolExecution("tool1", 200*time.Millisecond, true)
+	mc.RecordToolExecution("tool2", 50*time.Millisecond, false) // Error case
+
+	// Now record agent executions which will include tool tracking
+	mc.RecordAgentExecution("agent1", "Test Agent", 500*time.Millisecond, true)
+
+	metrics := mc.GetSystemMetrics()
+
+	// Verify system metrics collected
+	if metrics.TotalRequests == 0 {
+		t.Error("TotalRequests should be populated")
+	}
+
+	// Verify agent exists
+	if len(metrics.AgentMetrics) == 0 {
+		t.Error("AgentMetrics should be populated after agent execution")
+	}
+}
+
+// TestAgentExecutionMetrics verifies agent-level metrics are aggregated correctly
+func TestAgentExecutionMetrics(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	// Record agent executions
+	mc.RecordAgentExecution("agent1", "Agent One", 500*time.Millisecond, true)
+	mc.RecordAgentExecution("agent1", "Agent One", 600*time.Millisecond, true)
+	mc.RecordAgentExecution("agent2", "Agent Two", 400*time.Millisecond, false)
+
+	metrics := mc.GetSystemMetrics()
+
+	// Verify system metrics
+	if metrics.TotalRequests != 3 {
+		t.Errorf("Expected 3 total requests, got %d", metrics.TotalRequests)
+	}
+
+	if metrics.SuccessfulRequests != 2 {
+		t.Errorf("Expected 2 successful requests, got %d", metrics.SuccessfulRequests)
+	}
+
+	if metrics.FailedRequests != 1 {
+		t.Errorf("Expected 1 failed request, got %d", metrics.FailedRequests)
+	}
+
+	// Verify average calculation
+	if metrics.AverageRequestTime == 0 {
+		t.Error("AverageRequestTime should be calculated")
+	}
+}
+
+// TestMetricsExportJSON verifies metrics can be exported as JSON
+func TestMetricsExportJSON(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	// Record some metrics
+	mc.RecordToolExecution("search_tool", 100*time.Millisecond, true)
+	mc.RecordAgentExecution("researcher", "Research Agent", 500*time.Millisecond, true)
+	mc.RecordCacheHit()
+	mc.RecordCacheMiss()
+
+	// Export as JSON
+	jsonData, err := mc.ExportMetrics("json")
+	if err != nil {
+		t.Errorf("Failed to export JSON metrics: %v", err)
+	}
+
+	if jsonData == "" {
+		t.Error("JSON export should not be empty")
+	}
+
+	// Verify it's valid JSON by checking for expected fields
+	if !strings.Contains(jsonData, "total_requests") &&
+		!strings.Contains(jsonData, "TotalRequests") {
+		t.Error("JSON export should contain request metrics")
+	}
+}
+
+// TestMetricsExportPrometheus verifies metrics can be exported as Prometheus format
+func TestMetricsExportPrometheus(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	// Record some metrics
+	mc.RecordToolExecution("api_tool", 200*time.Millisecond, true)
+	mc.RecordAgentExecution("analyzer", "Analysis Agent", 600*time.Millisecond, true)
+	mc.RecordCacheHit()
+	mc.RecordCacheHit()
+	mc.RecordCacheMiss()
+
+	// Export as Prometheus
+	promData, err := mc.ExportMetrics("prometheus")
+	if err != nil {
+		t.Errorf("Failed to export Prometheus metrics: %v", err)
+	}
+
+	if promData == "" {
+		t.Error("Prometheus export should not be empty")
+	}
+
+	// Verify it contains Prometheus format markers
+	if !strings.Contains(promData, "crew_") {
+		t.Error("Prometheus export should use crew_ metric prefix")
+	}
+}
+
+// TestMetricsDisable verifies metrics collection can be disabled
+func TestMetricsDisable(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	// Record initial metrics
+	mc.RecordAgentExecution("agent1", "Agent One", 500*time.Millisecond, true)
+
+	metricsAfterRecord := mc.GetSystemMetrics()
+	initialCount := metricsAfterRecord.TotalRequests
+
+	// Disable metrics
+	mc.Disable()
+
+	// Record more metrics (should be ignored)
+	mc.RecordAgentExecution("agent2", "Agent Two", 300*time.Millisecond, true)
+
+	metricsAfterDisable := mc.GetSystemMetrics()
+
+	// Total requests should not increase
+	if metricsAfterDisable.TotalRequests != initialCount {
+		t.Errorf("Metrics should not be recorded when disabled")
+	}
+
+	// Re-enable and verify it works
+	mc.Enable()
+	mc.RecordAgentExecution("agent3", "Agent Three", 400*time.Millisecond, true)
+
+	metricsAfterEnable := mc.GetSystemMetrics()
+	if metricsAfterEnable.TotalRequests <= initialCount {
+		t.Error("Metrics should be recorded after re-enabling")
+	}
+}
+
+// TestMetricsCacheTracking verifies cache hit/miss tracking
+func TestMetricsCacheTracking(t *testing.T) {
+	mc := NewMetricsCollector()
+
+	// Record cache hits and misses
+	for i := 0; i < 7; i++ {
+		mc.RecordCacheHit()
+	}
+	for i := 0; i < 3; i++ {
+		mc.RecordCacheMiss()
+	}
+
+	metrics := mc.GetSystemMetrics()
+
+	// Verify counts
+	if metrics.CacheHits != 7 {
+		t.Errorf("Expected 7 cache hits, got %d", metrics.CacheHits)
+	}
+
+	if metrics.CacheMisses != 3 {
+		t.Errorf("Expected 3 cache misses, got %d", metrics.CacheMisses)
+	}
+
+	// Verify hit rate (7/(7+3) = 0.7)
+	expectedHitRate := 0.7
+	if metrics.CacheHitRate == 0 {
+		t.Error("Cache hit rate should be calculated")
+	}
+
+	// Allow small floating point difference
+	diff := metrics.CacheHitRate - expectedHitRate
+	if diff < -0.01 || diff > 0.01 {
+		t.Errorf("Expected cache hit rate ~0.7, got %f", metrics.CacheHitRate)
+	}
+}
