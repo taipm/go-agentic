@@ -10,6 +10,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// copyHistory creates a deep copy of message history to ensure thread safety
+// Each execution gets its own isolated history snapshot, preventing race conditions
+// when concurrent requests execute and pause/resume
+func copyHistory(original []Message) []Message {
+	if len(original) == 0 {
+		return []Message{}
+	}
+	// Create new slice with same capacity
+	copied := make([]Message, len(original))
+	// Copy all messages
+	copy(copied, original)
+	return copied
+}
+
 // CrewExecutor handles the execution of a crew
 type CrewExecutor struct {
 	crew          *Crew

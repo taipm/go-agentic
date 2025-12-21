@@ -99,18 +99,14 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	h.mu.RUnlock()
 
 	// Create a new executor context for this request
+	// Use copyHistory to create isolated copy of history (no shared references)
 	executor := &CrewExecutor{
-		crew:          h.executor.crew,          // Immutable pointer
-		apiKey:        h.executor.apiKey,        // Immutable string
-		entryAgent:    h.executor.entryAgent,    // Immutable pointer
-		history:       []Message{},              // New for each request
-		Verbose:       snapshot.Verbose,         // Safe copy from snapshot
-		ResumeAgentID: snapshot.ResumeAgentID,   // Safe copy from snapshot
-	}
-
-	// Restore history if provided
-	if len(req.History) > 0 {
-		executor.history = req.History
+		crew:          h.executor.crew,              // Immutable pointer
+		apiKey:        h.executor.apiKey,            // Immutable string
+		entryAgent:    h.executor.entryAgent,        // Immutable pointer
+		history:       copyHistory(req.History),     // ✅ Deep copy for thread safety
+		Verbose:       snapshot.Verbose,             // Safe copy from snapshot
+		ResumeAgentID: snapshot.ResumeAgentID,       // Safe copy from snapshot
 	}
 
 	// Run crew execution in a goroutine
