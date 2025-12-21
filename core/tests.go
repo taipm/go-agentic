@@ -19,14 +19,14 @@ type TestScenario struct {
 
 // TestResult tracks the result of a test
 type TestResult struct {
-	Scenario      *TestScenario
-	Passed        bool
-	Duration      time.Duration
-	ActualFlow    []string
-	Response      *CrewResponse
-	Errors        []string
-	Warnings      []string
-	ExecutionLog  string
+	Scenario     *TestScenario
+	Passed       bool
+	Duration     time.Duration
+	ActualFlow   []string
+	Response     *CrewResponse
+	Errors       []string
+	Warnings     []string
+	ExecutionLog string
 }
 
 // GetTestScenarios returns all test scenarios
@@ -40,7 +40,7 @@ func GetTestScenarios() []*TestScenario {
 				"System should route to Clarifier for information gathering.",
 			UserInput: "Máy tính của tôi chậm lắm",
 			ExpectedFlow: []string{
-				"clarifier",    // Final agent in flow is Clarifier (Ngân)
+				"clarifier", // Final agent in flow is Clarifier (Ngân)
 			},
 			Assertions: []string{
 				"Clarifier asks clarifying questions (2-3 questions)",
@@ -58,7 +58,7 @@ func GetTestScenarios() []*TestScenario {
 				"System should route to Executor with explicit routing signal.",
 			UserInput: "Server 192.168.1.50 không ping được, check cho tôi",
 			ExpectedFlow: []string{
-				"executor",     // Routes to Executor with IP + problem
+				"executor", // Routes to Executor with IP + problem
 			},
 			Assertions: []string{
 				"Executor runs diagnostic tools on the IP",
@@ -75,7 +75,7 @@ func GetTestScenarios() []*TestScenario {
 				"System should route to Clarifier to get server hostname/IP.",
 			UserInput: "Cổng 3306 không open",
 			ExpectedFlow: []string{
-				"clarifier",    // Routes to Clarifier for server identification
+				"clarifier", // Routes to Clarifier for server identification
 			},
 			Assertions: []string{
 				"Clarifier asks for server hostname/IP",
@@ -92,7 +92,7 @@ func GetTestScenarios() []*TestScenario {
 				"System should ask for clarification.",
 			UserInput: "Không vào được internet từ phòng A5",
 			ExpectedFlow: []string{
-				"clarifier",    // Routes to Clarifier for details
+				"clarifier", // Routes to Clarifier for details
 			},
 			Assertions: []string{
 				"Clarifier asks which machine or IP",
@@ -109,7 +109,7 @@ func GetTestScenarios() []*TestScenario {
 				"System routes to Executor with explicit routing signal.",
 			UserInput: "Check xem service MySQL trên server-app-01 còn chạy không",
 			ExpectedFlow: []string{
-				"executor",     // Routes to Executor with hostname + service check request
+				"executor", // Routes to Executor with hostname + service check request
 			},
 			Assertions: []string{
 				"Executor runs diagnostic tools on the hostname",
@@ -126,7 +126,7 @@ func GetTestScenarios() []*TestScenario {
 				"System should ask for detailed clarification.",
 			UserInput: "Giúp tôi check hệ thống",
 			ExpectedFlow: []string{
-				"clarifier",    // Routes to Clarifier
+				"clarifier", // Routes to Clarifier
 			},
 			Assertions: []string{
 				"Clarifier provides structured questions (specific problem, OS, etc.)",
@@ -143,7 +143,7 @@ func GetTestScenarios() []*TestScenario {
 				"System routes to Executor with explicit routing signal.",
 			UserInput: "CPU cao trên 192.168.1.100, cần kiểm tra",
 			ExpectedFlow: []string{
-				"executor",     // Routes to Executor with IP + performance issue
+				"executor", // Routes to Executor with IP + performance issue
 			},
 			Assertions: []string{
 				"Executor runs CPU diagnostic tools",
@@ -160,7 +160,7 @@ func GetTestScenarios() []*TestScenario {
 				"System routes to Executor with explicit routing signal.",
 			UserInput: "Ổ đĩa server-backup không còn chỗ, check ngay",
 			ExpectedFlow: []string{
-				"executor",     // Routes to Executor with hostname + urgency keyword
+				"executor", // Routes to Executor with hostname + urgency keyword
 			},
 			Assertions: []string{
 				"Executor runs disk diagnostic tools",
@@ -177,7 +177,7 @@ func GetTestScenarios() []*TestScenario {
 				"System should ask for clarification about which systems.",
 			UserInput: "Hệ thống bị mất kết nối",
 			ExpectedFlow: []string{
-				"clarifier",    // Routes to Clarifier
+				"clarifier", // Routes to Clarifier
 			},
 			Assertions: []string{
 				"Clarifier asks which systems are affected",
@@ -194,7 +194,7 @@ func GetTestScenarios() []*TestScenario {
 				"System routes to Executor with explicit routing signal.",
 			UserInput: "Server 10.0.0.25 chạy chậm, CPU cao, cần check toàn bộ",
 			ExpectedFlow: []string{
-				"executor",     // Routes to Executor with IP + comprehensive diagnostics request
+				"executor", // Routes to Executor with IP + comprehensive diagnostics request
 			},
 			Assertions: []string{
 				"Executor runs comprehensive diagnostic tools",

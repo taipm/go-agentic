@@ -43,8 +43,8 @@ type Message struct {
 
 // ToolCall represents a tool call made by the agent
 type ToolCall struct {
-	ID       string
-	ToolName string
+	ID        string
+	ToolName  string
 	Arguments map[string]interface{}
 }
 
@@ -58,11 +58,12 @@ type AgentResponse struct {
 
 // CrewResponse represents the final response from the crew
 type CrewResponse struct {
-	AgentID    string
-	AgentName  string
-	Content    string
-	ToolCalls  []ToolCall
-	IsTerminal bool
+	AgentID       string
+	AgentName     string
+	Content       string
+	ToolCalls     []ToolCall
+	IsTerminal    bool
+	PausedAgentID string // Agent ID that paused, used for resume functionality
 }
 
 // Crew represents a group of agents working together

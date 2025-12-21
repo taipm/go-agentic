@@ -67,7 +67,11 @@ func main() {
 	}
 
 	// Execute the crew with the user's task
+	// ✅ Issue #17: Use request ID tracking for better observability
 	ctx := context.Background()
+	requestID, ctx := agenticcore.GetOrCreateRequestID(ctx)
+	fmt.Printf("\n📊 Request ID: %s\n", requestID)
+
 	result, err := executor.Execute(ctx, task)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing crew: %v\n", err)
@@ -77,4 +81,5 @@ func main() {
 	// Print results
 	fmt.Println("\n=== Results ===")
 	fmt.Println(result.Content)
+	fmt.Printf("\n✅ Completed: Request %s\n", requestID)
 }
