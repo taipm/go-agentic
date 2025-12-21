@@ -114,6 +114,35 @@ func LoadCrewConfig(path string) (*CrewConfig, error) {
 	return &config, nil
 }
 
+// LoadAndValidateCrewConfig loads crew config and performs comprehensive validation
+// including circular routing detection and reachability analysis
+// ✅ Issue #16: Configuration Validation - Advanced validation with circular reference detection
+func LoadAndValidateCrewConfig(crewConfigPath string, agentConfigs map[string]*AgentConfig) (*CrewConfig, error) {
+	// Load crew configuration
+	config, err := LoadCrewConfig(crewConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform comprehensive validation with circular routing detection
+	validator := NewConfigValidator(config, agentConfigs)
+	if err := validator.ValidateAll(); err != nil {
+		log.Printf("[CONFIG VALIDATION ERROR] %v", err)
+		return nil, fmt.Errorf("comprehensive configuration validation failed: %w", err)
+	}
+
+	// Check for warnings
+	warnings := validator.GetWarnings()
+	if len(warnings) > 0 {
+		log.Printf("[CONFIG WARNINGS] %d warning(s) found during validation:", len(warnings))
+		for _, w := range warnings {
+			log.Printf("  - %s: %s", w.Field, w.Message)
+		}
+	}
+
+	return config, nil
+}
+
 // LoadAgentConfig loads an agent configuration from a YAML file
 func LoadAgentConfig(path string) (*AgentConfig, error) {
 	data, err := os.ReadFile(path)
