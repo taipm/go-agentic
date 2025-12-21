@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ===== Issue #4: History Mutation Bug Tests =====
@@ -492,5 +493,240 @@ func TestParallelExecutionWithPanicingTools(t *testing.T) {
 	// Verify all results are accounted for
 	if successCount+errorCount != 5 {
 		t.Errorf("Not all results accounted for: %d + %d != 5", successCount, errorCount)
+	}
+}
+
+// ===== Issue #11: Sequential Tool Timeout Tests =====
+
+// TestToolTimeoutConfig verifies timeout configuration works correctly
+func TestToolTimeoutConfig(t *testing.T) {
+	cfg := NewToolTimeoutConfig()
+
+	// Verify defaults
+	if cfg.DefaultToolTimeout != 5*time.Second {
+		t.Errorf("Expected 5s default timeout, got %v", cfg.DefaultToolTimeout)
+	}
+	if cfg.SequenceTimeout != 30*time.Second {
+		t.Errorf("Expected 30s sequence timeout, got %v", cfg.SequenceTimeout)
+	}
+	if !cfg.CollectMetrics {
+		t.Error("CollectMetrics should be true by default")
+	}
+
+	// Test per-tool override
+	cfg.PerToolTimeout["slow_tool"] = 10 * time.Second
+	timeout := cfg.GetToolTimeout("slow_tool")
+	if timeout != 10*time.Second {
+		t.Errorf("Expected 10s for slow_tool, got %v", timeout)
+	}
+
+	// Test default for unknown tool
+	timeout = cfg.GetToolTimeout("unknown_tool")
+	if timeout != 5*time.Second {
+		t.Errorf("Expected 5s default for unknown tool, got %v", timeout)
+	}
+}
+
+// TestExecuteCallsWithTimeout verifies per-tool timeouts work
+func TestExecuteCallsWithTimeout(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			{
+				ID:   "test_agent",
+				Name: "Test Agent",
+				Tools: []*Tool{
+					{
+						Name: "fast_tool",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							return "fast result", nil
+						},
+					},
+					{
+						Name: "slow_tool",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							// Respect context cancellation
+							select {
+							case <-ctx.Done():
+								return "", ctx.Err()
+							case <-time.After(2 * time.Second):
+								return "slow result", nil
+							}
+						},
+					},
+				},
+			},
+		},
+	}
+
+	executor := NewCrewExecutor(crew, "test-key")
+	executor.ToolTimeouts = NewToolTimeoutConfig()
+	executor.ToolTimeouts.DefaultToolTimeout = 100 * time.Millisecond // Very short timeout
+
+	agent := crew.Agents[0]
+	calls := []ToolCall{
+		{ToolName: "fast_tool", Arguments: map[string]interface{}{}},
+		{ToolName: "slow_tool", Arguments: map[string]interface{}{}},
+	}
+
+	results := executor.executeCalls(context.Background(), calls, agent)
+
+	// Fast tool should succeed
+	if results[0].Status != "success" {
+		t.Errorf("Fast tool should succeed, got status: %s", results[0].Status)
+	}
+
+	// Slow tool should timeout
+	if results[1].Status != "error" {
+		t.Errorf("Slow tool should error on timeout, got status: %s", results[1].Status)
+	}
+	if !strings.Contains(results[1].Output, "context deadline exceeded") {
+		t.Errorf("Slow tool error should mention context deadline, got: %s", results[1].Output)
+	}
+}
+
+// TestExecutionMetricsCollection verifies metrics are collected correctly
+func TestExecutionMetricsCollection(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			{
+				ID:   "test_agent",
+				Name: "Test Agent",
+				Tools: []*Tool{
+					{
+						Name: "tool_1",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							time.Sleep(10 * time.Millisecond)
+							return "result 1", nil
+						},
+					},
+					{
+						Name: "tool_2",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							time.Sleep(20 * time.Millisecond)
+							return "result 2", nil
+						},
+					},
+				},
+			},
+		},
+	}
+
+	executor := NewCrewExecutor(crew, "test-key")
+	executor.ToolTimeouts = NewToolTimeoutConfig()
+	executor.ToolTimeouts.CollectMetrics = true
+
+	agent := crew.Agents[0]
+	calls := []ToolCall{
+		{ToolName: "tool_1", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_2", Arguments: map[string]interface{}{}},
+	}
+
+	results := executor.executeCalls(context.Background(), calls, agent)
+
+	// Should have 2 results
+	if len(results) != 2 {
+		t.Errorf("Expected 2 results, got %d", len(results))
+	}
+
+	// Should have 2 metrics
+	if len(executor.ToolTimeouts.ExecutionMetrics) != 2 {
+		t.Errorf("Expected 2 metrics, got %d", len(executor.ToolTimeouts.ExecutionMetrics))
+	}
+
+	// Verify metrics
+	if executor.ToolTimeouts.ExecutionMetrics[0].ToolName != "tool_1" {
+		t.Errorf("Expected metric for tool_1, got %s", executor.ToolTimeouts.ExecutionMetrics[0].ToolName)
+	}
+	if executor.ToolTimeouts.ExecutionMetrics[0].Status != "success" {
+		t.Errorf("Expected success status, got %s", executor.ToolTimeouts.ExecutionMetrics[0].Status)
+	}
+	if executor.ToolTimeouts.ExecutionMetrics[0].TimedOut {
+		t.Error("Tool 1 should not have timed out")
+	}
+
+	// Verify duration is roughly correct (should be at least 10ms)
+	if executor.ToolTimeouts.ExecutionMetrics[0].Duration < 10*time.Millisecond {
+		t.Errorf("Expected duration >= 10ms, got %v", executor.ToolTimeouts.ExecutionMetrics[0].Duration)
+	}
+}
+
+// TestSequenceTimeoutStopsRemaining verifies sequence timeout stops remaining tools
+func TestSequenceTimeoutStopsRemaining(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			{
+				ID:   "test_agent",
+				Name: "Test Agent",
+				Tools: []*Tool{
+					{
+						Name: "tool_1",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							select {
+							case <-ctx.Done():
+								return "", ctx.Err()
+							case <-time.After(30 * time.Millisecond):
+								return "result 1", nil
+							}
+						},
+					},
+					{
+						Name: "tool_2",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							select {
+							case <-ctx.Done():
+								return "", ctx.Err()
+							case <-time.After(30 * time.Millisecond):
+								return "result 2", nil
+							}
+						},
+					},
+					{
+						Name: "tool_3",
+						Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+							select {
+							case <-ctx.Done():
+								return "", ctx.Err()
+							case <-time.After(30 * time.Millisecond):
+								return "result 3", nil
+							}
+						},
+					},
+				},
+			},
+		},
+	}
+
+	executor := NewCrewExecutor(crew, "test-key")
+	executor.ToolTimeouts = NewToolTimeoutConfig()
+	executor.ToolTimeouts.SequenceTimeout = 60 * time.Millisecond // Total timeout for sequence (3 tools * 30ms each would exceed this)
+
+	agent := crew.Agents[0]
+	calls := []ToolCall{
+		{ToolName: "tool_1", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_2", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_3", Arguments: map[string]interface{}{}},
+	}
+
+	results := executor.executeCalls(context.Background(), calls, agent)
+
+	// First 1-2 tools might succeed, but at least 1 should fail due to sequence timeout
+	successCount := 0
+	errorCount := 0
+	for _, result := range results {
+		if result.Status == "success" {
+			successCount++
+		} else if result.Status == "error" {
+			errorCount++
+		}
+	}
+
+	// At least one should have failed
+	if errorCount == 0 {
+		t.Error("Expected at least one tool to timeout due to sequence limit")
+	}
+
+	// Total results count should be 3 (even if some failed)
+	if len(results) != 3 {
+		t.Errorf("Expected 3 results, got %d", len(results))
 	}
 }

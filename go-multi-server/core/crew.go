@@ -2,6 +2,7 @@ package crewai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -40,14 +41,54 @@ func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{
 	return tool.Handler(ctx, args)
 }
 
+// ✅ FIX for Issue #11 (Sequential Tool Timeout)
+// ExecutionMetrics tracks execution time and status for tools
+type ExecutionMetrics struct {
+	ToolName     string        // Name of the tool executed
+	Duration     time.Duration // Time taken to execute
+	Status       string        // "success", "timeout", "error"
+	TimedOut     bool          // True if tool execution exceeded timeout
+	StartTime    time.Time     // When tool execution started
+	EndTime      time.Time     // When tool execution completed
+}
+
+// ToolTimeoutConfig defines timeout behavior for tools
+type ToolTimeoutConfig struct {
+	DefaultToolTimeout  time.Duration            // Default timeout per tool (e.g., 5s)
+	SequenceTimeout     time.Duration            // Max total time for all tools in sequence (e.g., 30s)
+	PerToolTimeout      map[string]time.Duration // Per-tool overrides for specific tools
+	CollectMetrics      bool                     // If true, collect execution metrics
+	ExecutionMetrics    []ExecutionMetrics       // Collected metrics from last execution
+}
+
+// NewToolTimeoutConfig creates a timeout config with recommended defaults
+func NewToolTimeoutConfig() *ToolTimeoutConfig {
+	return &ToolTimeoutConfig{
+		DefaultToolTimeout: 5 * time.Second,    // 5s per tool
+		SequenceTimeout:    30 * time.Second,   // 30s total for all sequential tools
+		PerToolTimeout:     make(map[string]time.Duration),
+		CollectMetrics:     true,
+		ExecutionMetrics:   []ExecutionMetrics{},
+	}
+}
+
+// GetToolTimeout gets the timeout for a specific tool (checks per-tool overrides first)
+func (tc *ToolTimeoutConfig) GetToolTimeout(toolName string) time.Duration {
+	if timeout, exists := tc.PerToolTimeout[toolName]; exists {
+		return timeout
+	}
+	return tc.DefaultToolTimeout
+}
+
 // CrewExecutor handles the execution of a crew
 type CrewExecutor struct {
-	crew          *Crew
-	apiKey        string
-	entryAgent    *Agent
-	history       []Message
-	Verbose       bool   // If true, print agent responses and tool results to stdout
-	ResumeAgentID string // If set, execution will start from this agent instead of entry agent
+	crew           *Crew
+	apiKey         string
+	entryAgent     *Agent
+	history        []Message
+	Verbose        bool   // If true, print agent responses and tool results to stdout
+	ResumeAgentID  string // If set, execution will start from this agent instead of entry agent
+	ToolTimeouts   *ToolTimeoutConfig // ✅ FIX for Issue #11: Timeout configuration
 }
 
 // NewCrewExecutor creates a new crew executor
@@ -63,10 +104,11 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 	}
 
 	return &CrewExecutor{
-		crew:       crew,
-		apiKey:     apiKey,
-		entryAgent: entryAgent,
-		history:    []Message{},
+		crew:         crew,
+		apiKey:       apiKey,
+		entryAgent:   entryAgent,
+		history:      []Message{},
+		ToolTimeouts: NewToolTimeoutConfig(), // ✅ FIX for Issue #11: Initialize timeout config
 	}
 }
 
@@ -481,13 +523,35 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 	}
 }
 
-// executeCalls executes tool calls from an agent
+// executeCalls executes tool calls from an agent with per-tool and sequence timeouts
+// ✅ FIX for Issue #11 (Sequential Tool Timeout): Add timeout protection for hanging tools
 func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agent *Agent) []ToolResult {
 	var results []ToolResult
 
 	toolMap := make(map[string]*Tool)
 	for _, tool := range agent.Tools {
 		toolMap[tool.Name] = tool
+	}
+
+	// ✅ FIX for Issue #11: Create deadline for entire sequence
+	// Fail fast if any tool execution would exceed sequence timeout
+	// If ctx is nil, use background context as fallback
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var sequenceCtx context.Context
+	var sequenceCancel context.CancelFunc
+	if ce.ToolTimeouts != nil && ce.ToolTimeouts.SequenceTimeout > 0 {
+		sequenceCtx, sequenceCancel = context.WithTimeout(ctx, ce.ToolTimeouts.SequenceTimeout)
+		defer sequenceCancel()
+	} else {
+		sequenceCtx = ctx
+	}
+
+	// Reset metrics for this execution
+	if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
+		ce.ToolTimeouts.ExecutionMetrics = []ExecutionMetrics{}
 	}
 
 	for _, call := range calls {
@@ -502,19 +566,70 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 			continue
 		}
 
+		// ✅ FIX for Issue #11: Check sequence deadline before executing tool
+		select {
+		case <-sequenceCtx.Done():
+			log.Printf("[TOOL TIMEOUT] %s <- %s - Sequence timeout exceeded", tool.Name, agent.ID)
+			results = append(results, ToolResult{
+				ToolName: call.ToolName,
+				Status:   "error",
+				Output:   "Tool execution timeout: sequence timeout exceeded",
+			})
+			return results // Stop executing remaining tools
+		default:
+			// Continue to tool execution
+		}
+
+		// ✅ FIX for Issue #11: Create per-tool timeout context
+		toolTimeout := 5 * time.Second // Default timeout
+		if ce.ToolTimeouts != nil {
+			toolTimeout = ce.ToolTimeouts.GetToolTimeout(tool.Name)
+		}
+
+		toolCtx, toolCancel := context.WithTimeout(sequenceCtx, toolTimeout)
+
 		// ✅ FIX for Issue #5 (Panic Risk): Use safeExecuteTool wrapper to catch panics
 		// This ensures that if a tool panics, the error is returned instead of crashing
-		log.Printf("[TOOL START] %s <- %s", tool.Name, agent.ID)
-		output, err := safeExecuteTool(ctx, tool, call.Arguments)
+		log.Printf("[TOOL START] %s <- %s (timeout: %v)", tool.Name, agent.ID, toolTimeout)
+
+		startTime := time.Now()
+		output, err := safeExecuteTool(toolCtx, tool, call.Arguments)
+		endTime := time.Now()
+		duration := endTime.Sub(startTime)
+		toolCancel() // Always cancel tool context
+
+		// ✅ FIX for Issue #11: Record metrics and detect timeouts
+		timedOut := err != nil && errors.Is(err, context.DeadlineExceeded)
+		if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
+			status := "success"
+			if timedOut {
+				status = "timeout"
+			} else if err != nil {
+				status = "error"
+			}
+			ce.ToolTimeouts.ExecutionMetrics = append(ce.ToolTimeouts.ExecutionMetrics, ExecutionMetrics{
+				ToolName:  tool.Name,
+				Duration:  duration,
+				Status:    status,
+				TimedOut:  timedOut,
+				StartTime: startTime,
+				EndTime:   endTime,
+			})
+		}
+
 		if err != nil {
-			log.Printf("[TOOL ERROR] %s - %v", tool.Name, err)
+			if timedOut {
+				log.Printf("[TOOL TIMEOUT] %s - %v (%v)", tool.Name, err, duration)
+			} else {
+				log.Printf("[TOOL ERROR] %s - %v", tool.Name, err)
+			}
 			results = append(results, ToolResult{
 				ToolName: call.ToolName,
 				Status:   "error",
 				Output:   err.Error(),
 			})
 		} else {
-			log.Printf("[TOOL SUCCESS] %s -> %d chars", tool.Name, len(output))
+			log.Printf("[TOOL SUCCESS] %s -> %d chars (%v)", tool.Name, len(output), duration)
 			results = append(results, ToolResult{
 				ToolName: call.ToolName,
 				Status:   "success",
