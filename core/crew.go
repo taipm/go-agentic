@@ -26,8 +26,84 @@ func copyHistory(original []Message) []Message {
 	return copied
 }
 
+// extractRequiredFields extracts required field names from tool parameters
+func extractRequiredFields(params map[string]interface{}) []string {
+	var requiredFields []string
+	if required, ok := params["required"].([]interface{}); ok {
+		for _, r := range required {
+			if rStr, ok := r.(string); ok {
+				requiredFields = append(requiredFields, rStr)
+			}
+		}
+	}
+	return requiredFields
+}
+
+// validateFieldType validates a single field's type against schema
+func validateFieldType(tool *Tool, fieldName string, fieldValue interface{}, propSchema interface{}) error {
+	propMap, ok := propSchema.(map[string]interface{})
+	if !ok {
+		return nil // Skip if schema is not a map
+	}
+
+	expectedType, ok := propMap["type"].(string)
+	if !ok {
+		return nil // Skip if type not specified
+	}
+
+	// Validate based on expected type
+	switch expectedType {
+	case "string":
+		if _, ok := fieldValue.(string); !ok {
+			return fmt.Errorf("tool '%s': parameter '%s' should be string, got %T", tool.Name, fieldName, fieldValue)
+		}
+	case "number", "integer":
+		switch fieldValue.(type) {
+		case float64, int, int64:
+			// Valid number types
+		default:
+			return fmt.Errorf("tool '%s': parameter '%s' should be number, got %T", tool.Name, fieldName, fieldValue)
+		}
+	}
+	return nil
+}
+
+// validateToolArguments validates tool arguments against tool definition
+// ✅ FIX for Issue #25: Tool execution validation
+func validateToolArguments(tool *Tool, args map[string]interface{}) error {
+	if tool.Parameters == nil {
+		return nil // No parameters defined, so any args are acceptable
+	}
+
+	// Get parameter schema
+	properties, ok := tool.Parameters["properties"].(map[string]interface{})
+	if !ok {
+		return nil // No properties defined, skip validation
+	}
+
+	// Check required fields are present
+	requiredFields := extractRequiredFields(tool.Parameters)
+	for _, fieldName := range requiredFields {
+		if _, exists := args[fieldName]; !exists {
+			return fmt.Errorf("tool '%s': required parameter '%s' is missing", tool.Name, fieldName)
+		}
+	}
+
+	// Validate parameter types
+	for argName, argValue := range args {
+		if propSchema, exists := properties[argName]; exists {
+			if err := validateFieldType(tool, argName, argValue, propSchema); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // safeExecuteTool wraps tool execution with panic recovery for graceful error handling
 // ✅ FIX for Issue #5 (Panic Risk): Catch any panic in tool execution and convert to error
+// ✅ FIX for Issue #25: Validate arguments before execution
 // This prevents one buggy tool from crashing the entire server
 // Pattern: defer-recover catches panic and converts it to error (Go standard approach)
 func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
@@ -37,6 +113,12 @@ func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{
 			err = fmt.Errorf("tool %s panicked: %v", tool.Name, r)
 		}
 	}()
+
+	// Validate arguments before execution
+	if validationErr := validateToolArguments(tool, args); validationErr != nil {
+		return "", validationErr
+	}
+
 	// Execute tool - if it panics, defer above will catch it
 	return tool.Handler(ctx, args)
 }
@@ -677,6 +759,40 @@ func (ce *CrewExecutor) findAgentByID(id string) *Agent {
 	return nil
 }
 
+// signalMatchesContent checks if a signal appears in response content (handles variations)
+// ✅ FIX for signal matching: Handles "[ KẾT THÚC ]" matching "[KẾT THÚC]"
+func signalMatchesContent(signal, content string) bool {
+	// Exact match
+	if strings.Contains(content, signal) {
+		return true
+	}
+
+	// Normalized match (trim whitespace)
+	normalizedSignal := strings.TrimSpace(signal)
+	if strings.Contains(content, normalizedSignal) {
+		return true
+	}
+
+	// Handle bracket variations like "[ SIGNAL ]" vs "[SIGNAL]"
+	if strings.HasPrefix(signal, "[") && strings.HasSuffix(signal, "]") {
+		innerSignal := strings.TrimPrefix(strings.TrimSuffix(signal, "]"), "[")
+		innerSignal = strings.TrimSpace(innerSignal)
+		// Check if inner signal appears in brackets (with any spacing)
+		patterns := []string{
+			"[" + innerSignal + "]",
+			"[ " + innerSignal + " ]",
+			"[  " + innerSignal + "  ]",
+		}
+		for _, pattern := range patterns {
+			if strings.Contains(content, pattern) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // findNextAgentBySignal finds the next agent based on routing signals (config-driven)
 func (ce *CrewExecutor) findNextAgentBySignal(current *Agent, responseContent string) *Agent {
 	if ce.crew.Routing == nil {
@@ -691,7 +807,12 @@ func (ce *CrewExecutor) findNextAgentBySignal(current *Agent, responseContent st
 
 	// Check which signal is present in the response
 	for _, sig := range signals {
-		if strings.Contains(responseContent, sig.Signal) && sig.Target != "" {
+		if sig.Target == "" {
+			continue // Skip signals without target
+		}
+
+		// Check if signal matches response content
+		if signalMatchesContent(sig.Signal, responseContent) {
 			// Found matching signal, find the target agent
 			nextAgent := ce.findAgentByID(sig.Target)
 			if nextAgent != nil {

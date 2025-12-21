@@ -284,7 +284,8 @@ func ValidateCrewConfig(config *CrewConfig) error {
 // ValidateAgentConfig validates agent configuration structure and constraints
 // ✅ FIX for Issue #6: Validate agent config at load time
 func ValidateAgentConfig(config *AgentConfig) error {
-	// Validate required fields
+	// ✅ FIX for Issue #23: Enhanced required field validation
+	// Validate required fields strictly
 	if config.ID == "" {
 		return fmt.Errorf("agent: required field 'id' is empty")
 	}
@@ -298,6 +299,11 @@ func ValidateAgentConfig(config *AgentConfig) error {
 	// Validate field constraints
 	if config.Temperature < 0 || config.Temperature > 2 {
 		return fmt.Errorf("agent '%s': temperature must be between 0 and 2, got %f", config.ID, config.Temperature)
+	}
+
+	// Warn about suspicious configurations
+	if config.SystemPrompt == "" && config.Backstory == "" {
+		log.Printf("[CONFIG WARNING] agent '%s': both 'system_prompt' and 'backstory' are empty - agent may not have proper context", config.ID)
 	}
 
 	return nil
