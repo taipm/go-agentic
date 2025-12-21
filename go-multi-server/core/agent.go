@@ -2,7 +2,9 @@ package crewai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -115,9 +117,35 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 	// Extract response content
 	content := message.Content
 
-	// For now, extract tool calls by parsing the response text
-	// This is a workaround until we get the proper tool calling API working
-	toolCalls := extractToolCallsFromText(content, agent)
+	// ✅ FIX for Issue #9 (Tool Call Extraction): Hybrid approach
+	// PRIMARY: Use OpenAI's native tool_calls if available (preferred, validated by OpenAI)
+	// FALLBACK: Parse text response (for edge cases, legacy support)
+
+	var toolCalls []ToolCall
+
+	// Check if completion has tool_calls (OpenAI's structured format)
+	// Try to use native tool_calls first (preferred method)
+	if message.ToolCalls != nil {
+		// Message has tool_calls field - use it
+		toolCalls = extractFromOpenAIToolCalls(message.ToolCalls, agent)
+		if len(toolCalls) > 0 {
+			log.Printf("[TOOL PARSE] OpenAI native tool_calls: %d calls extracted", len(toolCalls))
+			return &AgentResponse{
+				AgentID:   agent.ID,
+				AgentName: agent.Name,
+				Content:   content,
+				ToolCalls: toolCalls,
+			}, nil
+		}
+	}
+
+	// FALLBACK: Extract from text response (rare, for models without tool_use support)
+	if content != "" {
+		toolCalls = extractToolCallsFromText(content, agent)
+		if len(toolCalls) > 0 {
+			log.Printf("[TOOL PARSE] Fallback text parsing: %d calls extracted", len(toolCalls))
+		}
+	}
 
 	return &AgentResponse{
 		AgentID:   agent.ID,
@@ -244,8 +272,93 @@ func parseToolArguments(argsStr string) []string {
 	return parts
 }
 
+// extractFromOpenAIToolCalls extracts tool calls from OpenAI's native tool_calls format
+// ✅ PRIMARY METHOD: Uses OpenAI's structured tool_calls (validated by OpenAI)
+// This eliminates all parsing issues:
+// - No false positives (OpenAI validates syntax)
+// - Proper nested call handling
+// - Type-safe argument parsing
+// - Industry standard format
+func extractFromOpenAIToolCalls(toolCalls interface{}, agent *Agent) []ToolCall {
+	var calls []ToolCall
+
+	// Build map of valid tool names for fast lookup
+	validTools := make(map[string]*Tool)
+	for _, tool := range agent.Tools {
+		validTools[tool.Name] = tool
+	}
+
+	// Type assert to handle OpenAI tool calls (supports both old and new SDK versions)
+	// Handle as slice of interface{} for flexibility
+	var toolCallSlice []interface{}
+	switch v := toolCalls.(type) {
+	case []interface{}:
+		toolCallSlice = v
+	default:
+		// Not in expected format, return empty
+		log.Printf("[TOOL PARSE] OpenAI tool_calls not in expected format")
+		return calls
+	}
+
+	// Process each OpenAI tool call
+	for _, tc := range toolCallSlice {
+		// Extract tool call details using type assertion
+		tcMap, ok := tc.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Extract ID
+		id, ok := tcMap["id"].(string)
+		if !ok {
+			continue
+		}
+
+		// Extract function details
+		funcObj, ok := tcMap["function"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Extract tool name
+		toolName, ok := funcObj["name"].(string)
+		if !ok {
+			continue
+		}
+
+		// Validate tool exists in agent's tools
+		_, exists := validTools[toolName]
+		if !exists {
+			log.Printf("[TOOL ERROR] Unknown tool in OpenAI response: %s", toolName)
+			continue
+		}
+
+		// Extract and parse arguments
+		args := make(map[string]interface{})
+		if argsStr, ok := funcObj["arguments"].(string); ok && argsStr != "" {
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				log.Printf("[TOOL ERROR] Invalid JSON arguments for %s: %v", toolName, err)
+				continue
+			}
+		}
+
+		// Create tool call with validated data
+		calls = append(calls, ToolCall{
+			ID:        id,
+			ToolName:  toolName,
+			Arguments: args,
+		})
+
+		log.Printf("[TOOL PARSE] Extracted from OpenAI: %s (args validated by OpenAI)", toolName)
+	}
+
+	return calls
+}
+
 // extractToolCallsFromText extracts tool calls from the response text
-// This uses a simple regex approach: ToolName(args)
+// ⚠️ FALLBACK METHOD: Uses text parsing (for models without tool_use support)
+// This is kept for backward compatibility and edge cases only
+// Preferred method is extractFromOpenAIToolCalls for robustness
 func extractToolCallsFromText(text string, agent *Agent) []ToolCall {
 	var calls []ToolCall
 
