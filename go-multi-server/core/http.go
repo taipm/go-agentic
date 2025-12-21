@@ -109,13 +109,18 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 		ResumeAgentID: snapshot.ResumeAgentID,       // Safe copy from snapshot
 	}
 
-	// Run crew execution in a goroutine
-	done := make(chan struct{})
+	// ✅ FIX for Issue #8 (Streaming Buffer Race Condition)
+	// Use channel closing as synchronization signal instead of separate done channel
+	// This eliminates all race conditions:
+	// 1. Channel closing guarantees ExecuteStream has finished
+	// 2. No separate execErr synchronization needed (happens-before guarantee from Go memory model)
+	// 3. Automatic buffer draining when channel closes
+	// 4. Most idiomatic Go pattern for goroutine completion
 	var execErr error
 
 	go func() {
+		defer close(streamChan) // Signal completion by closing channel on exit
 		execErr = executor.ExecuteStream(r.Context(), req.Query, streamChan)
-		close(done) // Signal completion by closing channel
 	}()
 
 	// Send events to client
@@ -129,36 +134,26 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	SendStreamEvent(w, NewStreamEvent("start", "system", "🚀 Starting crew execution..."))
 	flusher.Flush()
 
-	// Event loop
+	// Event loop - receives from streamChan until it closes
 	for {
 		select {
-		case <-done:
-			// Execution completed - drain remaining events from buffer
-			for {
-				select {
-				case event := <-streamChan:
-					if event != nil {
-						SendStreamEvent(w, event)
-						flusher.Flush()
-					}
-				default:
-					// No more events in buffer
-					if execErr != nil {
-						SendStreamEvent(w, NewStreamEvent("error", "system", fmt.Sprintf("Execution error: %v", execErr)))
-					} else {
-						SendStreamEvent(w, NewStreamEvent("done", "system", "✅ Execution completed"))
-					}
-					flusher.Flush()
-					return
+		case event, ok := <-streamChan:
+			if !ok {
+				// Channel closed = ExecuteStream finished
+				// streamChan is now guaranteed empty
+				// execErr read is synchronized by channel closing (Go memory model)
+				if execErr != nil {
+					SendStreamEvent(w, NewStreamEvent("error", "system", fmt.Sprintf("Execution error: %v", execErr)))
+				} else {
+					SendStreamEvent(w, NewStreamEvent("done", "system", "✅ Execution completed"))
 				}
+				flusher.Flush()
+				return
 			}
-
-		case event := <-streamChan:
-			if event == nil {
-				continue
+			if event != nil {
+				SendStreamEvent(w, event)
+				flusher.Flush()
 			}
-			SendStreamEvent(w, event)
-			flusher.Flush()
 
 		case <-time.After(30 * time.Second):
 			// Keep-alive ping
