@@ -84,7 +84,7 @@ func LoadCrewConfig(path string) (*CrewConfig, error) {
 	var config CrewConfig
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse crew config: %w", err)
+		return nil, fmt.Errorf("failed to parse crew config YAML: %w", err)
 	}
 
 	// Set defaults
@@ -101,6 +101,12 @@ func LoadCrewConfig(path string) (*CrewConfig, error) {
 		config.Settings.Language = "en"
 	}
 
+	// ✅ FIX for Issue #6: Validate configuration at load time
+	// This catches invalid configs immediately with clear error messages
+	if err := ValidateCrewConfig(&config); err != nil {
+		return nil, fmt.Errorf("invalid crew configuration: %w", err)
+	}
+
 	return &config, nil
 }
 
@@ -114,7 +120,7 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 	var config AgentConfig
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse agent config: %w", err)
+		return nil, fmt.Errorf("failed to parse agent config YAML: %w", err)
 	}
 
 	// Set defaults
@@ -123,6 +129,12 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 	}
 	if config.Temperature == 0 {
 		config.Temperature = 0.7
+	}
+
+	// ✅ FIX for Issue #6: Validate agent configuration at load time
+	// This catches invalid agent configs immediately with clear error messages
+	if err := ValidateAgentConfig(&config); err != nil {
+		return nil, fmt.Errorf("invalid agent configuration: %w", err)
 	}
 
 	return &config, nil
@@ -151,6 +163,111 @@ func LoadAgentConfigs(dir string) (map[string]*AgentConfig, error) {
 	}
 
 	return configs, nil
+}
+
+// ValidateCrewConfig validates crew configuration structure and constraints
+// ✅ FIX for Issue #6: Validate YAML config at load time instead of runtime
+// This prevents invalid configs from causing runtime crashes
+func ValidateCrewConfig(config *CrewConfig) error {
+	// Validate required fields
+	if config.Version == "" {
+		return fmt.Errorf("required field 'version' is empty")
+	}
+	if len(config.Agents) == 0 {
+		return fmt.Errorf("required field 'agents' is empty - at least one agent must be configured")
+	}
+	if config.EntryPoint == "" {
+		return fmt.Errorf("required field 'entry_point' is empty")
+	}
+
+	// Validate entry_point exists in agents
+	entryExists := false
+	agentMap := make(map[string]bool)
+	for _, agent := range config.Agents {
+		agentMap[agent] = true
+		if agent == config.EntryPoint {
+			entryExists = true
+		}
+	}
+	if !entryExists {
+		return fmt.Errorf("entry_point '%s' not found in agents list", config.EntryPoint)
+	}
+
+	// Validate field constraints
+	if config.Settings.MaxHandoffs < 0 {
+		return fmt.Errorf("settings.max_handoffs must be >= 0, got %d", config.Settings.MaxHandoffs)
+	}
+	if config.Settings.MaxRounds <= 0 {
+		return fmt.Errorf("settings.max_rounds must be > 0, got %d", config.Settings.MaxRounds)
+	}
+	if config.Settings.TimeoutSeconds <= 0 {
+		return fmt.Errorf("settings.timeout_seconds must be > 0, got %d", config.Settings.TimeoutSeconds)
+	}
+
+	// Validate routing references
+	if config.Routing != nil {
+		// Validate signals reference existing agents
+		for agentID, signals := range config.Routing.Signals {
+			if !agentMap[agentID] {
+				return fmt.Errorf("routing.signals references non-existent agent '%s'", agentID)
+			}
+			for _, signal := range signals {
+				// Allow empty target for terminal signals
+				if signal.Target != "" && !agentMap[signal.Target] {
+					return fmt.Errorf("routing signal from agent '%s' targets non-existent agent '%s'", agentID, signal.Target)
+				}
+			}
+		}
+
+		// Validate agent behaviors reference existing agents
+		for agentID := range config.Routing.AgentBehaviors {
+			if !agentMap[agentID] {
+				return fmt.Errorf("routing.agent_behaviors references non-existent agent '%s'", agentID)
+			}
+		}
+
+		// Validate parallel groups reference existing agents
+		for groupName, group := range config.Routing.ParallelGroups {
+			if len(group.Agents) == 0 {
+				return fmt.Errorf("parallel_group '%s' has no agents", groupName)
+			}
+			for _, agentID := range group.Agents {
+				if !agentMap[agentID] {
+					return fmt.Errorf("parallel_group '%s' references non-existent agent '%s'", groupName, agentID)
+				}
+			}
+			if group.NextAgent != "" && !agentMap[group.NextAgent] {
+				return fmt.Errorf("parallel_group '%s' next_agent '%s' does not exist", groupName, group.NextAgent)
+			}
+			if group.TimeoutSeconds <= 0 {
+				return fmt.Errorf("parallel_group '%s' timeout_seconds must be > 0, got %d", groupName, group.TimeoutSeconds)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ValidateAgentConfig validates agent configuration structure and constraints
+// ✅ FIX for Issue #6: Validate agent config at load time
+func ValidateAgentConfig(config *AgentConfig) error {
+	// Validate required fields
+	if config.ID == "" {
+		return fmt.Errorf("agent: required field 'id' is empty")
+	}
+	if config.Name == "" {
+		return fmt.Errorf("agent '%s': required field 'name' is empty", config.ID)
+	}
+	if config.Role == "" {
+		return fmt.Errorf("agent '%s': required field 'role' is empty", config.ID)
+	}
+
+	// Validate field constraints
+	if config.Temperature < 0 || config.Temperature > 2 {
+		return fmt.Errorf("agent '%s': temperature must be between 0 and 2, got %f", config.ID, config.Temperature)
+	}
+
+	return nil
 }
 
 // CreateAgentFromConfig creates an Agent from an AgentConfig
