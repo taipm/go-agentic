@@ -5,14 +5,112 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // StreamRequest represents a request to stream crew execution
 type StreamRequest struct {
 	Query   string    `json:"query"`
 	History []Message `json:"history"`
+}
+
+// ✅ FIX for Issue #10 (Input Validation)
+// InputValidator validates user input to prevent security issues and ensure reliability
+type InputValidator struct {
+	MaxQueryLen    int
+	MinQueryLen    int
+	MaxHistoryLen  int
+	MaxMessageSize int
+	AllowedRoles   map[string]bool
+}
+
+// NewInputValidator creates a validator with recommended limits
+func NewInputValidator() *InputValidator {
+	return &InputValidator{
+		MaxQueryLen:    10000,  // 10KB max query
+		MinQueryLen:    1,      // At least 1 character
+		MaxHistoryLen:  1000,   // Max 1000 messages
+		MaxMessageSize: 100000, // 100KB per message
+		AllowedRoles: map[string]bool{
+			"user":      true,
+			"assistant": true,
+			"system":    true,
+		},
+	}
+}
+
+// ValidateQuery checks query parameter for safety
+func (v *InputValidator) ValidateQuery(query string) error {
+	// Length check
+	if len(query) < v.MinQueryLen || len(query) > v.MaxQueryLen {
+		return fmt.Errorf("query length must be %d-%d characters", v.MinQueryLen, v.MaxQueryLen)
+	}
+
+	// UTF-8 validation
+	if !utf8.ValidString(query) {
+		return fmt.Errorf("query contains invalid UTF-8")
+	}
+
+	// Null byte check
+	if strings.ContainsRune(query, '\x00') {
+		return fmt.Errorf("query contains null bytes")
+	}
+
+	// Control character check (allow newline and tab)
+	for _, r := range query {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return fmt.Errorf("query contains invalid control characters")
+		}
+	}
+
+	return nil
+}
+
+// ValidateAgentID checks agent ID format
+func (v *InputValidator) ValidateAgentID(agentID string) error {
+	if agentID == "" {
+		return fmt.Errorf("agent ID cannot be empty")
+	}
+
+	// Pattern: alphanumeric, underscore, hyphen only
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]{1,128}$`, agentID)
+	if !matched {
+		return fmt.Errorf("invalid agent ID format (must be 1-128 chars: alphanumeric, underscore, hyphen)")
+	}
+
+	return nil
+}
+
+// ValidateHistory checks history slice for safety
+func (v *InputValidator) ValidateHistory(history []Message) error {
+	if len(history) > v.MaxHistoryLen {
+		return fmt.Errorf("history exceeds maximum %d messages", v.MaxHistoryLen)
+	}
+
+	for i, msg := range history {
+		// Role validation
+		if !v.AllowedRoles[msg.Role] {
+			return fmt.Errorf("message %d: invalid role '%s'", i, msg.Role)
+		}
+
+		// Content size validation
+		contentSize := len([]byte(msg.Content))
+		if contentSize > v.MaxMessageSize {
+			return fmt.Errorf("message %d exceeds size limit (%d > %d bytes)", i, contentSize, v.MaxMessageSize)
+		}
+
+		// UTF-8 validation for each message
+		if !utf8.ValidString(msg.Content) {
+			return fmt.Errorf("message %d contains invalid UTF-8", i)
+		}
+	}
+
+	return nil
 }
 
 // executorSnapshot safely copies executor state for concurrent access
@@ -26,14 +124,16 @@ type executorSnapshot struct {
 // HTTPHandler handles HTTP requests for crew execution
 // Uses RWMutex for optimal read-heavy workload (many concurrent StreamHandlers, few SetVerbose/SetResumeAgent calls)
 type HTTPHandler struct {
-	executor *CrewExecutor
-	mu       sync.RWMutex // Changed from sync.Mutex for better concurrency (read-heavy pattern)
+	executor  *CrewExecutor
+	mu        sync.RWMutex // Changed from sync.Mutex for better concurrency (read-heavy pattern)
+	validator *InputValidator // ✅ FIX for Issue #10: Validate input
 }
 
 // NewHTTPHandler creates a new HTTP handler
 func NewHTTPHandler(executor *CrewExecutor) *HTTPHandler {
 	return &HTTPHandler{
-		executor: executor,
+		executor:  executor,
+		validator: NewInputValidator(),
 	}
 }
 
@@ -75,6 +175,21 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Query == "" {
 		http.Error(w, "Query is required", http.StatusBadRequest)
+		return
+	}
+
+	// ✅ FIX for Issue #10: Comprehensive input validation
+	// Validate query parameter
+	if err := h.validator.ValidateQuery(req.Query); err != nil {
+		log.Printf("[INPUT ERROR] Invalid query: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid query: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate history
+	if err := h.validator.ValidateHistory(req.History); err != nil {
+		log.Printf("[INPUT ERROR] Invalid history: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid history: %v", err), http.StatusBadRequest)
 		return
 	}
 

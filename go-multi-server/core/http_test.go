@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -406,4 +407,222 @@ func TestNoDeadlock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Possible deadlock detected (timeout after 5 seconds)")
 	}
+}
+
+// ===== Issue #10: Input Validation Tests =====
+
+// TestValidateQueryLength verifies query length validation
+func TestValidateQueryLength(t *testing.T) {
+	validator := NewInputValidator()
+
+	tests := []struct {
+		name      string
+		query     string
+		shouldErr bool
+	}{
+		{"empty query", "", true},
+		{"valid query", "what is AI?", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateQuery(tt.query)
+			if (err != nil) != tt.shouldErr {
+				t.Errorf("Expected error: %v, got: %v", tt.shouldErr, err)
+			}
+		})
+	}
+
+	// Test max length query (exactly 10000 chars)
+	t.Run("max length query", func(t *testing.T) {
+		maxQuery := strings.Repeat("a", 10000)
+		err := validator.ValidateQuery(maxQuery)
+		if err != nil {
+			t.Errorf("Expected no error for max length query, got: %v", err)
+		}
+	})
+
+	// Test exceeds max length (10001 chars)
+	t.Run("exceeds max length", func(t *testing.T) {
+		overQuery := strings.Repeat("a", 10001)
+		err := validator.ValidateQuery(overQuery)
+		if err == nil {
+			t.Error("Expected error for exceeding max length, got nil")
+		}
+	})
+}
+
+// TestValidateQueryUTF8 verifies UTF-8 validation
+func TestValidateQueryUTF8(t *testing.T) {
+	validator := NewInputValidator()
+
+	// Invalid UTF-8 sequence
+	invalidUTF8 := "hello\xff\xfe"
+	err := validator.ValidateQuery(invalidUTF8)
+	if err == nil {
+		t.Error("Expected error for invalid UTF-8, got nil")
+	}
+
+	// Valid UTF-8 with Unicode
+	validUnicode := "Xin chào, 世界"
+	err = validator.ValidateQuery(validUnicode)
+	if err != nil {
+		t.Errorf("Expected no error for valid Unicode, got: %v", err)
+	}
+}
+
+// TestValidateQueryControlChars verifies control character detection
+func TestValidateQueryControlChars(t *testing.T) {
+	validator := NewInputValidator()
+
+	tests := []struct {
+		name      string
+		query     string
+		shouldErr bool
+	}{
+		{"null byte", "hello\x00world", true},
+		{"control char", "hello\x01world", true},
+		{"newline allowed", "hello\nworld", false},
+		{"tab allowed", "hello\tworld", false},
+		{"clean text", "hello world", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateQuery(tt.query)
+			if (err != nil) != tt.shouldErr {
+				t.Errorf("Expected error: %v, got: %v", tt.shouldErr, err)
+			}
+		})
+	}
+}
+
+// TestValidateAgentIDFormat verifies agent ID format validation
+func TestValidateAgentIDFormat(t *testing.T) {
+	validator := NewInputValidator()
+
+	tests := []struct {
+		name      string
+		agentID   string
+		shouldErr bool
+	}{
+		{"valid id", "agent-1", false},
+		{"valid id with underscore", "agent_1", false},
+		{"valid id alphanumeric", "agent123", false},
+		{"empty id", "", true},
+		{"invalid char @", "agent@1", true},
+		{"invalid char space", "agent 1", true},
+		{"too long", string(make([]byte, 129)), true},
+		{"valid max length", string(make([]byte, 128)), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// For length tests, fill with valid chars (alphanumeric only)
+			agentID := tt.agentID
+			if tt.name == "too long" {
+				// Create string with 129 alphanumeric chars
+				agentID = strings.Repeat("a", 129)
+			}
+			if tt.name == "valid max length" {
+				// Create string with exactly 128 alphanumeric chars
+				agentID = strings.Repeat("a", 128)
+			}
+
+			err := validator.ValidateAgentID(agentID)
+			if (err != nil) != tt.shouldErr {
+				t.Errorf("Expected error: %v, got: %v", tt.shouldErr, err)
+			}
+		})
+	}
+}
+
+// TestValidateHistory verifies history validation
+func TestValidateHistory(t *testing.T) {
+	validator := NewInputValidator()
+
+	t.Run("valid history", func(t *testing.T) {
+		history := []Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "hi there"},
+		}
+		err := validator.ValidateHistory(history)
+		if err != nil {
+			t.Errorf("Expected no error, got: %v", err)
+		}
+	})
+
+	t.Run("invalid role", func(t *testing.T) {
+		history := []Message{
+			{Role: "invalid_role", Content: "hello"},
+		}
+		err := validator.ValidateHistory(history)
+		if err == nil {
+			t.Error("Expected error for invalid role, got nil")
+		}
+	})
+
+	t.Run("exceeds message count", func(t *testing.T) {
+		history := make([]Message, 1001)
+		for i := range history {
+			history[i] = Message{Role: "user", Content: "msg"}
+		}
+		err := validator.ValidateHistory(history)
+		if err == nil {
+			t.Error("Expected error for exceeding message count, got nil")
+		}
+	})
+
+	t.Run("message too large", func(t *testing.T) {
+		history := []Message{
+			{Role: "user", Content: string(make([]byte, 100001))},
+		}
+		err := validator.ValidateHistory(history)
+		if err == nil {
+			t.Error("Expected error for oversized message, got nil")
+		}
+	})
+}
+
+// TestStreamHandlerInputValidation verifies validation in StreamHandler
+func TestStreamHandlerInputValidation(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			{ID: "test-agent", Name: "Test Agent", IsTerminal: true},
+		},
+	}
+	executor := NewCrewExecutor(crew, "test-key")
+	handler := NewHTTPHandler(executor)
+
+	t.Run("reject oversized query", func(t *testing.T) {
+		req := httptest.NewRequest(
+			"GET",
+			"/api/crew/stream?q="+strings.Repeat("a", 10001),
+			nil,
+		)
+		w := httptest.NewRecorder()
+
+		handler.StreamHandler(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("accept valid query", func(t *testing.T) {
+		// This will fail during execution since no LLM, but shouldn't fail validation
+		req := httptest.NewRequest(
+			"GET",
+			"/api/crew/stream?q=test",
+			nil,
+		)
+		w := httptest.NewRecorder()
+
+		handler.StreamHandler(w, req)
+
+		// Should NOT be 400 (bad request)
+		if w.Code == http.StatusBadRequest {
+			t.Errorf("Valid query was rejected: %s", w.Body.String())
+		}
+	})
 }
