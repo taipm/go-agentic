@@ -1,0 +1,164 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║            🚨 CRITICAL SECURITY INCIDENT - URGENT ACTIONS 🚨              ║
+║                                                                            ║
+║                    EXPOSED API KEY MUST BE REVOKED NOW                    ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+📋 QUICK SUMMARY
+────────────────────────────────────────────────────────────────────────────
+
+Incident: OpenAI API keys were accidentally committed to git repository
+Severity: CRITICAL
+Status:   ✅ Git remediation COMPLETE | ⏳ Manual actions REQUIRED
+Timeline: Within the next 1 HOUR
+
+KEY FACTS:
+  • Keys found: 2 locations (same credential)
+  • Keys removed: ✅ Completely (from all git history)
+  • Keys still valid: ⚠️ YES (at OpenAI) - MUST be revoked
+  • Repository status: ✅ CLEAN (no secrets in git)
+
+════════════════════════════════════════════════════════════════════════════
+
+🔴 URGENT ACTIONS (NEXT 1 HOUR)
+────────────────────────────────────────────────────────────────────────────
+
+1️⃣  REVOKE EXPOSED KEY at OpenAI
+   URL: https://platform.openai.com/account/api-keys
+   Steps:
+   - Log in to OpenAI platform
+   - Find key created ~Dec 20, 2025
+   - Click DELETE button
+   - Confirm deletion
+   ⏱️  TIME REQUIRED: 5 minutes
+
+2️⃣  GENERATE NEW KEY
+   URL: https://platform.openai.com/account/api-keys
+   Steps:
+   - Click "Create new secret key"
+   - Name: go-agentic-prod-20251221-remediated
+   - COPY IMMEDIATELY (shown only once!)
+   ⏱️  TIME REQUIRED: 2 minutes
+
+3️⃣  UPDATE GITHUB SECRETS
+   URL: https://github.com/taipm/go-agentic/settings/secrets/actions
+   Steps:
+   - Click OPENAI_API_KEY secret
+   - Click "Update"
+   - Paste new key from Step 2
+   - Save
+   ⏱️  TIME REQUIRED: 2 minutes
+
+4️⃣  UPDATE LOCAL .env FILES
+   Steps:
+   - For each local copy of repository:
+     cd /path/to/go-agentic
+     export OPENAI_API_KEY="sk-proj-[new-key-from-step-2]"
+   - Or edit .env file with new key
+   - Verify: Run one of the examples to confirm it works
+   ⏱️  TIME REQUIRED: 5 minutes
+
+════════════════════════════════════════════════════════════════════════════
+
+📊 WHAT WAS DONE (TECHNICAL REMEDIATION - ✅ COMPLETE)
+────────────────────────────────────────────────────────────────────────────
+
+✅ Git History Rewrite
+   - Removed from: go-crewai/.env
+   - Removed from: core/.env
+   - Removed from: go-x/.env
+   - All commits rewritten across all branches
+   - All tags updated
+
+✅ Force Push to GitHub
+   - All branches updated (no secret visible)
+   - All tags updated
+   - Remote cleaned
+
+✅ Repository Verification
+   - No .env files currently tracked
+   - Only .env.example files (safe, contain placeholders)
+   - Git clean
+
+✅ CI/CD Security Checks
+   - GitGuardian enabled (caught incident)
+   - TruffleHog scanning active
+   - git-secrets monitoring active
+   - Daily security audits configured
+
+════════════════════════════════════════════════════════════════════════════
+
+⚠️  WHAT YOU MUST DO (MANUAL ACTIONS - ⏳ REQUIRED)
+────────────────────────────────────────────────────────────────────────────
+
+URGENT (Within 1 hour):
+  [ ] Revoke old key at OpenAI (5 min)
+  [ ] Generate new key (2 min)
+  [ ] Update GitHub Secrets (2 min)
+  [ ] Update local .env files (5 min)
+  Total: ~15 minutes
+
+SHORT-TERM (Within 24 hours):
+  [ ] Check API usage for anomalies
+  [ ] Notify team
+  [ ] Verify all services work with new key
+  [ ] Document the incident internally
+
+════════════════════════════════════════════════════════════════════════════
+
+📚 DETAILED DOCUMENTATION
+────────────────────────────────────────────────────────────────────────────
+
+For complete step-by-step instructions, see:
+  → SECURITY_INCIDENT_FINAL_REPORT.md (Comprehensive guide with all details)
+  → SECURITY_INCIDENT_REPORT_20251221.md (Initial discovery report)
+
+For team communication:
+  → Copy the template from SECURITY_INCIDENT_FINAL_REPORT.md "Action #6"
+
+For future prevention:
+  → SECRET_ROTATION_PROCEDURES.md (Quarterly rotation schedule)
+  → CICD_SECURITY_AUDIT.md (Security best practices)
+
+════════════════════════════════════════════════════════════════════════════
+
+🎯 SUCCESS CRITERIA
+────────────────────────────────────────────────────────────────────────────
+
+You'll know it's fixed when:
+  ✅ Old key is DELETED at OpenAI (try to use old key → should fail)
+  ✅ New key works (try with new key → should succeed)
+  ✅ GitHub Secrets updated (CI/CD should pass)
+  ✅ Local services work (run examples → should work)
+  ✅ API usage normal (check OpenAI dashboard → no suspicious activity)
+
+════════════════════════════════════════════════════════════════════════════
+
+❓ QUESTIONS?
+────────────────────────────────────────────────────────────────────────────
+
+Check these files in order:
+  1. This file (URGENT_ACTION_SUMMARY.txt) - Quick overview ← You are here
+  2. SECURITY_INCIDENT_FINAL_REPORT.md - Detailed instructions
+  3. CICD_SECURITY_AUDIT.md - Security context
+  4. SECRET_ROTATION_PROCEDURES.md - Future prevention
+
+Contact: [Tech Lead] if you have questions
+
+════════════════════════════════════════════════════════════════════════════
+
+⏱️  START WITH ACTION #1 NOW - YOU HAVE 1 HOUR
+────────────────────────────────────────────────────────────────────────────
+
+→ Go to: https://platform.openai.com/account/api-keys
+→ Find key created ~Dec 20, 2025
+→ Click DELETE button
+→ START TIMER: Next 3 actions should take ~10 minutes total
+
+════════════════════════════════════════════════════════════════════════════
+
+Generated: 2025-12-21
+Status: INCIDENT IN REMEDIATION
+Risk Level: CRITICAL (until manual actions complete)
