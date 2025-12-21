@@ -134,11 +134,90 @@ type ExecutionMetrics struct {
 	EndTime      time.Time     // When tool execution completed
 }
 
+// ✅ FIX for Issue #11 (Enhanced Timeout Management)
+// TimeoutTracker tracks sequence execution time and manages per-tool budgets
+type TimeoutTracker struct {
+	sequenceStartTime time.Time     // When sequence started
+	sequenceDeadline  time.Time     // When sequence must complete
+	overheadBudget    time.Duration // Estimated overhead per tool (e.g., 500ms for LLM calls)
+	usedTime          time.Duration // Time already consumed in sequence
+	mu                sync.Mutex    // Protect concurrent access
+}
+
+// NewTimeoutTracker creates a timeout tracker for a sequence
+func NewTimeoutTracker(sequenceTimeout time.Duration, overheadBudget time.Duration) *TimeoutTracker {
+	now := time.Now()
+	return &TimeoutTracker{
+		sequenceStartTime: now,
+		sequenceDeadline:  now.Add(sequenceTimeout),
+		overheadBudget:    overheadBudget,
+		usedTime:          0,
+	}
+}
+
+// GetRemainingTime returns how much time is left in the sequence
+func (tt *TimeoutTracker) GetRemainingTime() time.Duration {
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+	remaining := time.Until(tt.sequenceDeadline)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+// CalculateToolTimeout calculates the appropriate timeout for the next tool
+// accounting for: per-tool timeout, remaining sequence time, and overhead budget
+func (tt *TimeoutTracker) CalculateToolTimeout(defaultTimeout, perToolTimeout time.Duration) time.Duration {
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	// Start with per-tool timeout, fallback to default
+	toolTimeout := perToolTimeout
+	if toolTimeout <= 0 {
+		toolTimeout = defaultTimeout
+	}
+
+	// Get remaining sequence time and subtract overhead budget
+	remaining := time.Until(tt.sequenceDeadline)
+	if remaining <= tt.overheadBudget {
+		// Not enough time even for overhead
+		return 100 * time.Millisecond // Minimal timeout to signal urgency
+	}
+
+	// Available time is remaining minus overhead
+	availableTime := remaining - tt.overheadBudget
+
+	// Use the minimum: per-tool timeout or available time
+	if toolTimeout > availableTime {
+		return availableTime
+	}
+	return toolTimeout
+}
+
+// RecordToolExecution records that a tool has finished and updates used time
+func (tt *TimeoutTracker) RecordToolExecution(duration time.Duration) {
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+	tt.usedTime += duration
+}
+
+// IsTimeoutWarning returns true if we're within 20% of sequence deadline
+func (tt *TimeoutTracker) IsTimeoutWarning() bool {
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+	remaining := time.Until(tt.sequenceDeadline)
+	totalDuration := tt.sequenceDeadline.Sub(tt.sequenceStartTime)
+	warnThreshold := totalDuration / 5 // 20%
+	return remaining < warnThreshold && remaining > 0
+}
+
 // ToolTimeoutConfig defines timeout behavior for tools
 type ToolTimeoutConfig struct {
 	DefaultToolTimeout  time.Duration            // Default timeout per tool (e.g., 5s)
 	SequenceTimeout     time.Duration            // Max total time for all tools in sequence (e.g., 30s)
 	PerToolTimeout      map[string]time.Duration // Per-tool overrides for specific tools
+	OverheadBudget      time.Duration            // Estimated overhead per tool call (e.g., 500ms)
 	CollectMetrics      bool                     // If true, collect execution metrics
 	ExecutionMetrics    []ExecutionMetrics       // Collected metrics from last execution
 }
@@ -148,6 +227,7 @@ func NewToolTimeoutConfig() *ToolTimeoutConfig {
 	return &ToolTimeoutConfig{
 		DefaultToolTimeout: 5 * time.Second,    // 5s per tool
 		SequenceTimeout:    30 * time.Second,   // 30s total for all sequential tools
+		OverheadBudget:     500 * time.Millisecond, // 500ms overhead for LLM calls and context switches
 		PerToolTimeout:     make(map[string]time.Duration),
 		CollectMetrics:     true,
 		ExecutionMetrics:   []ExecutionMetrics{},
@@ -622,8 +702,137 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 	}
 }
 
+// calculateToolTimeout determines the appropriate timeout for the next tool
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) calculateToolTimeout(tracker *TimeoutTracker, toolName string) time.Duration {
+	if tracker != nil && ce.ToolTimeouts != nil {
+		perToolTimeout := ce.ToolTimeouts.GetToolTimeout(toolName)
+		return tracker.CalculateToolTimeout(ce.ToolTimeouts.DefaultToolTimeout, perToolTimeout)
+	}
+	if ce.ToolTimeouts != nil {
+		return ce.ToolTimeouts.GetToolTimeout(toolName)
+	}
+	return 5 * time.Second
+}
+
+// logToolStart logs tool execution start with timeout details
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) logToolStart(tool *Tool, agent *Agent, timeout time.Duration, tracker *TimeoutTracker) {
+	if tracker != nil {
+		remaining := tracker.GetRemainingTime()
+		log.Printf("[TOOL START] %s <- %s (timeout: %v, remaining: %v)", tool.Name, agent.ID, timeout, remaining)
+	} else {
+		log.Printf("[TOOL START] %s <- %s (timeout: %v)", tool.Name, agent.ID, timeout)
+	}
+}
+
+// recordToolMetrics records execution metrics and detects timeouts
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) recordToolMetrics(tool *Tool, duration time.Duration, err error, startTime, endTime time.Time) {
+	timedOut := err != nil && errors.Is(err, context.DeadlineExceeded)
+	if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
+		status := ce.getToolExecutionStatus(timedOut, err)
+		ce.ToolTimeouts.ExecutionMetrics = append(ce.ToolTimeouts.ExecutionMetrics, ExecutionMetrics{
+			ToolName:  tool.Name,
+			Duration:  duration,
+			Status:    status,
+			TimedOut:  timedOut,
+			StartTime: startTime,
+			EndTime:   endTime,
+		})
+	}
+	if ce.Metrics != nil {
+		success := err == nil
+		ce.Metrics.RecordToolExecution(tool.Name, duration, success)
+	}
+}
+
+// getToolExecutionStatus determines the status based on error type
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) getToolExecutionStatus(timedOut bool, err error) string {
+	if timedOut {
+		return "timeout"
+	}
+	if err != nil {
+		return "error"
+	}
+	return "success"
+}
+
+// handleToolNotFound logs and records tool not found error
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) handleToolNotFound(call ToolCall) ToolResult {
+	log.Printf("[TOOL ERROR] %s - Tool not found", call.ToolName)
+	return ToolResult{
+		ToolName: call.ToolName,
+		Status:   "error",
+		Output:   fmt.Sprintf("Tool %s not found", call.ToolName),
+	}
+}
+
+// handleSequenceTimeout logs and returns timeout result
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) handleSequenceTimeout(tool *Tool, agent *Agent) ToolResult {
+	log.Printf("[TOOL TIMEOUT] %s <- %s - Sequence timeout exceeded", tool.Name, agent.ID)
+	return ToolResult{
+		ToolName: tool.Name,
+		Status:   "error",
+		Output:   "Tool execution timeout: sequence timeout exceeded",
+	}
+}
+
+// handleToolExecutionError logs and returns tool execution error
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) handleToolExecutionError(tool *Tool, err error, duration time.Duration, timedOut bool) ToolResult {
+	if timedOut {
+		log.Printf("[TOOL TIMEOUT] %s - %v (%v)", tool.Name, err, duration)
+	} else {
+		log.Printf("[TOOL ERROR] %s - %v", tool.Name, err)
+	}
+	return ToolResult{
+		ToolName: tool.Name,
+		Status:   "error",
+		Output:   err.Error(),
+	}
+}
+
+// handleToolExecutionSuccess logs and returns tool execution success
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) handleToolExecutionSuccess(tool *Tool, duration time.Duration, output string) ToolResult {
+	log.Printf("[TOOL SUCCESS] %s -> %d chars (%v)", tool.Name, len(output), duration)
+	return ToolResult{
+		ToolName: tool.Name,
+		Status:   "success",
+		Output:   output,
+	}
+}
+
+// setupSequenceContext creates and configures the sequence execution context
+// ✅ FIX #4: Helper function to reduce cognitive complexity
+func (ce *CrewExecutor) setupSequenceContext(ctx context.Context) (context.Context, context.CancelFunc, *TimeoutTracker) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var sequenceCtx context.Context
+	var sequenceCancel context.CancelFunc
+	var timeoutTracker *TimeoutTracker
+
+	if ce.ToolTimeouts != nil && ce.ToolTimeouts.SequenceTimeout > 0 {
+		timeoutTracker = NewTimeoutTracker(ce.ToolTimeouts.SequenceTimeout, ce.ToolTimeouts.OverheadBudget)
+		sequenceCtx, sequenceCancel = context.WithTimeout(ctx, ce.ToolTimeouts.SequenceTimeout)
+	} else {
+		// No sequence timeout configured, use context as-is
+		sequenceCtx = ctx
+		sequenceCancel = func() {} // no-op cancel for defer safety
+	}
+
+	return sequenceCtx, sequenceCancel, timeoutTracker
+}
+
 // executeCalls executes tool calls from an agent with per-tool and sequence timeouts
 // ✅ FIX for Issue #11 (Sequential Tool Timeout): Add timeout protection for hanging tools
+// ✅ FIX #4: Enhanced timeout management with remaining time calculation and overhead tracking
 func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agent *Agent) []ToolResult {
 	var results []ToolResult
 
@@ -632,21 +841,8 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 		toolMap[tool.Name] = tool
 	}
 
-	// ✅ FIX for Issue #11: Create deadline for entire sequence
-	// Fail fast if any tool execution would exceed sequence timeout
-	// If ctx is nil, use background context as fallback
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	var sequenceCtx context.Context
-	var sequenceCancel context.CancelFunc
-	if ce.ToolTimeouts != nil && ce.ToolTimeouts.SequenceTimeout > 0 {
-		sequenceCtx, sequenceCancel = context.WithTimeout(ctx, ce.ToolTimeouts.SequenceTimeout)
-		defer sequenceCancel()
-	} else {
-		sequenceCtx = ctx
-	}
+	sequenceCtx, sequenceCancel, timeoutTracker := ce.setupSequenceContext(ctx)
+	defer sequenceCancel()
 
 	// Reset metrics for this execution
 	if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
@@ -656,90 +852,49 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 	for _, call := range calls {
 		tool, ok := toolMap[call.ToolName]
 		if !ok {
-			log.Printf("[TOOL ERROR] %s <- %s - Tool not found", call.ToolName, agent.ID)
-			results = append(results, ToolResult{
-				ToolName: call.ToolName,
-				Status:   "error",
-				Output:   fmt.Sprintf("Tool %s not found", call.ToolName),
-			})
+			results = append(results, ce.handleToolNotFound(call))
 			continue
 		}
 
 		// ✅ FIX for Issue #11: Check sequence deadline before executing tool
 		select {
 		case <-sequenceCtx.Done():
-			log.Printf("[TOOL TIMEOUT] %s <- %s - Sequence timeout exceeded", tool.Name, agent.ID)
-			results = append(results, ToolResult{
-				ToolName: call.ToolName,
-				Status:   "error",
-				Output:   "Tool execution timeout: sequence timeout exceeded",
-			})
-			return results // Stop executing remaining tools
+			results = append(results, ce.handleSequenceTimeout(tool, agent))
+			return results
 		default:
-			// Continue to tool execution
 		}
 
-		// ✅ FIX for Issue #11: Create per-tool timeout context
-		toolTimeout := 5 * time.Second // Default timeout
-		if ce.ToolTimeouts != nil {
-			toolTimeout = ce.ToolTimeouts.GetToolTimeout(tool.Name)
-		}
+		// ✅ FIX #4: Calculate timeout with remaining sequence time
+		toolTimeout := ce.calculateToolTimeout(timeoutTracker, tool.Name)
+		ce.logToolStart(tool, agent, toolTimeout, timeoutTracker)
 
 		toolCtx, toolCancel := context.WithTimeout(sequenceCtx, toolTimeout)
-
-		// ✅ FIX for Issue #5 (Panic Risk): Use safeExecuteTool wrapper to catch panics
-		// This ensures that if a tool panics, the error is returned instead of crashing
-		log.Printf("[TOOL START] %s <- %s (timeout: %v)", tool.Name, agent.ID, toolTimeout)
-
 		startTime := time.Now()
 		output, err := safeExecuteTool(toolCtx, tool, call.Arguments)
 		endTime := time.Now()
 		duration := endTime.Sub(startTime)
-		toolCancel() // Always cancel tool context
+		toolCancel()
 
-		// ✅ FIX for Issue #11: Record metrics and detect timeouts
+		// ✅ FIX #4: Record tool execution in timeout tracker
+		if timeoutTracker != nil {
+			timeoutTracker.RecordToolExecution(duration)
+		}
+
+		// ✅ FIX #4: Record metrics
+		ce.recordToolMetrics(tool, duration, err, startTime, endTime)
+
+		// ✅ FIX #4: Check if approaching timeout
+		if timeoutTracker != nil && timeoutTracker.IsTimeoutWarning() {
+			remaining := timeoutTracker.GetRemainingTime()
+			log.Printf("[TIMEOUT WARNING] Sequence timeout approaching - only %v remaining", remaining)
+		}
+
+		// Handle tool execution result
 		timedOut := err != nil && errors.Is(err, context.DeadlineExceeded)
-		if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
-			status := "success"
-			if timedOut {
-				status = "timeout"
-			} else if err != nil {
-				status = "error"
-			}
-			ce.ToolTimeouts.ExecutionMetrics = append(ce.ToolTimeouts.ExecutionMetrics, ExecutionMetrics{
-				ToolName:  tool.Name,
-				Duration:  duration,
-				Status:    status,
-				TimedOut:  timedOut,
-				StartTime: startTime,
-				EndTime:   endTime,
-			})
-		}
-
-		// ✅ FIX for Issue #14: Record metrics in MetricsCollector for production observability
-		if ce.Metrics != nil {
-			success := err == nil
-			ce.Metrics.RecordToolExecution(tool.Name, duration, success)
-		}
-
 		if err != nil {
-			if timedOut {
-				log.Printf("[TOOL TIMEOUT] %s - %v (%v)", tool.Name, err, duration)
-			} else {
-				log.Printf("[TOOL ERROR] %s - %v", tool.Name, err)
-			}
-			results = append(results, ToolResult{
-				ToolName: call.ToolName,
-				Status:   "error",
-				Output:   err.Error(),
-			})
+			results = append(results, ce.handleToolExecutionError(tool, err, duration, timedOut))
 		} else {
-			log.Printf("[TOOL SUCCESS] %s -> %d chars (%v)", tool.Name, len(output), duration)
-			results = append(results, ToolResult{
-				ToolName: call.ToolName,
-				Status:   "success",
-				Output:   output,
-			})
+			results = append(results, ce.handleToolExecutionSuccess(tool, duration, output))
 		}
 
 		// Note: Not hiding embedding vectors anymore - agents need to see vectors to extract and use them
