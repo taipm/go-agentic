@@ -106,7 +106,143 @@ func validateToolArguments(tool *Tool, args map[string]interface{}) error {
 // ✅ FIX for Issue #25: Validate arguments before execution
 // This prevents one buggy tool from crashing the entire server
 // Pattern: defer-recover catches panic and converts it to error (Go standard approach)
-func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
+// ✅ FIX #5: Error classification for smart recovery decisions
+type ErrorType int
+
+const (
+	ErrorTypeUnknown ErrorType = iota
+	ErrorTypeTimeout          // Transient: exceeded deadline
+	ErrorTypePanic            // Non-transient: panic in tool
+	ErrorTypeValidation       // Non-transient: invalid arguments
+	ErrorTypeNetwork          // Transient: connection issues
+	ErrorTypeTemporary        // Transient: temporary failures
+	ErrorTypePermanent        // Non-transient: permanent failure
+)
+
+// classifyError determines if an error is transient (retryable) or permanent
+// ✅ FIX #5: Helper function for error recovery strategy
+func classifyError(err error) ErrorType {
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+
+	errStr := err.Error()
+
+	// Timeout errors are transient
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ErrorTypeTimeout
+	}
+
+	// Check for panic signature
+	if strings.Contains(errStr, "panicked:") {
+		return ErrorTypePanic
+	}
+
+	// Check for validation errors (non-transient)
+	if strings.Contains(errStr, "required field") || strings.Contains(errStr, "parameter") {
+		return ErrorTypeValidation
+	}
+
+	// Check for network-like errors (transient)
+	networkPatterns := []string{
+		"connection refused", "connection reset", "broken pipe",
+		"network unreachable", "host unreachable", "no such host",
+		"temporary failure", "i/o timeout",
+	}
+	for _, pattern := range networkPatterns {
+		if strings.Contains(strings.ToLower(errStr), pattern) {
+			return ErrorTypeNetwork
+		}
+	}
+
+	// Default to temporary (transient) for unknown errors
+	return ErrorTypeTemporary
+}
+
+// isRetryable determines if an error type should trigger a retry
+// ✅ FIX #5: Helper function to determine retry strategy
+func isRetryable(errType ErrorType) bool {
+	switch errType {
+	case ErrorTypeTimeout, ErrorTypeNetwork, ErrorTypeTemporary:
+		return true
+	case ErrorTypePanic, ErrorTypeValidation, ErrorTypePermanent, ErrorTypeUnknown:
+		return false
+	default:
+		return false
+	}
+}
+
+// calculateBackoffDuration returns exponential backoff with jitter
+// ✅ FIX #5: Helper function for exponential backoff calculation
+func calculateBackoffDuration(attempt int) time.Duration {
+	// Start with 100ms, double each attempt: 100ms, 200ms, 400ms, 800ms...
+	baseDelay := time.Duration(100<<uint(attempt)) * time.Millisecond
+
+	// Cap at 5 seconds
+	if baseDelay > 5*time.Second {
+		baseDelay = 5 * time.Second
+	}
+
+	return baseDelay
+}
+
+// retryWithBackoff executes a tool with exponential backoff retry logic
+// ✅ FIX #5: Main retry execution function
+func retryWithBackoff(ctx context.Context, tool *Tool, args map[string]interface{}, maxRetries int) (string, error) {
+	// Handle nil context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Try to execute the tool
+		output, err := safeExecuteToolOnce(ctx, tool, args)
+
+		// If successful, return
+		if err == nil {
+			if attempt > 0 {
+				log.Printf("[TOOL RETRY] %s succeeded on attempt %d", tool.Name, attempt+1)
+			}
+			return output, nil
+		}
+
+		lastErr = err
+		errType := classifyError(err)
+
+		// If non-retryable, return immediately
+		if !isRetryable(errType) {
+			log.Printf("[TOOL ERROR] %s failed with non-retryable error: %v", tool.Name, err)
+			return "", err
+		}
+
+		// If this was the last attempt, return the error
+		if attempt == maxRetries {
+			log.Printf("[TOOL ERROR] %s failed after %d retries: %v", tool.Name, maxRetries+1, err)
+			return "", err
+		}
+
+		// Calculate backoff and wait before retry
+		backoff := calculateBackoffDuration(attempt)
+		log.Printf("[TOOL RETRY] %s failed on attempt %d (type: %v), retrying in %v: %v",
+			tool.Name, attempt+1, errType, backoff, err)
+
+		select {
+		case <-ctx.Done():
+			log.Printf("[TOOL RETRY] %s context cancelled during backoff", tool.Name)
+			return "", ctx.Err()
+		case <-time.After(backoff):
+			// Continue to next attempt
+		}
+	}
+
+	return "", lastErr
+}
+
+// safeExecuteToolOnce executes a tool once without retry
+// ✅ FIX #5: Single execution attempt (used by retry wrapper)
+func safeExecuteToolOnce(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
 	defer func() {
 		// Catch panic and convert to error
 		if r := recover(); r != nil {
@@ -121,6 +257,16 @@ func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{
 
 	// Execute tool - if it panics, defer above will catch it
 	return tool.Handler(ctx, args)
+}
+
+// safeExecuteTool is the main entry point for tool execution with error recovery
+// ✅ FIX #5: Enhanced with retry logic and error recovery
+func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
+	// Default to 2 retries (3 total attempts: 1 initial + 2 retries)
+	// This is reasonable for transient failures without significant latency impact
+	maxRetries := 2
+
+	return retryWithBackoff(ctx, tool, args, maxRetries)
 }
 
 // ✅ FIX for Issue #11 (Sequential Tool Timeout)
