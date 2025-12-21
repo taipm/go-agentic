@@ -1,7 +1,9 @@
 package crewai
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -175,5 +177,320 @@ func TestExecuteStreamConcurrentRequests(t *testing.T) {
 	// Original should be completely untouched by any concurrent request
 	if len(originalHistory) != 2 {
 		t.Errorf("Original history was corrupted: expected 2, got %d", len(originalHistory))
+	}
+}
+
+// ===== Issue #5: Panic Recovery Tests =====
+
+// TestSafeExecuteToolNormalExecution verifies safeExecuteTool works normally without panics
+func TestSafeExecuteToolNormalExecution(t *testing.T) {
+	// Create a tool that returns normally (no panic)
+	tool := &Tool{
+		Name: "test_tool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			return "success result", nil
+		},
+	}
+
+	// Execute through safeExecuteTool
+	output, err := safeExecuteTool(nil, tool, map[string]interface{}{})
+
+	// Should succeed without error
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	if output != "success result" {
+		t.Errorf("Expected 'success result', got: %s", output)
+	}
+}
+
+// TestSafeExecuteToolErrorHandling verifies safeExecuteTool passes through normal errors
+func TestSafeExecuteToolErrorHandling(t *testing.T) {
+	// Create a tool that returns an error (not a panic)
+	tool := &Tool{
+		Name: "error_tool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			return "", fmt.Errorf("tool error: something went wrong")
+		},
+	}
+
+	// Execute through safeExecuteTool
+	output, err := safeExecuteTool(nil, tool, map[string]interface{}{})
+
+	// Should return the error
+	if err == nil {
+		t.Error("Expected error from tool, but got nil")
+	}
+
+	if err.Error() != "tool error: something went wrong" {
+		t.Errorf("Expected original error message, got: %v", err)
+	}
+
+	if output != "" {
+		t.Errorf("Expected empty output on error, got: %s", output)
+	}
+}
+
+// TestSafeExecuteToolPanicRecovery verifies safeExecuteTool catches panics
+func TestSafeExecuteToolPanicRecovery(t *testing.T) {
+	// Create a tool that panics
+	tool := &Tool{
+		Name: "panicking_tool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			// This will panic - simulating a buggy tool
+			panic("nil pointer dereference in tool")
+		},
+	}
+
+	// Execute through safeExecuteTool - should NOT panic, should return error
+	output, err := safeExecuteTool(nil, tool, map[string]interface{}{})
+
+	// Should recover from panic and return error
+	if err == nil {
+		t.Error("Expected panic to be caught and converted to error")
+	}
+
+	// Error message should contain the panic information
+	if !strings.Contains(err.Error(), "panicked") {
+		t.Errorf("Expected error to mention panic, got: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "nil pointer dereference in tool") {
+		t.Errorf("Expected error to contain panic message, got: %v", err)
+	}
+
+	// Output should be empty on panic
+	if output != "" {
+		t.Errorf("Expected empty output on panic, got: %s", output)
+	}
+}
+
+// TestSafeExecuteToolPanicWithRuntimeError verifies recovery from runtime panics
+func TestSafeExecuteToolPanicWithRuntimeError(t *testing.T) {
+	// Create a tool that causes a runtime panic (array index out of bounds)
+	tool := &Tool{
+		Name: "runtime_panic_tool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			// This will panic at runtime
+			arr := []int{1, 2, 3}
+			_ = arr[10]  // Index out of bounds → runtime panic
+			return "should not reach here", nil
+		},
+	}
+
+	// Execute through safeExecuteTool - should catch runtime panic
+	_, err := safeExecuteTool(nil, tool, map[string]interface{}{})
+
+	// Should recover from runtime panic
+	if err == nil {
+		t.Error("Expected runtime panic to be caught")
+	}
+
+	if !strings.Contains(err.Error(), "panicked") {
+		t.Errorf("Expected error to mention panic, got: %v", err)
+	}
+}
+
+// TestSafeExecuteToolMultipleCalls verifies repeated calls don't leak panic state
+func TestSafeExecuteToolMultipleCalls(t *testing.T) {
+	// Tool 1: Normal
+	tool1 := &Tool{
+		Name: "normal_tool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			return "result1", nil
+		},
+	}
+
+	// Tool 2: Panics
+	tool2 := &Tool{
+		Name: "panic_tool",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			panic("tool panic")
+		},
+	}
+
+	// Tool 3: Normal (after panic)
+	tool3 := &Tool{
+		Name: "normal_after_panic",
+		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			return "result3", nil
+		},
+	}
+
+	// Call tool 1 (should succeed)
+	output1, err1 := safeExecuteTool(nil, tool1, map[string]interface{}{})
+	if err1 != nil || output1 != "result1" {
+		t.Errorf("Tool 1 failed: err=%v, output=%s", err1, output1)
+	}
+
+	// Call tool 2 (should catch panic)
+	output2, err2 := safeExecuteTool(nil, tool2, map[string]interface{}{})
+	if err2 == nil {
+		t.Error("Tool 2 panic not caught")
+	}
+	if output2 != "" {
+		t.Errorf("Tool 2 should return empty output, got: %s", output2)
+	}
+
+	// Call tool 3 (should succeed - panic state didn't leak)
+	output3, err3 := safeExecuteTool(nil, tool3, map[string]interface{}{})
+	if err3 != nil || output3 != "result3" {
+		t.Errorf("Tool 3 failed: err=%v, output=%s", err3, output3)
+	}
+}
+
+// TestExecuteCallsWithPanicingTool verifies executeCalls handles panicking tools
+func TestExecuteCallsWithPanicingTool(t *testing.T) {
+	// Create agent with 3 tools: normal, panicking, normal
+	agent := &Agent{
+		ID:   "test_agent",
+		Name: "Test Agent",
+		Tools: []*Tool{
+			{
+				Name: "working_tool",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					return "working result", nil
+				},
+			},
+			{
+				Name: "buggy_tool",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					panic("buggy tool crashed")
+				},
+			},
+			{
+				Name: "another_tool",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					return "another result", nil
+				},
+			},
+		},
+	}
+
+	// Create executor
+	executor := &CrewExecutor{
+		crew:       &Crew{Agents: []*Agent{agent}},
+		entryAgent: agent,
+	}
+
+	// Call tools: working, buggy (panics), working
+	toolCalls := []ToolCall{
+		{ToolName: "working_tool", Arguments: map[string]interface{}{}},
+		{ToolName: "buggy_tool", Arguments: map[string]interface{}{}},
+		{ToolName: "another_tool", Arguments: map[string]interface{}{}},
+	}
+
+	results := executor.executeCalls(nil, toolCalls, agent)
+
+	// Should have 3 results
+	if len(results) != 3 {
+		t.Errorf("Expected 3 results, got %d", len(results))
+	}
+
+	// Result 1: Success
+	if results[0].Status != "success" || results[0].Output != "working result" {
+		t.Errorf("Tool 1 result incorrect: %v", results[0])
+	}
+
+	// Result 2: Error (panic caught and converted to error)
+	if results[1].Status != "error" {
+		t.Errorf("Tool 2 should be error status, got: %s", results[1].Status)
+	}
+	if !strings.Contains(results[1].Output, "panicked") {
+		t.Errorf("Tool 2 error should mention panic, got: %s", results[1].Output)
+	}
+
+	// Result 3: Success (not affected by previous panic)
+	if results[2].Status != "success" || results[2].Output != "another result" {
+		t.Errorf("Tool 3 result incorrect: %v", results[2])
+	}
+}
+
+// TestParallelExecutionWithPanicingTools verifies parallel tool execution handles panics
+func TestParallelExecutionWithPanicingTools(t *testing.T) {
+	// Simulate 5 tools executed in parallel, with 2 panicking
+	agent := &Agent{
+		ID:   "parallel_agent",
+		Name: "Parallel Agent",
+		Tools: []*Tool{
+			{
+				Name: "tool_1",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					return "result_1", nil
+				},
+			},
+			{
+				Name: "tool_2",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					panic("tool_2 panic")
+				},
+			},
+			{
+				Name: "tool_3",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					return "result_3", nil
+				},
+			},
+			{
+				Name: "tool_4",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					panic("tool_4 panic")
+				},
+			},
+			{
+				Name: "tool_5",
+				Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+					return "result_5", nil
+				},
+			},
+		},
+	}
+
+	executor := &CrewExecutor{
+		crew:       &Crew{Agents: []*Agent{agent}},
+		entryAgent: agent,
+	}
+
+	// Execute all 5 tools
+	toolCalls := []ToolCall{
+		{ToolName: "tool_1", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_2", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_3", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_4", Arguments: map[string]interface{}{}},
+		{ToolName: "tool_5", Arguments: map[string]interface{}{}},
+	}
+
+	results := executor.executeCalls(nil, toolCalls, agent)
+
+	// Should have 5 results (not crash despite panics)
+	if len(results) != 5 {
+		t.Errorf("Expected 5 results, got %d", len(results))
+	}
+
+	// Count successful vs error results
+	successCount := 0
+	errorCount := 0
+
+	for _, result := range results {
+		if result.Status == "success" {
+			successCount++
+		} else if result.Status == "error" {
+			errorCount++
+		}
+	}
+
+	// 3 tools succeeded, 2 panicked (now errors)
+	if successCount != 3 {
+		t.Errorf("Expected 3 successful tools, got %d", successCount)
+	}
+
+	if errorCount != 2 {
+		t.Errorf("Expected 2 error tools (panics), got %d", errorCount)
+	}
+
+	// Verify all results are accounted for
+	if successCount+errorCount != 5 {
+		t.Errorf("Not all results accounted for: %d + %d != 5", successCount, errorCount)
 	}
 }

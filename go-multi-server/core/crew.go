@@ -24,6 +24,21 @@ func copyHistory(original []Message) []Message {
 	return copied
 }
 
+// safeExecuteTool wraps tool execution with panic recovery for graceful error handling
+// ✅ FIX for Issue #5 (Panic Risk): Catch any panic in tool execution and convert to error
+// This prevents one buggy tool from crashing the entire server
+// Pattern: defer-recover catches panic and converts it to error (Go standard approach)
+func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
+	defer func() {
+		// Catch panic and convert to error
+		if r := recover(); r != nil {
+			err = fmt.Errorf("tool %s panicked: %v", tool.Name, r)
+		}
+	}()
+	// Execute tool - if it panics, defer above will catch it
+	return tool.Handler(ctx, args)
+}
+
 // CrewExecutor handles the execution of a crew
 type CrewExecutor struct {
 	crew          *Crew
@@ -482,7 +497,9 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 			continue
 		}
 
-		output, err := tool.Handler(ctx, call.Arguments)
+		// ✅ FIX for Issue #5 (Panic Risk): Use safeExecuteTool wrapper to catch panics
+		// This ensures that if a tool panics, the error is returned instead of crashing
+		output, err := safeExecuteTool(ctx, tool, call.Arguments)
 		if err != nil {
 			results = append(results, ToolResult{
 				ToolName: call.ToolName,
