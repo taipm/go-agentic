@@ -2,6 +2,7 @@ package crewai
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -104,9 +105,12 @@ func LoadCrewConfig(path string) (*CrewConfig, error) {
 	// ✅ FIX for Issue #6: Validate configuration at load time
 	// This catches invalid configs immediately with clear error messages
 	if err := ValidateCrewConfig(&config); err != nil {
+		log.Printf("[CONFIG ERROR] Failed to validate crew config: %v", err)
 		return nil, fmt.Errorf("invalid crew configuration: %w", err)
 	}
 
+	log.Printf("[CONFIG SUCCESS] Crew config loaded: version=%s, agents=%d, entry=%s",
+		config.Version, len(config.Agents), config.EntryPoint)
 	return &config, nil
 }
 

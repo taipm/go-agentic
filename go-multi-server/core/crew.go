@@ -3,6 +3,7 @@ package crewai
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -333,10 +334,13 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 
 	for {
 		// Execute current agent
+		log.Printf("[AGENT START] %s (%s)", currentAgent.Name, currentAgent.ID)
 		response, err := ExecuteAgent(ctx, currentAgent, input, ce.history, ce.apiKey)
 		if err != nil {
+			log.Printf("[AGENT ERROR] %s (%s) - %v", currentAgent.Name, currentAgent.ID, err)
 			return nil, fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
 		}
+		log.Printf("[AGENT END] %s (%s) - Success", currentAgent.Name, currentAgent.ID)
 
 		if ce.Verbose {
 			fmt.Printf("\n[%s]: %s\n", currentAgent.Name, response.Content)
@@ -489,6 +493,7 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 	for _, call := range calls {
 		tool, ok := toolMap[call.ToolName]
 		if !ok {
+			log.Printf("[TOOL ERROR] %s <- %s - Tool not found", call.ToolName, agent.ID)
 			results = append(results, ToolResult{
 				ToolName: call.ToolName,
 				Status:   "error",
@@ -499,14 +504,17 @@ func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agen
 
 		// ✅ FIX for Issue #5 (Panic Risk): Use safeExecuteTool wrapper to catch panics
 		// This ensures that if a tool panics, the error is returned instead of crashing
+		log.Printf("[TOOL START] %s <- %s", tool.Name, agent.ID)
 		output, err := safeExecuteTool(ctx, tool, call.Arguments)
 		if err != nil {
+			log.Printf("[TOOL ERROR] %s - %v", tool.Name, err)
 			results = append(results, ToolResult{
 				ToolName: call.ToolName,
 				Status:   "error",
 				Output:   err.Error(),
 			})
 		} else {
+			log.Printf("[TOOL SUCCESS] %s -> %d chars", tool.Name, len(output))
 			results = append(results, ToolResult{
 				ToolName: call.ToolName,
 				Status:   "success",
@@ -547,7 +555,11 @@ func (ce *CrewExecutor) findNextAgentBySignal(current *Agent, responseContent st
 	for _, sig := range signals {
 		if strings.Contains(responseContent, sig.Signal) && sig.Target != "" {
 			// Found matching signal, find the target agent
-			return ce.findAgentByID(sig.Target)
+			nextAgent := ce.findAgentByID(sig.Target)
+			if nextAgent != nil {
+				log.Printf("[ROUTING] %s -> %s (signal: %s)", current.ID, nextAgent.ID, sig.Signal)
+			}
+			return nextAgent
 		}
 	}
 
@@ -579,6 +591,7 @@ func (ce *CrewExecutor) findNextAgent(current *Agent) *Agent {
 		// Try to find the first available handoff target
 		for _, targetID := range current.HandoffTargets {
 			if agent, exists := agentMap[targetID]; exists && agent.ID != current.ID {
+				log.Printf("[ROUTING] %s -> %s (handoff_targets)", current.ID, agent.ID)
 				return agent
 			}
 		}
@@ -587,10 +600,12 @@ func (ce *CrewExecutor) findNextAgent(current *Agent) *Agent {
 	// Fallback: Find any other agent (not terminal-only strategy)
 	for _, agent := range ce.crew.Agents {
 		if agent.ID != current.ID {
+			log.Printf("[ROUTING] %s -> %s (fallback)", current.ID, agent.ID)
 			return agent
 		}
 	}
 
+	log.Printf("[ROUTING] No next agent found for %s", current.ID)
 	return nil
 }
 
