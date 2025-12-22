@@ -42,3 +42,28 @@ settings:
 
   # ===== THRESHOLD (required in Strict Mode) =====
   timeout_warning_threshold_pct: 20         # Warn when 80% of timeout consumed (as decimal)
+
+  # ===== WEEK 1: COST CONTROL (all 4 required in Strict Mode) =====
+  max_tokens_per_call: 4000                 # Maximum tokens per single request
+  max_tokens_per_day: 100000                # Maximum tokens per 24-hour period
+  max_cost_per_day: 50.0                    # Maximum daily budget in USD
+  cost_alert_threshold: 0.80                # Alert when X% of daily budget is used (0.0-1.0)
+
+  # ===== WEEK 2: MEMORY MANAGEMENT (all 6 required in Strict Mode) =====
+  max_memory_mb: 512                        # Maximum memory per request in MB
+  max_daily_memory_gb: 10                   # Maximum total memory per 24-hour period in GB
+  memory_alert_percent: 80.0                # Alert when memory usage exceeds this % (0.0-100.0)
+  max_context_window: 32000                 # Maximum context window size in tokens
+  context_trim_percent: 20.0                # Percentage of context to trim when full (0.0-100.0)
+  slow_call_threshold_seconds: 30           # Alert if call exceeds this duration (seconds)
+
+  # ===== WEEK 2: PERFORMANCE & RELIABILITY (all 3 required in Strict Mode) =====
+  max_errors_per_hour: 10                   # Maximum errors per hour before alerting
+  max_errors_per_day: 50                    # Maximum errors per day before blocking
+  max_consecutive_errors: 5                 # Maximum consecutive errors before blocking
+
+  # ===== WEEK 2: RATE LIMITING & QUOTAS (all 4 required in Strict Mode) =====
+  max_calls_per_minute: 60                  # Rate limit: maximum calls per minute
+  max_calls_per_hour: 1000                  # Rate limit: maximum calls per hour
+  max_calls_per_day: 10000                  # Rate limit: maximum calls per 24 hours
+  enforce_quotas: true                      # Enforce quota limits (true=block, false=warn)
