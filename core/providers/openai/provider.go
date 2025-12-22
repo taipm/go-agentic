@@ -11,7 +11,7 @@ import (
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
-	llms "github.com/taipm/go-agentic/core/llms"
+	providers "github.com/taipm/go-agentic/core/providers"
 )
 
 // clientEntry represents a cached OpenAI client with expiry time
@@ -91,7 +91,7 @@ func init() {
 	go cleanupExpiredClients()
 
 	// Register OpenAI provider factory
-	llms.NewOpenAIProvider = func(apiKey string) (llms.LLMProvider, error) {
+	providers.NewOpenAIProvider = func(apiKey string) (providers.LLMProvider, error) {
 		if apiKey == "" {
 			return nil, fmt.Errorf("OpenAI API key cannot be empty")
 		}
@@ -104,7 +104,7 @@ func init() {
 
 // Complete sends a synchronous chat completion request to OpenAI
 // Implements LLMProvider.Complete()
-func (p *OpenAIProvider) Complete(ctx context.Context, req *llms.CompletionRequest) (*llms.CompletionResponse, error) {
+func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.CompletionRequest) (*providers.CompletionResponse, error) {
 	if req == nil {
 		return nil, fmt.Errorf("completion request cannot be nil")
 	}
@@ -147,7 +147,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llms.CompletionReque
 	// PRIMARY: Use OpenAI's native tool_calls if available (preferred, validated by OpenAI)
 	// FALLBACK: Parse text response (for edge cases, legacy support)
 
-	var toolCalls []llms.ToolCall
+	var toolCalls []providers.ToolCall
 
 	// Check if completion has tool_calls (OpenAI's structured format)
 	if message.ToolCalls != nil {
@@ -155,7 +155,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llms.CompletionReque
 		toolCalls = extractFromOpenAIToolCalls(message.ToolCalls)
 		if len(toolCalls) > 0 {
 			log.Printf("[TOOL PARSE] OpenAI native tool_calls: %d calls extracted", len(toolCalls))
-			return &llms.CompletionResponse{
+			return &providers.CompletionResponse{
 				Content:   content,
 				ToolCalls: toolCalls,
 			}, nil
@@ -170,7 +170,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llms.CompletionReque
 		}
 	}
 
-	return &llms.CompletionResponse{
+	return &providers.CompletionResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
 	}, nil
@@ -178,7 +178,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *llms.CompletionReque
 
 // CompleteStream sends a streaming chat completion request to OpenAI
 // Implements LLMProvider.CompleteStream()
-func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *llms.CompletionRequest, streamChan chan<- llms.StreamChunk) error {
+func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *providers.CompletionRequest, streamChan chan<- providers.StreamChunk) error {
 	if req == nil {
 		return fmt.Errorf("completion request cannot be nil")
 	}
@@ -207,7 +207,7 @@ func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *llms.Completio
 
 	// Accumulate full message for tool call extraction at the end
 	var fullContent strings.Builder
-	var toolCalls []llms.ToolCall
+	var toolCalls []providers.ToolCall
 
 	// Read from stream
 	for stream.Next() {
@@ -217,7 +217,7 @@ func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *llms.Completio
 			choice := event.Choices[0]
 			if choice.Delta.Content != "" {
 				fullContent.WriteString(choice.Delta.Content)
-				streamChan <- llms.StreamChunk{
+				streamChan <- providers.StreamChunk{
 					Content: choice.Delta.Content,
 					Done:    false,
 					Error:   nil,
@@ -233,7 +233,7 @@ func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *llms.Completio
 
 	// Check for stream errors
 	if err := stream.Err(); err != nil {
-		streamChan <- llms.StreamChunk{
+		streamChan <- providers.StreamChunk{
 			Content: "",
 			Done:    true,
 			Error:   fmt.Errorf("streaming error: %w", err),
@@ -249,7 +249,7 @@ func (p *OpenAIProvider) CompleteStream(ctx context.Context, req *llms.Completio
 		toolCalls = extractToolCallsFromText(finalContent)
 	}
 
-	streamChan <- llms.StreamChunk{
+	streamChan <- providers.StreamChunk{
 		Content: "",
 		Done:    true,
 		Error:   nil,
@@ -273,7 +273,7 @@ func (p *OpenAIProvider) Close() error {
 }
 
 // convertToOpenAIMessages converts provider-agnostic messages to OpenAI format
-func convertToOpenAIMessages(messages []llms.ProviderMessage, systemPrompt string) []openai.ChatCompletionMessageParamUnion {
+func convertToOpenAIMessages(messages []providers.ProviderMessage, systemPrompt string) []openai.ChatCompletionMessageParamUnion {
 	var result []openai.ChatCompletionMessageParamUnion
 
 	// Add system message if provided
@@ -301,8 +301,8 @@ func convertToOpenAIMessages(messages []llms.ProviderMessage, systemPrompt strin
 
 // extractFromOpenAIToolCalls extracts tool calls from OpenAI's native tool_calls format
 // ✅ PRIMARY METHOD: Uses OpenAI's structured tool_calls (validated by OpenAI)
-func extractFromOpenAIToolCalls(toolCalls interface{}) []llms.ToolCall {
-	var calls []llms.ToolCall
+func extractFromOpenAIToolCalls(toolCalls interface{}) []providers.ToolCall {
+	var calls []providers.ToolCall
 
 	// Type assert to handle OpenAI tool calls
 	var toolCallSlice []interface{}
@@ -349,7 +349,7 @@ func extractFromOpenAIToolCalls(toolCalls interface{}) []llms.ToolCall {
 		}
 
 		// Create tool call with validated data
-		calls = append(calls, llms.ToolCall{
+		calls = append(calls, providers.ToolCall{
 			ID:        id,
 			ToolName:  toolName,
 			Arguments: args,
@@ -363,8 +363,8 @@ func extractFromOpenAIToolCalls(toolCalls interface{}) []llms.ToolCall {
 
 // extractToolCallsFromText extracts tool calls from response text
 // ⚠️ FALLBACK METHOD: Uses text parsing (for models without tool_use support)
-func extractToolCallsFromText(text string) []llms.ToolCall {
-	var calls []llms.ToolCall
+func extractToolCallsFromText(text string) []providers.ToolCall {
+	var calls []providers.ToolCall
 	toolCallPattern := make(map[string]bool) // Track unique tool calls
 
 	// Look for patterns like: ToolName(...)
@@ -404,7 +404,7 @@ func extractToolCallsFromText(text string) []llms.ToolCall {
 							callKey := fmt.Sprintf("%s:%s", toolName, argsStr)
 							if !toolCallPattern[callKey] {
 								toolCallPattern[callKey] = true
-								calls = append(calls, llms.ToolCall{
+								calls = append(calls, providers.ToolCall{
 									ID:        fmt.Sprintf("%s_%d", toolName, len(calls)),
 									ToolName:  toolName,
 									Arguments: parseToolArguments(argsStr),

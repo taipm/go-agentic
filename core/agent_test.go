@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	llms "github.com/taipm/go-agentic/core/llms"
+	providers "github.com/taipm/go-agentic/core/providers"
 )
 
 // ===== Message Conversion Tests =====
@@ -83,7 +83,7 @@ func TestConvertToolsToProviderEmpty(t *testing.T) {
 
 // TestConvertToolCallsFromProvider verifies tool call conversion from provider format
 func TestConvertToolCallsFromProvider(t *testing.T) {
-	providerCalls := []llms.ToolCall{
+	providerCalls := []providers.ToolCall{
 		{
 			ID:       "call_123",
 			ToolName: "GetCPUUsage",
@@ -125,7 +125,7 @@ func TestConvertToolCallsFromProvider(t *testing.T) {
 
 // TestConvertToolCallsFromProviderEmpty verifies empty tool call list handling
 func TestConvertToolCallsFromProviderEmpty(t *testing.T) {
-	providerCalls := []llms.ToolCall{}
+	providerCalls := []providers.ToolCall{}
 	calls := convertToolCallsFromProvider(providerCalls)
 
 	if len(calls) != 0 {

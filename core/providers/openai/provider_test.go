@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	llms "github.com/taipm/go-agentic/core/llms"
+	providers "github.com/taipm/go-agentic/core/providers"
 )
 
 // TestOpenAIProviderName tests the provider name
@@ -26,7 +26,7 @@ func TestOpenAIProviderClose(t *testing.T) {
 
 // TestConvertToOpenAIMessages tests message conversion to OpenAI format
 func TestConvertToOpenAIMessages(t *testing.T) {
-	messages := []llms.ProviderMessage{
+	messages := []providers.ProviderMessage{
 		{Role: "user", Content: "Hello"},
 		{Role: "assistant", Content: "Hi there"},
 	}
@@ -40,7 +40,7 @@ func TestConvertToOpenAIMessages(t *testing.T) {
 
 // TestConvertToOpenAIMessagesWithoutSystemPrompt tests message conversion without system prompt
 func TestConvertToOpenAIMessagesWithoutSystemPrompt(t *testing.T) {
-	messages := []llms.ProviderMessage{
+	messages := []providers.ProviderMessage{
 		{Role: "user", Content: "Hello"},
 	}
 
@@ -169,7 +169,7 @@ func TestOpenAIProviderCompleteNilRequest(t *testing.T) {
 // TestOpenAIProviderCompleteEmptyModel tests Complete with empty model
 func TestOpenAIProviderCompleteEmptyModel(t *testing.T) {
 	provider := &OpenAIProvider{apiKey: "test-key"}
-	req := &llms.CompletionRequest{
+	req := &providers.CompletionRequest{
 		Model: "",
 	}
 	_, err := provider.Complete(context.Background(), req)
@@ -181,7 +181,7 @@ func TestOpenAIProviderCompleteEmptyModel(t *testing.T) {
 // TestOpenAIProviderCompleteStreamNilRequest tests CompleteStream with nil request
 func TestOpenAIProviderCompleteStreamNilRequest(t *testing.T) {
 	provider := &OpenAIProvider{apiKey: "test-key"}
-	streamChan := make(chan llms.StreamChunk, 10)
+	streamChan := make(chan providers.StreamChunk, 10)
 	err := provider.CompleteStream(context.Background(), nil, streamChan)
 	if err == nil {
 		t.Error("expected error for nil request")
@@ -192,10 +192,10 @@ func TestOpenAIProviderCompleteStreamNilRequest(t *testing.T) {
 // TestOpenAIProviderCompleteStreamEmptyModel tests CompleteStream with empty model
 func TestOpenAIProviderCompleteStreamEmptyModel(t *testing.T) {
 	provider := &OpenAIProvider{apiKey: "test-key"}
-	req := &llms.CompletionRequest{
+	req := &providers.CompletionRequest{
 		Model: "",
 	}
-	streamChan := make(chan llms.StreamChunk, 10)
+	streamChan := make(chan providers.StreamChunk, 10)
 	err := provider.CompleteStream(context.Background(), req, streamChan)
 	if err == nil {
 		t.Error("expected error for empty model")
@@ -206,11 +206,11 @@ func TestOpenAIProviderCompleteStreamEmptyModel(t *testing.T) {
 // TestNewOpenAIProviderEmpty tests provider creation with empty API key
 func TestNewOpenAIProviderEmpty(t *testing.T) {
 	// Manually test the factory function
-	if llms.NewOpenAIProvider == nil {
+	if providers.NewOpenAIProvider == nil {
 		t.Skip("NewOpenAIProvider not registered")
 	}
 
-	_, err := llms.NewOpenAIProvider("")
+	_, err := providers.NewOpenAIProvider("")
 	if err == nil {
 		t.Error("expected error for empty API key")
 	}

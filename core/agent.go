@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	llms "github.com/taipm/go-agentic/core/llms"
-	_ "github.com/taipm/go-agentic/core/llms/openai" // Register OpenAI provider
+	providers "github.com/taipm/go-agentic/core/providers"
+	_ "github.com/taipm/go-agentic/core/providers/openai" // Register OpenAI provider
 )
 
 // providerFactory is the global LLM provider factory instance
-var providerFactory = llms.GetGlobalFactory()
+var providerFactory = providers.GetGlobalFactory()
 
 // ExecuteAgent runs an agent and returns its response
 // Uses provider factory to support multiple LLM backends (OpenAI, Ollama, etc.)
@@ -35,7 +35,7 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 	messages := convertToProviderMessages(history)
 
 	// Create completion request
-	request := &llms.CompletionRequest{
+	request := &providers.CompletionRequest{
 		Model:        agent.Model, // ✅ FIX: Use agent.Model from config, not hardcoded
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
@@ -59,7 +59,7 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 
 // ExecuteAgentStream runs an agent with streaming responses
 // Streams response chunks to the provided channel
-func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history []Message, apiKey string, streamChan chan<- llms.StreamChunk) error {
+func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history []Message, apiKey string, streamChan chan<- providers.StreamChunk) error {
 	// Determine which provider to use based on agent configuration
 	providerType := agent.Provider
 	if providerType == "" {
@@ -79,7 +79,7 @@ func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history
 	messages := convertToProviderMessages(history)
 
 	// Create completion request
-	request := &llms.CompletionRequest{
+	request := &providers.CompletionRequest{
 		Model:        agent.Model,
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
@@ -92,10 +92,10 @@ func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history
 }
 
 // convertToProviderMessages converts internal Message format to provider-agnostic format
-func convertToProviderMessages(history []Message) []llms.ProviderMessage {
-	messages := make([]llms.ProviderMessage, len(history))
+func convertToProviderMessages(history []Message) []providers.ProviderMessage {
+	messages := make([]providers.ProviderMessage, len(history))
 	for i, msg := range history {
-		messages[i] = llms.ProviderMessage{
+		messages[i] = providers.ProviderMessage{
 			Role:    msg.Role,
 			Content: msg.Content,
 		}
@@ -104,10 +104,10 @@ func convertToProviderMessages(history []Message) []llms.ProviderMessage {
 }
 
 // convertToolsToProvider converts internal Tool format to provider-agnostic format
-func convertToolsToProvider(tools []*Tool) []llms.ProviderTool {
-	providerTools := make([]llms.ProviderTool, len(tools))
+func convertToolsToProvider(tools []*Tool) []providers.ProviderTool {
+	providerTools := make([]providers.ProviderTool, len(tools))
 	for i, tool := range tools {
-		providerTools[i] = llms.ProviderTool{
+		providerTools[i] = providers.ProviderTool{
 			Name:        tool.Name,
 			Description: tool.Description,
 			Parameters:  tool.Parameters,
@@ -117,7 +117,7 @@ func convertToolsToProvider(tools []*Tool) []llms.ProviderTool {
 }
 
 // convertToolCallsFromProvider converts provider tool calls back to internal format
-func convertToolCallsFromProvider(providerCalls []llms.ToolCall) []ToolCall {
+func convertToolCallsFromProvider(providerCalls []providers.ToolCall) []ToolCall {
 	calls := make([]ToolCall, len(providerCalls))
 	for i, call := range providerCalls {
 		calls[i] = ToolCall{
