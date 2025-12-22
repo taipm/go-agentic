@@ -36,7 +36,8 @@ func (cme *ConfigModeError) Error() string {
 	header := "Configuration Validation Errors (Mode: " + string(cme.Mode) + "):\n"
 	errorList := ""
 	for i, err := range cme.Errors {
-		errorList += "  " + string(rune('0'+i+1)) + ". " + err + "\n"
+		// Use fmt.Sprintf to properly format number (not character codes)
+		errorList += fmt.Sprintf("  %d. %s\n", i+1, err)
 	}
 
 	return header + errorList + "\nPlease configure these values in crew.yaml settings section or via environment variables"
