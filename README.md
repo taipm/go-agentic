@@ -136,12 +136,44 @@ executor.ExecuteStream(ctx, task, streamChan)
 - Parameter validation
 - Type-safe APIs
 
+## Multi-Provider LLM Support
+
+go-agentic now supports multiple LLM backends:
+
+### 🔧 Ollama (Recommended for Local Development)
+
+- **Free** - Run models locally without API keys
+- **Fast** - No network latency for API calls
+- **Private** - All data stays on your machine
+- **Models**: deepseek-r1:1.5b, gemma3:1b, llama3.1:8b, and more
+
+```yaml
+model: deepseek-r1:1.5b
+provider: ollama
+provider_url: http://localhost:11434
+```
+
+### ☁️ OpenAI (Production-Ready)
+
+- **Quality** - Best-in-class language models
+- **Reliability** - Enterprise-grade API
+- **Tool Support** - Native function calling
+
+```yaml
+model: gpt-4o-mini
+provider: openai
+```
+
+**See [Provider Guide](./docs/PROVIDER_GUIDE.md) for detailed setup instructions.**
+
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.25.2 or later
-- OpenAI API key
+- Either:
+  - **Ollama** (local, free) - [Download](https://ollama.com)
+  - **OpenAI API key** (cloud, paid) - [Get Key](https://platform.openai.com/api-keys)
 
 ### Install Core Library
 
@@ -149,11 +181,33 @@ executor.ExecuteStream(ctx, task, streamChan)
 go get github.com/taipm/go-crewai
 ```
 
-### Run IT Support Example
+### Quick Start with Ollama (Recommended)
 
 ```bash
-cd go-agentic-examples/it-support
-export OPENAI_API_KEY=your_key_here
+# 1. Install and run Ollama server (in one terminal)
+ollama serve
+
+# 2. Pull a model (in another terminal)
+ollama pull deepseek-r1:1.5b
+
+# 3. Run IT Support Example
+cd examples/it-support
+go run ./cmd/main.go
+```
+
+### Quick Start with OpenAI
+
+```bash
+# 1. Set your API key
+export OPENAI_API_KEY=sk-xxx...
+
+# 2. Update example config to use OpenAI
+# Edit examples/it-support/config/agents/*.yaml
+# Change: provider: ollama to provider: openai
+# Change: model: deepseek-r1:1.5b to model: gpt-4o-mini
+
+# 3. Run IT Support Example
+cd examples/it-support
 go run ./cmd/main.go
 ```
 

@@ -30,13 +30,29 @@ Welcome to **Hello Crew**, the simplest introduction to the go-agentic framework
 
 ## Quick Start (3 Minutes)
 
-### 1. Set Up Your Environment
+### 1. Prerequisites
+
+#### Option A: Using Ollama (Recommended for local development)
+
+- Install Ollama: [https://ollama.ai](https://ollama.ai)
+- Pull gemma2:2b: `ollama pull gemma2:2b`
+- Run Ollama: `ollama serve` (runs on [http://localhost:11434](http://localhost:11434))
+
+#### Option B: Using OpenAI
+
+- Set `OPENAI_API_KEY` environment variable with your API key
+
+### 2. Set Up Your Environment
 
 ```bash
 # Copy environment template
 cp .env.example .env
 
-# Edit .env and add your OpenAI API key
+# For Ollama (default):
+# No additional setup needed - just ensure Ollama is running
+
+# For OpenAI:
+# Uncomment OPENAI_API_KEY in .env and add your key
 # OPENAI_API_KEY=sk-...
 ```
 

@@ -19,11 +19,12 @@ func main() {
 	port := flag.String("port", "8081", "Server port")
 	flag.Parse()
 
+	// Try to get API key - support both Ollama and OpenAI
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		fmt.Println("Error: OPENAI_API_KEY not set")
-		fmt.Println("Please set the OPENAI_API_KEY environment variable or create a .env file")
-		os.Exit(1)
+		// For Ollama, we can use a placeholder since it doesn't need API keys
+		apiKey = "ollama"
+		fmt.Println("ℹ️  Using Ollama (local) - no API key needed")
 	}
 
 	executor, err := createExecutor(apiKey)

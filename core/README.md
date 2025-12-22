@@ -116,10 +116,25 @@ go-agentic/
 
 ## Core Features
 
-### 1. **Pure OpenAI Integration**
-- Uses `openai-go/v3.14.0` directly (not agent-sdk-go)
-- Full control over API calls and agent behavior
-- Structured tool execution
+### 1. **Multi-Provider LLM Support**
+
+go-agentic now supports multiple LLM providers through a unified abstraction layer:
+
+- **Ollama** (Recommended for Development)
+  - Free and open-source models
+  - Run locally without API keys
+  - Models: deepseek-r1:1.5b (default), gemma3:1b, llama3.1:8b, etc.
+  - Perfect for testing and local development
+
+- **OpenAI** (Production-Ready)
+  - Enterprise-grade language models
+  - Native tool calling support
+  - Models: gpt-4o-mini, gpt-4-turbo, gpt-4o
+  - Best for production deployments
+
+**Switch providers by updating your YAML configuration - no code changes needed!**
+
+See [Provider Guide](../docs/PROVIDER_GUIDE.md) for detailed setup instructions.
 
 ### 2. **Multi-Agent Orchestration**
 ```
@@ -153,6 +168,11 @@ Final Response
 - MaxHandoffs: Prevents infinite loops (default: 5)
 - Terminal agents: Executor guaranteed final agent
 - Input validation on all tools
+
+### 6. **Real-Time Streaming**
+- Server-Sent Events (SSE) for live agent execution
+- Watch agents work in real-time
+- Beautiful web UI client included
 
 ## Quick Start
 
