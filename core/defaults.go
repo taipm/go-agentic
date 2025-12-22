@@ -29,6 +29,7 @@ type ConfigModeError struct {
 
 // parameterDescriptions maps parameter names to detailed explanations
 var parameterDescriptions = map[string]string{
+	// ===== PHASE 4: Core Configuration =====
 	"ParallelAgentTimeout": "Max time for multiple agents running in parallel (seconds). Default: 60s",
 	"ToolExecutionTimeout": "Max time for a single tool/function call to complete (seconds). Default: 5s",
 	"ToolResultTimeout": "Max time to wait for tool result processing after execution (seconds). Default: 30s",
@@ -48,6 +49,31 @@ var parameterDescriptions = map[string]string{
 	"StreamBufferSize": "Number of chunks to buffer during streaming responses - balance responsiveness vs memory (chunks). Default: 100",
 	"MaxStoredRequests": "Maximum number of requests to keep in memory for tracking/debugging (requests). Default: 1000",
 	"TimeoutWarningThreshold": "Warn when this percentage of timeout remains (0.0-1.0, e.g., 0.20 = warn at 80% used). Default: 0.20",
+
+	// ===== WEEK 1: Cost Control =====
+	"MaxTokensPerCall": "Maximum tokens per single request (e.g., 1000). Default: 4000",
+	"MaxTokensPerDay": "Maximum tokens per 24-hour period (e.g., 50000). Default: 100000",
+	"MaxCostPerDay": "Maximum daily budget in USD (e.g., 10.00). Default: 50.00",
+	"CostAlertThreshold": "Warn when this percentage of daily budget is used (0.0-1.0, e.g., 0.80 = warn at 80%). Default: 0.80",
+
+	// ===== WEEK 2: Memory Management =====
+	"MaxMemoryMB": "Maximum memory per request in MB. Default: 512",
+	"MaxDailyMemoryGB": "Maximum total memory per 24-hour period in GB. Default: 10",
+	"MemoryAlertPercent": "Alert when memory usage exceeds this percentage (0.0-100.0). Default: 80.0",
+	"MaxContextWindow": "Maximum context window size in tokens (e.g., 32000 for gpt-4). Default: 32000",
+	"ContextTrimPercent": "Percentage of context to trim when window is full (0.0-100.0). Default: 20.0",
+	"SlowCallThreshold": "Alert if call exceeds this duration (seconds). Default: 30",
+
+	// ===== WEEK 2: Performance & Reliability =====
+	"MaxErrorsPerHour": "Maximum errors per hour before alerting. Default: 10",
+	"MaxErrorsPerDay": "Maximum errors per day before blocking. Default: 50",
+	"MaxConsecutiveErrors": "Maximum consecutive errors before blocking. Default: 5",
+
+	// ===== WEEK 2: Rate Limiting & Quotas =====
+	"MaxCallsPerMinute": "Rate limit: maximum calls per minute. Default: 60",
+	"MaxCallsPerHour": "Rate limit: maximum calls per hour. Default: 1000",
+	"MaxCallsPerDay": "Rate limit: maximum calls per 24 hours. Default: 10000",
+	"EnforceQuotas": "Enforce quota limits (true=block, false=warn). Default: true",
 }
 
 // Error implements the error interface
@@ -71,7 +97,7 @@ func (cme *ConfigModeError) Error() string {
 
 	footer += "\n📝 NEXT STEPS:\n"
 	footer += "   1. Open your crew.yaml settings section\n"
-	footer += "   2. Add all 19 parameters listed above\n"
+	footer += "   2. Add all required parameters (Phase 4 core + WEEK 1 cost control + WEEK 2 quotas)\n"
 	footer += "   3. Set values appropriate for your use case\n"
 	footer += "   4. For help: See crew-strict-documented.yaml example or docs\n"
 
@@ -193,6 +219,92 @@ type HardcodedDefaults struct {
 	// Previously hardcoded in: crew.go (20%)
 	// Default: 20% (warn when 80% of timeout used)
 	TimeoutWarningThreshold float64
+
+	// ===== WEEK 1: COST CONTROL PARAMETERS =====
+	// MaxTokensPerCall: Maximum tokens per single request
+	// Previously hardcoded in: agent.go (no hardcode, but needs default)
+	// Default: 4000 tokens per request
+	MaxTokensPerCall int
+
+	// MaxTokensPerDay: Maximum tokens per 24-hour period
+	// Previously hardcoded in: agent.go (no hardcode, but needs default)
+	// Default: 100000 tokens per day
+	MaxTokensPerDay int
+
+	// MaxCostPerDay: Maximum daily budget in USD
+	// Previously hardcoded in: agent.go (no hardcode, but needs default)
+	// Default: 50.00 USD per day
+	MaxCostPerDay float64
+
+	// CostAlertThreshold: Warn when this percentage of daily budget is used
+	// Previously hardcoded in: agent.go (no hardcode, but needs default)
+	// Default: 0.80 (warn at 80% usage)
+	CostAlertThreshold float64
+
+	// ===== WEEK 2: MEMORY MANAGEMENT PARAMETERS =====
+	// MaxMemoryMB: Maximum memory per request in MB
+	// Previously hardcoded in: types.go (512 MB mentioned in comment)
+	// Default: 512 MB per request
+	MaxMemoryMB int
+
+	// MaxDailyMemoryGB: Maximum total memory per 24-hour period in GB
+	// Previously hardcoded in: types.go (10 GB mentioned in comment)
+	// Default: 10 GB per day
+	MaxDailyMemoryGB int
+
+	// MemoryAlertPercent: Alert when memory usage exceeds this percentage
+	// Previously hardcoded in: types.go (80% mentioned in comment)
+	// Default: 80.0% alert threshold
+	MemoryAlertPercent float64
+
+	// MaxContextWindow: Maximum context window size in tokens
+	// Previously hardcoded in: types.go (32000 for gpt-4 mentioned in comment)
+	// Default: 32000 tokens (typical for gpt-4)
+	MaxContextWindow int
+
+	// ContextTrimPercent: Percentage of context to trim when window is full
+	// Previously hardcoded in: types.go (20% mentioned in comment)
+	// Default: 20.0% trim
+	ContextTrimPercent float64
+
+	// SlowCallThreshold: Alert if call exceeds this duration
+	// Previously hardcoded in: types.go (30s mentioned in comment)
+	// Default: 30 seconds
+	SlowCallThreshold time.Duration
+
+	// ===== WEEK 2: PERFORMANCE & RELIABILITY PARAMETERS =====
+	// MaxErrorsPerHour: Maximum errors per hour before alerting
+	// Previously hardcoded in: types.go (10 mentioned in comment)
+	// Default: 10 errors per hour
+	MaxErrorsPerHour int
+
+	// MaxErrorsPerDay: Maximum errors per day before blocking
+	// Previously hardcoded in: types.go (50 mentioned in comment)
+	// Default: 50 errors per day
+	MaxErrorsPerDay int
+
+	// MaxConsecutiveErrors: Maximum consecutive errors before blocking
+	// Previously hardcoded in: types.go (5 mentioned in comment)
+	// Default: 5 consecutive errors
+	MaxConsecutiveErrors int
+
+	// ===== WEEK 2: RATE LIMITING & QUOTA PARAMETERS =====
+	// MaxCallsPerMinute: Rate limit - maximum calls per minute
+	// Default: 60 calls per minute
+	MaxCallsPerMinute int
+
+	// MaxCallsPerHour: Rate limit - maximum calls per hour
+	// Default: 1000 calls per hour
+	MaxCallsPerHour int
+
+	// MaxCallsPerDay: Rate limit - maximum calls per 24 hours
+	// Default: 10000 calls per day
+	MaxCallsPerDay int
+
+	// EnforceQuotas: Enforce quota limits (true=block, false=warn)
+	// Previously hardcoded in: types.go (true mentioned in comment)
+	// Default: true (enforce quotas)
+	EnforceQuotas bool
 }
 
 // DefaultHardcodedDefaults returns the global default configuration values
@@ -233,6 +345,31 @@ func DefaultHardcodedDefaults() *HardcodedDefaults {
 		// Graceful Shutdown
 		GracefulShutdownCheckInterval: 100 * time.Millisecond,
 		TimeoutWarningThreshold:       0.20, // 20%
+
+		// Cost Control (WEEK 1)
+		MaxTokensPerCall:   4000,    // 4K tokens per request
+		MaxTokensPerDay:    100000,  // 100K tokens per day
+		MaxCostPerDay:      50.0,    // $50/day budget
+		CostAlertThreshold: 0.80,    // Alert at 80% usage
+
+		// Memory Management (WEEK 2)
+		MaxMemoryMB:        512,     // 512 MB per request
+		MaxDailyMemoryGB:   10,      // 10 GB per day
+		MemoryAlertPercent: 80.0,    // Alert at 80%
+		MaxContextWindow:   32000,   // 32K tokens (gpt-4)
+		ContextTrimPercent: 20.0,    // Trim 20% when full
+		SlowCallThreshold:  30 * time.Second,
+
+		// Performance & Reliability (WEEK 2)
+		MaxErrorsPerHour:     10,  // 10 errors/hour alert
+		MaxErrorsPerDay:      50,  // 50 errors/day block
+		MaxConsecutiveErrors: 5,   // 5 consecutive block
+
+		// Rate Limiting (WEEK 2)
+		MaxCallsPerMinute: 60,     // 60 calls/minute
+		MaxCallsPerHour:   1000,   // 1000 calls/hour
+		MaxCallsPerDay:    10000,  // 10000 calls/day
+		EnforceQuotas:     true,   // Enforce by default
 	}
 }
 
@@ -258,6 +395,17 @@ func (d *HardcodedDefaults) validateInt(name string, value *int, defaultVal int,
 	}
 }
 
+// validateFloat checks a float value in range [0, 1] and applies defaults or collects errors
+func (d *HardcodedDefaults) validateFloatRange(name string, value *float64, defaultVal float64, minVal, maxVal float64, errors *[]string) {
+	if *value < minVal || *value > maxVal {
+		if d.Mode == StrictMode {
+			*errors = append(*errors, fmt.Sprintf("%s must be between %.2f and %.2f", name, minVal, maxVal))
+		} else {
+			*value = defaultVal
+		}
+	}
+}
+
 // LogConfigurationMode returns a message about the current configuration mode
 // In StrictMode: warns that defaults are NOT being used
 // In PermissiveMode: info that safe defaults are being used
@@ -268,8 +416,73 @@ func (d *HardcodedDefaults) LogConfigurationMode() string {
 	return fmt.Sprintf("ℹ️  PERMISSIVE MODE: Using safe defaults for missing configuration parameters.")
 }
 
-// Validate checks that all timeout values are sensible
-// Returns error if any timeout is invalid or contradictory
+// validatePhase4Timeouts validates Phase 4 timeout parameters
+func (d *HardcodedDefaults) validatePhase4Timeouts(errors *[]string) {
+	d.validateDuration("ParallelAgentTimeout", &d.ParallelAgentTimeout, 60*time.Second, errors)
+	d.validateDuration("ToolExecutionTimeout", &d.ToolExecutionTimeout, 5*time.Second, errors)
+	d.validateDuration("ToolResultTimeout", &d.ToolResultTimeout, 30*time.Second, errors)
+	d.validateDuration("MinToolTimeout", &d.MinToolTimeout, 100*time.Millisecond, errors)
+	d.validateDuration("StreamChunkTimeout", &d.StreamChunkTimeout, 500*time.Millisecond, errors)
+	d.validateDuration("SSEKeepAliveInterval", &d.SSEKeepAliveInterval, 30*time.Second, errors)
+	d.validateDuration("RequestStoreCleanupInterval", &d.RequestStoreCleanupInterval, 5*time.Minute, errors)
+	d.validateDuration("RetryBackoffMinDuration", &d.RetryBackoffMinDuration, 100*time.Millisecond, errors)
+	d.validateDuration("RetryBackoffMaxDuration", &d.RetryBackoffMaxDuration, 5*time.Second, errors)
+	d.validateDuration("ClientCacheTTL", &d.ClientCacheTTL, 1*time.Hour, errors)
+	d.validateDuration("GracefulShutdownCheckInterval", &d.GracefulShutdownCheckInterval, 100*time.Millisecond, errors)
+}
+
+// validatePhase4SizeLimits validates Phase 4 size limit parameters
+func (d *HardcodedDefaults) validatePhase4SizeLimits(errors *[]string) {
+	d.validateInt("MaxInputSize", &d.MaxInputSize, 10*1024, errors)
+	d.validateInt("MinAgentIDLength", &d.MinAgentIDLength, 1, errors)
+	d.validateInt("MaxAgentIDLength", &d.MaxAgentIDLength, 128, errors)
+	d.validateInt("MaxRequestBodySize", &d.MaxRequestBodySize, 100*1024, errors)
+	d.validateInt("MaxToolOutputChars", &d.MaxToolOutputChars, 2000, errors)
+	d.validateInt("StreamBufferSize", &d.StreamBufferSize, 100, errors)
+	d.validateInt("MaxStoredRequests", &d.MaxStoredRequests, 1000, errors)
+	d.validateFloatRange("TimeoutWarningThreshold", &d.TimeoutWarningThreshold, 0.20, 0.0, 1.0, errors)
+}
+
+// validateWeek1CostControl validates Week 1 cost control parameters
+func (d *HardcodedDefaults) validateWeek1CostControl(errors *[]string) {
+	d.validateInt("MaxTokensPerCall", &d.MaxTokensPerCall, 4000, errors)
+	d.validateInt("MaxTokensPerDay", &d.MaxTokensPerDay, 100000, errors)
+	if d.MaxCostPerDay < 0 {
+		if d.Mode == StrictMode {
+			*errors = append(*errors, "MaxCostPerDay must be >= 0")
+		} else {
+			d.MaxCostPerDay = 50.0
+		}
+	}
+	d.validateFloatRange("CostAlertThreshold", &d.CostAlertThreshold, 0.80, 0.0, 1.0, errors)
+}
+
+// validateWeek2Memory validates Week 2 memory management parameters
+func (d *HardcodedDefaults) validateWeek2Memory(errors *[]string) {
+	d.validateInt("MaxMemoryMB", &d.MaxMemoryMB, 512, errors)
+	d.validateInt("MaxDailyMemoryGB", &d.MaxDailyMemoryGB, 10, errors)
+	d.validateFloatRange("MemoryAlertPercent", &d.MemoryAlertPercent, 80.0, 0.0, 100.0, errors)
+	d.validateInt("MaxContextWindow", &d.MaxContextWindow, 32000, errors)
+	d.validateFloatRange("ContextTrimPercent", &d.ContextTrimPercent, 20.0, 0.0, 100.0, errors)
+	d.validateDuration("SlowCallThreshold", &d.SlowCallThreshold, 30*time.Second, errors)
+}
+
+// validateWeek2Performance validates Week 2 performance & reliability parameters
+func (d *HardcodedDefaults) validateWeek2Performance(errors *[]string) {
+	d.validateInt("MaxErrorsPerHour", &d.MaxErrorsPerHour, 10, errors)
+	d.validateInt("MaxErrorsPerDay", &d.MaxErrorsPerDay, 50, errors)
+	d.validateInt("MaxConsecutiveErrors", &d.MaxConsecutiveErrors, 5, errors)
+}
+
+// validateWeek2RateLimiting validates Week 2 rate limiting parameters
+func (d *HardcodedDefaults) validateWeek2RateLimiting(errors *[]string) {
+	d.validateInt("MaxCallsPerMinute", &d.MaxCallsPerMinute, 60, errors)
+	d.validateInt("MaxCallsPerHour", &d.MaxCallsPerHour, 1000, errors)
+	d.validateInt("MaxCallsPerDay", &d.MaxCallsPerDay, 10000, errors)
+}
+
+// Validate checks that all configuration values are sensible
+// Returns error if any value is invalid
 // In StrictMode: fails if values are missing/invalid
 // In PermissiveMode: silently applies defaults for missing/invalid values
 func (d *HardcodedDefaults) Validate() error {
@@ -280,36 +493,17 @@ func (d *HardcodedDefaults) Validate() error {
 		d.Mode = PermissiveMode
 	}
 
-	// Validate timeouts
-	d.validateDuration("ParallelAgentTimeout", &d.ParallelAgentTimeout, 60*time.Second, &errors)
-	d.validateDuration("ToolExecutionTimeout", &d.ToolExecutionTimeout, 5*time.Second, &errors)
-	d.validateDuration("ToolResultTimeout", &d.ToolResultTimeout, 30*time.Second, &errors)
-	d.validateDuration("MinToolTimeout", &d.MinToolTimeout, 100*time.Millisecond, &errors)
-	d.validateDuration("StreamChunkTimeout", &d.StreamChunkTimeout, 500*time.Millisecond, &errors)
-	d.validateDuration("SSEKeepAliveInterval", &d.SSEKeepAliveInterval, 30*time.Second, &errors)
-	d.validateDuration("RequestStoreCleanupInterval", &d.RequestStoreCleanupInterval, 5*time.Minute, &errors)
-	d.validateDuration("RetryBackoffMinDuration", &d.RetryBackoffMinDuration, 100*time.Millisecond, &errors)
-	d.validateDuration("RetryBackoffMaxDuration", &d.RetryBackoffMaxDuration, 5*time.Second, &errors)
-	d.validateDuration("ClientCacheTTL", &d.ClientCacheTTL, 1*time.Hour, &errors)
-	d.validateDuration("GracefulShutdownCheckInterval", &d.GracefulShutdownCheckInterval, 100*time.Millisecond, &errors)
+	// Validate Phase 4 (core) parameters
+	d.validatePhase4Timeouts(&errors)
+	d.validatePhase4SizeLimits(&errors)
 
-	// Validate size limits
-	d.validateInt("MaxInputSize", &d.MaxInputSize, 10*1024, &errors)
-	d.validateInt("MinAgentIDLength", &d.MinAgentIDLength, 1, &errors)
-	d.validateInt("MaxAgentIDLength", &d.MaxAgentIDLength, 128, &errors)
-	d.validateInt("MaxRequestBodySize", &d.MaxRequestBodySize, 100*1024, &errors)
-	d.validateInt("MaxToolOutputChars", &d.MaxToolOutputChars, 2000, &errors)
-	d.validateInt("StreamBufferSize", &d.StreamBufferSize, 100, &errors)
-	d.validateInt("MaxStoredRequests", &d.MaxStoredRequests, 1000, &errors)
+	// Validate Week 1 (cost control) parameters
+	d.validateWeek1CostControl(&errors)
 
-	// Threshold validation
-	if d.TimeoutWarningThreshold <= 0 || d.TimeoutWarningThreshold >= 1 {
-		if d.Mode == StrictMode {
-			errors = append(errors, "TimeoutWarningThreshold must be between 0 and 1")
-		} else {
-			d.TimeoutWarningThreshold = 0.20
-		}
-	}
+	// Validate Week 2 (memory, performance, rate limiting) parameters
+	d.validateWeek2Memory(&errors)
+	d.validateWeek2Performance(&errors)
+	d.validateWeek2RateLimiting(&errors)
 
 	// Return accumulated errors if any
 	if len(errors) > 0 {
