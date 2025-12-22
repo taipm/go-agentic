@@ -2,157 +2,131 @@ package crewai
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
-	"sync"
-	"time"
 
-	openai "github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
+	llms "github.com/taipm/go-agentic/core/llms"
+	_ "github.com/taipm/go-agentic/core/llms/openai" // Register OpenAI provider
 )
 
-// ✅ FIX for Issue #2 (Memory Leak): Client cache with TTL expiration
-// clientEntry represents a cached OpenAI client with expiry time
-type clientEntry struct {
-	client    openai.Client
-	createdAt time.Time
-	expiresAt time.Time
-}
-
-// clientTTL defines how long a cached client remains valid before expiring
-// Uses sliding window: TTL is refreshed on each access
-const clientTTL = 1 * time.Hour
-
-// OpenAI client caching for connection reuse
-var (
-	cachedClients = make(map[string]*clientEntry)
-	clientMutex   sync.RWMutex
-)
-
-// getOrCreateOpenAIClient returns a cached OpenAI client or creates a new one
-// Clients expire after clientTTL (1 hour) of inactivity to prevent memory leak
-func getOrCreateOpenAIClient(apiKey string) openai.Client {
-	clientMutex.Lock()
-	defer clientMutex.Unlock()
-
-	// Check if cached and not expired
-	if cached, exists := cachedClients[apiKey]; exists {
-		if time.Now().Before(cached.expiresAt) {
-			// Refresh expiry time on access (sliding window)
-			cached.expiresAt = time.Now().Add(clientTTL)
-			return cached.client
-		}
-		// Expired - delete from cache
-		delete(cachedClients, apiKey)
-	}
-
-	// Create new client
-	client := openai.NewClient(option.WithAPIKey(apiKey))
-
-	// Cache with expiry time
-	cachedClients[apiKey] = &clientEntry{
-		client:    client,
-		createdAt: time.Now(),
-		expiresAt: time.Now().Add(clientTTL),
-	}
-
-	return client
-}
-
-// cleanupExpiredClients periodically removes expired clients from cache
-// Runs every 5 minutes to prevent memory from growing even if not accessed
-func cleanupExpiredClients() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		clientMutex.Lock()
-		now := time.Now()
-		for apiKey, cached := range cachedClients {
-			if now.After(cached.expiresAt) {
-				delete(cachedClients, apiKey)
-			}
-		}
-		clientMutex.Unlock()
-	}
-}
-
-// init starts the cleanup goroutine
-func init() {
-	go cleanupExpiredClients()
-}
+// providerFactory is the global LLM provider factory instance
+var providerFactory = llms.GetGlobalFactory()
 
 // ExecuteAgent runs an agent and returns its response
+// Uses provider factory to support multiple LLM backends (OpenAI, Ollama, etc.)
+// ✅ FIX for hardcoded model bug (line 100): Now uses agent.Model from config
 func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Message, apiKey string) (*AgentResponse, error) {
-	// Reuse cached client if available, otherwise create new one
-	client := getOrCreateOpenAIClient(apiKey)
+	// Determine which provider to use based on agent configuration
+	providerType := agent.Provider
+	if providerType == "" {
+		providerType = "ollama" // Default to Ollama for local development
+	}
+
+	// Get provider instance (cached or new)
+	provider, err := providerFactory.GetProvider(providerType, agent.ProviderURL, apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LLM provider: %w", err)
+	}
 
 	// Build system prompt
 	systemPrompt := buildSystemPrompt(agent)
 
-	// Convert history to openai messages
-	messages := buildOpenAIMessages(agent, input, history, systemPrompt)
+	// Convert history to provider-agnostic messages
+	messages := convertToProviderMessages(history)
 
 	// Create completion request
-	params := openai.ChatCompletionNewParams{
-		Model:    "gpt-4o-mini",
-		Messages: messages,
+	request := &llms.CompletionRequest{
+		Model:        agent.Model, // ✅ FIX: Use agent.Model from config, not hardcoded
+		SystemPrompt: systemPrompt,
+		Messages:     messages,
+		Temperature:  agent.Temperature,
+		Tools:        convertToolsToProvider(agent.Tools),
 	}
 
-	// Call OpenAI API
-	completion, err := client.Chat.Completions.New(ctx, params)
+	// Call provider
+	response, err := provider.Complete(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call OpenAI API: %w", err)
-	}
-
-	if len(completion.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in completion")
-	}
-
-	choice := completion.Choices[0]
-	message := choice.Message
-
-	// Extract response content
-	content := message.Content
-
-	// ✅ FIX for Issue #9 (Tool Call Extraction): Hybrid approach
-	// PRIMARY: Use OpenAI's native tool_calls if available (preferred, validated by OpenAI)
-	// FALLBACK: Parse text response (for edge cases, legacy support)
-
-	var toolCalls []ToolCall
-
-	// Check if completion has tool_calls (OpenAI's structured format)
-	// Try to use native tool_calls first (preferred method)
-	if message.ToolCalls != nil {
-		// Message has tool_calls field - use it
-		toolCalls = extractFromOpenAIToolCalls(message.ToolCalls, agent)
-		if len(toolCalls) > 0 {
-			log.Printf("[TOOL PARSE] OpenAI native tool_calls: %d calls extracted", len(toolCalls))
-			return &AgentResponse{
-				AgentID:   agent.ID,
-				AgentName: agent.Name,
-				Content:   content,
-				ToolCalls: toolCalls,
-			}, nil
-		}
-	}
-
-	// FALLBACK: Extract from text response (rare, for models without tool_use support)
-	if content != "" {
-		toolCalls = extractToolCallsFromText(content, agent)
-		if len(toolCalls) > 0 {
-			log.Printf("[TOOL PARSE] Fallback text parsing: %d calls extracted", len(toolCalls))
-		}
+		return nil, fmt.Errorf("provider completion failed: %w", err)
 	}
 
 	return &AgentResponse{
 		AgentID:   agent.ID,
 		AgentName: agent.Name,
-		Content:   content,
-		ToolCalls: toolCalls,
+		Content:   response.Content,
+		ToolCalls: convertToolCallsFromProvider(response.ToolCalls),
 	}, nil
+}
+
+// ExecuteAgentStream runs an agent with streaming responses
+// Streams response chunks to the provided channel
+func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history []Message, apiKey string, streamChan chan<- llms.StreamChunk) error {
+	// Determine which provider to use based on agent configuration
+	providerType := agent.Provider
+	if providerType == "" {
+		providerType = "ollama" // Default to Ollama for local development
+	}
+
+	// Get provider instance (cached or new)
+	provider, err := providerFactory.GetProvider(providerType, agent.ProviderURL, apiKey)
+	if err != nil {
+		return fmt.Errorf("failed to get LLM provider: %w", err)
+	}
+
+	// Build system prompt
+	systemPrompt := buildSystemPrompt(agent)
+
+	// Convert history to provider-agnostic messages
+	messages := convertToProviderMessages(history)
+
+	// Create completion request
+	request := &llms.CompletionRequest{
+		Model:        agent.Model,
+		SystemPrompt: systemPrompt,
+		Messages:     messages,
+		Temperature:  agent.Temperature,
+		Tools:        convertToolsToProvider(agent.Tools),
+	}
+
+	// Call provider with streaming
+	return provider.CompleteStream(ctx, request, streamChan)
+}
+
+// convertToProviderMessages converts internal Message format to provider-agnostic format
+func convertToProviderMessages(history []Message) []llms.ProviderMessage {
+	messages := make([]llms.ProviderMessage, len(history))
+	for i, msg := range history {
+		messages[i] = llms.ProviderMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+	return messages
+}
+
+// convertToolsToProvider converts internal Tool format to provider-agnostic format
+func convertToolsToProvider(tools []*Tool) []llms.ProviderTool {
+	providerTools := make([]llms.ProviderTool, len(tools))
+	for i, tool := range tools {
+		providerTools[i] = llms.ProviderTool{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  tool.Parameters,
+		}
+	}
+	return providerTools
+}
+
+// convertToolCallsFromProvider converts provider tool calls back to internal format
+func convertToolCallsFromProvider(providerCalls []llms.ToolCall) []ToolCall {
+	calls := make([]ToolCall, len(providerCalls))
+	for i, call := range providerCalls {
+		calls[i] = ToolCall{
+			ID:        call.ID,
+			ToolName:  call.ToolName,
+			Arguments: call.Arguments,
+		}
+	}
+	return calls
 }
 
 // buildSystemPrompt creates the system prompt for the agent
@@ -202,28 +176,6 @@ func buildSystemPrompt(agent *Agent) string {
 	return prompt.String()
 }
 
-// buildOpenAIMessages converts history and input to OpenAI message format
-func buildOpenAIMessages(agent *Agent, input string, history []Message, systemPrompt string) []openai.ChatCompletionMessageParamUnion {
-	var messages []openai.ChatCompletionMessageParamUnion
-
-	// Add system message
-	messages = append(messages, openai.SystemMessage(systemPrompt))
-
-	// Add conversation history
-	for _, msg := range history {
-		switch msg.Role {
-		case "user":
-			messages = append(messages, openai.UserMessage(msg.Content))
-		case "assistant":
-			messages = append(messages, openai.AssistantMessage(msg.Content))
-		}
-	}
-
-	// Add current user input
-	messages = append(messages, openai.UserMessage(input))
-
-	return messages
-}
 
 // parseToolArguments splits tool arguments respecting nested brackets
 // Handles cases like: collection_name, [1.0, 2.0, 3.0], 5
@@ -272,88 +224,6 @@ func parseToolArguments(argsStr string) []string {
 	return parts
 }
 
-// extractFromOpenAIToolCalls extracts tool calls from OpenAI's native tool_calls format
-// ✅ PRIMARY METHOD: Uses OpenAI's structured tool_calls (validated by OpenAI)
-// This eliminates all parsing issues:
-// - No false positives (OpenAI validates syntax)
-// - Proper nested call handling
-// - Type-safe argument parsing
-// - Industry standard format
-func extractFromOpenAIToolCalls(toolCalls interface{}, agent *Agent) []ToolCall {
-	var calls []ToolCall
-
-	// Build map of valid tool names for fast lookup
-	validTools := make(map[string]*Tool)
-	for _, tool := range agent.Tools {
-		validTools[tool.Name] = tool
-	}
-
-	// Type assert to handle OpenAI tool calls (supports both old and new SDK versions)
-	// Handle as slice of interface{} for flexibility
-	var toolCallSlice []interface{}
-	switch v := toolCalls.(type) {
-	case []interface{}:
-		toolCallSlice = v
-	default:
-		// Not in expected format, return empty
-		log.Printf("[TOOL PARSE] OpenAI tool_calls not in expected format")
-		return calls
-	}
-
-	// Process each OpenAI tool call
-	for _, tc := range toolCallSlice {
-		// Extract tool call details using type assertion
-		tcMap, ok := tc.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		// Extract ID
-		id, ok := tcMap["id"].(string)
-		if !ok {
-			continue
-		}
-
-		// Extract function details
-		funcObj, ok := tcMap["function"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		// Extract tool name
-		toolName, ok := funcObj["name"].(string)
-		if !ok {
-			continue
-		}
-
-		// Validate tool exists in agent's tools
-		_, exists := validTools[toolName]
-		if !exists {
-			log.Printf("[TOOL ERROR] Unknown tool in OpenAI response: %s", toolName)
-			continue
-		}
-
-		// Extract and parse arguments
-		args := make(map[string]interface{})
-		if argsStr, ok := funcObj["arguments"].(string); ok && argsStr != "" {
-			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
-				log.Printf("[TOOL ERROR] Invalid JSON arguments for %s: %v", toolName, err)
-				continue
-			}
-		}
-
-		// Create tool call with validated data
-		calls = append(calls, ToolCall{
-			ID:        id,
-			ToolName:  toolName,
-			Arguments: args,
-		})
-
-		log.Printf("[TOOL PARSE] Extracted from OpenAI: %s (args validated by OpenAI)", toolName)
-	}
-
-	return calls
-}
 
 // extractToolCallsFromText extracts tool calls from the response text
 // ⚠️ FALLBACK METHOD: Uses text parsing (for models without tool_use support)

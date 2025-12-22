@@ -1,0 +1,8 @@
+name: hello-crew
+description: A minimal crew with a single Hello agent
+agents:
+  - hello-agent
+tasks:
+  - name: respond-to-user
+    description: Respond to the user's message
+    agent: hello-agent

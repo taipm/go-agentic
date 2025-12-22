@@ -1412,6 +1412,8 @@ type ToolResult struct {
 
 // formatToolResults formats tool results for agent feedback
 func formatToolResults(results []ToolResult) string {
+	const maxOutputChars = 2000 // Maximum characters per tool output to prevent context overflow
+
 	var sb strings.Builder
 
 	sb.WriteString("\n[📊 TOOL EXECUTION RESULTS]\n\n")
@@ -1419,7 +1421,13 @@ func formatToolResults(results []ToolResult) string {
 	for _, result := range results {
 		sb.WriteString(fmt.Sprintf("%s:\n", result.ToolName))
 		sb.WriteString(fmt.Sprintf("  Status: %s\n", result.Status))
-		sb.WriteString(fmt.Sprintf("  Output: %s\n\n", result.Output))
+
+		output := result.Output
+		if len(output) > maxOutputChars {
+			// Truncate output and indicate it was truncated
+			output = output[:maxOutputChars] + fmt.Sprintf("\n\n[⚠️ OUTPUT TRUNCATED - Original size: %d characters]", len(result.Output))
+		}
+		sb.WriteString(fmt.Sprintf("  Output: %s\n\n", output))
 	}
 
 	sb.WriteString("[END RESULTS]\n")

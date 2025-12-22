@@ -4,6 +4,24 @@ This package contains complete example applications demonstrating how to use the
 
 ## Examples
 
+### 0. Hello Crew ✅ Complete (Start Here!)
+
+Your first introduction to go-agentic with a minimal crew containing a single agent.
+
+- **Location**: `00-hello-crew/`
+- **Agents**: Hello Agent (Friendly Assistant)
+- **Perfect for**: Learning the basics in 5 minutes
+- **How to Run**:
+
+  ```bash
+  cd 00-hello-crew
+  cp .env.example .env
+  # Edit .env with your OPENAI_API_KEY
+  make run
+  ```
+
+- **Documentation**: [00-hello-crew/README.md](00-hello-crew/README.md)
+
 ### 1. IT Support System ✅ Complete
 
 Multi-agent system for IT troubleshooting and system diagnostics with intelligent routing.
@@ -52,6 +70,13 @@ Multi-agent system for data processing and visualization.
 
 ```plaintext
 examples/
+├── 00-hello-crew/          # 👈 Start here!
+│   ├── cmd/
+│   ├── internal/
+│   ├── config/
+│   ├── go.mod
+│   ├── Makefile
+│   └── README.md
 ├── it-support/
 │   ├── cmd/
 │   ├── internal/
@@ -69,7 +94,18 @@ examples/
 - Go 1.25.2 or later
 - OPENAI_API_KEY environment variable set
 
-### Setup
+### Quick Start (5 minutes)
+
+New to go-agentic? Start with Hello Crew:
+
+```bash
+cd 00-hello-crew
+cp .env.example .env
+# Edit .env with your OPENAI_API_KEY
+make run
+```
+
+### Setup for Other Examples
 
 1. Navigate to an example directory:
 
@@ -97,6 +133,7 @@ examples/
 
 ## Documentation
 
+- **Hello Crew** (Start Here): [00-hello-crew/README.md](00-hello-crew/README.md)
 - **IT Support Example**: [it-support/README.md](it-support/README.md)
 - **Core Library**: [../core/README.md](../core/README.md)
 - **Main Project**: [../README.md](../README.md)

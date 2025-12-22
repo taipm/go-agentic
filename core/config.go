@@ -73,6 +73,8 @@ type AgentConfig struct {
 	Tools          []string `yaml:"tools"`
 	HandoffTargets []string `yaml:"handoff_targets"`
 	SystemPrompt   string   `yaml:"system_prompt"`
+	Provider       string   `yaml:"provider"`         // "openai" (default) or "ollama"
+	ProviderURL    string   `yaml:"provider_url"`     // Provider-specific URL (e.g., "http://localhost:11434" for Ollama)
 }
 
 // LoadCrewConfig loads the crew configuration from a YAML file
@@ -318,6 +320,8 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 		Backstory:      config.Backstory,
 		Model:          config.Model,
 		SystemPrompt:   config.SystemPrompt,
+		Provider:       config.Provider,     // Multi-provider support
+		ProviderURL:    config.ProviderURL,  // Multi-provider support
 		Temperature:    config.Temperature,
 		IsTerminal:     config.IsTerminal,
 		HandoffTargets: config.HandoffTargets,

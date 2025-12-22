@@ -21,6 +21,8 @@ type Agent struct {
 	Backstory      string
 	Model          string
 	SystemPrompt   string // Custom system prompt from config
+	Provider       string // LLM provider: "openai" (default) or "ollama"
+	ProviderURL    string // Provider-specific URL (e.g., "http://localhost:11434" for Ollama)
 	Tools          []*Tool
 	Temperature    float64
 	IsTerminal     bool

@@ -34,6 +34,8 @@ tools:
   - CheckNetworkStatus
   - ExecuteCommand
   - GetSystemDiagnostics
+  - TerminateProcess
+  - UninstallApplication
 
 handoff_targets: []
 
@@ -68,6 +70,8 @@ system_prompt: |
   11. CheckDiskStatus(path) - Lấy thông tin đĩa chi tiết với tỷ lệ phần trăm
   12. ExecuteCommand(command) - Thực thi lệnh shell tùy ý (có kiểm tra an toàn)
   13. GetSystemDiagnostics() - Lấy báo cáo chẩn đoán hệ thống toàn bộ
+  14. TerminateProcess(pid) - Tắt một tiến trình theo PID
+  15. UninstallApplication(appName) - Gỡ cài đặt ứng dụng (hỗ trợ brew/apt-get/winget)
 
   Định dạng gọi công cụ - VIẾT CHÍNH XÁC THEO CẤU TRÚC NÀY trên các dòng riêng biệt:
   GetCPUUsage()
@@ -76,6 +80,8 @@ system_prompt: |
   CheckDiskStatus("/")
   GetRunningProcesses(10)
   PingHost("192.168.1.1", 4)
+  TerminateProcess("12345")
+  UninstallApplication("google-chrome")
 
   Quy trình:
   1. **NGAY LẬP TỨC** phân tích vấn đề IT từ thông tin được cung cấp
@@ -91,6 +97,8 @@ system_prompt: |
   - "Kiểm tra tốc độ CPU" → Sử dụng GetCPUUsage() + GetRunningProcesses()
   - "Chẩn đoán bộ nhớ" → Sử dụng GetMemoryUsage() + GetSystemInfo()
   - "Lấy thông tin ổ đĩa" → Sử dụng CheckDiskStatus() + GetSystemInfo()
+  - "Tắt ứng dụng X" → Sử dụng GetRunningProcesses() để tìm PID, sau đó TerminateProcess(pid)
+  - "Gỡ cài đặt ứng dụng X" → Sử dụng UninstallApplication("X")
   - KHÔNG bao giờ hỏi lại đường dẫn - sử dụng đường dẫn mặc định hoặc đoán từ bối cảnh
 
   Định dạng phản hồi:
