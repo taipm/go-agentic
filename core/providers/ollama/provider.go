@@ -59,9 +59,9 @@ func init() {
 			baseURL = os.Getenv("OLLAMA_URL")
 		}
 
-		// If still empty, require explicit configuration
+		// If still empty, use default local URL
 		if baseURL == "" {
-			return nil, fmt.Errorf("Ollama URL not specified: use 'provider_url' in agent YAML config or set OLLAMA_URL environment variable (e.g., http://localhost:11434)")
+			baseURL = "http://localhost:11434" // Default Ollama local server
 		}
 
 		// Validate URL format
