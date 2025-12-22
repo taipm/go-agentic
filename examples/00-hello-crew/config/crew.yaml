@@ -16,19 +16,29 @@ settings:
   # Configuration Mode:
   # - permissive (default): Use safe defaults for missing parameters
   # - strict: Require all parameters to be explicitly set
-  config_mode: permissive  # ← Development mode: minimal config needed
+  config_mode: strict  # ← Production mode: explicit configuration required
 
-  # Parallel Agent Execution Timeout (Fix #4)
-  # Maximum time allowed for parallel agent execution (in seconds)
-  # Default: 60 seconds if not specified or zero
-  # Increase for complex tasks, decrease for quick responses
+  # ===== TIMEOUT PARAMETERS (all 11 required in Strict Mode) =====
   parallel_timeout_seconds: 60
+  tool_execution_timeout_seconds: 5
+  tool_result_timeout_seconds: 30
+  min_tool_timeout_ms: 100
+  stream_chunk_timeout_ms: 500
+  sse_keep_alive_seconds: 30
+  request_store_cleanup_minutes: 5
+  retry_backoff_min_ms: 100
+  retry_backoff_max_seconds: 5
+  client_cache_ttl_minutes: 60
+  graceful_shutdown_check_interval_ms: 100
 
-  # Tool Output Truncation Limit (Fix #5)
-  # Maximum characters allowed in tool output before truncation
-  # Default: 2000 characters if not specified or zero
-  # Increase for detailed outputs, decrease to save context
+  # ===== SIZE LIMITS (all 8 required in Strict Mode) =====
+  max_input_size_kb: 10
+  min_agent_id_length: 1
+  max_agent_id_length: 128
+  max_request_body_size_kb: 100
   max_tool_output_chars: 2000
+  stream_buffer_size: 100
+  max_stored_requests: 1000
 
-  # Other parameters use safe defaults in Permissive Mode
-  # See docs/STRICT_MODE_CONFIGURATION.md for all 19 parameters
+  # ===== THRESHOLD (required in Strict Mode) =====
+  timeout_warning_threshold_pct: 20

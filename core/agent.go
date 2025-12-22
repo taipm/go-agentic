@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	providers "github.com/taipm/go-agentic/core/providers"
 	_ "github.com/taipm/go-agentic/core/providers/openai"  // Register OpenAI provider
@@ -67,7 +68,20 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 
 // executeWithModelConfig executes an agent with a specific model configuration
 // Helper function used by ExecuteAgent to reduce code duplication
+// ✅ WEEK 1: Now includes cost checking before execution and metric updates after
 func executeWithModelConfig(ctx context.Context, agent *Agent, systemPrompt string, messages []providers.ProviderMessage, modelConfig *ModelConfig, apiKey string) (*AgentResponse, error) {
+	// ✅ Step 1: Estimate tokens BEFORE execution
+	systemAndPromptContent := systemPrompt
+	for _, msg := range messages {
+		systemAndPromptContent += msg.Content
+	}
+	estimatedTokens := agent.EstimateTokens(systemAndPromptContent)
+
+	// ✅ Step 2: Check cost limits (BEFORE execution)
+	if err := agent.CheckCostLimits(estimatedTokens); err != nil {
+		return nil, err // BLOCK if limit exceeded (when EnforceCostLimits=true)
+	}
+
 	// Get provider instance
 	provider, err := providerFactory.GetProvider(modelConfig.Provider, modelConfig.ProviderURL, apiKey)
 	if err != nil {
@@ -88,6 +102,10 @@ func executeWithModelConfig(ctx context.Context, agent *Agent, systemPrompt stri
 	if err != nil {
 		return nil, err
 	}
+
+	// ✅ Step 3: Update metrics AFTER successful execution
+	actualCost := agent.CalculateCost(estimatedTokens)
+	agent.UpdateCostMetrics(estimatedTokens, actualCost)
 
 	return &AgentResponse{
 		AgentID:   agent.ID,
@@ -414,4 +432,100 @@ func getToolParameterNames(tool *Tool) []string {
 	}
 
 	return paramNames
+}
+
+// ✅ NEW WEEK 1: Cost Control Functions
+
+// EstimateTokens estimates the number of tokens in content
+// Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
+func (a *Agent) EstimateTokens(content string) int {
+	if content == "" {
+		return 0
+	}
+	// Rough estimation: 1 token ≈ 4 characters
+	// This is a reasonable approximation for OpenAI models
+	return (len(content) + 3) / 4 // Round up
+}
+
+// CalculateCost calculates the cost for a given number of tokens
+// Uses OpenAI pricing: $0.15 per 1M input tokens
+func (a *Agent) CalculateCost(tokens int) float64 {
+	// OpenAI pricing: $0.15 per 1M input tokens
+	// So: cost = tokens * (0.15 / 1,000,000) = tokens * 0.00000015
+	const costPerToken = 0.00000015 // $0.15 per 1M tokens
+	return float64(tokens) * costPerToken
+}
+
+// ResetDailyMetricsIfNeeded resets daily metrics if 24+ hours have passed
+func (a *Agent) ResetDailyMetricsIfNeeded() {
+	a.CostMetrics.Mutex.Lock()
+	defer a.CostMetrics.Mutex.Unlock()
+
+	now := time.Now()
+	// If last reset was > 24 hours ago, reset counters
+	if !a.CostMetrics.LastResetTime.IsZero() && now.Sub(a.CostMetrics.LastResetTime) > 24*time.Hour {
+		a.CostMetrics.DailyCost = 0
+		a.CostMetrics.CallCount = 0
+		a.CostMetrics.TotalTokens = 0
+		a.CostMetrics.LastResetTime = now
+	} else if a.CostMetrics.LastResetTime.IsZero() {
+		// Initialize if this is the first call
+		a.CostMetrics.LastResetTime = now
+	}
+}
+
+// CheckCostLimits verifies the agent hasn't exceeded its cost limits
+// Returns an error if limits exceeded (when EnforceCostLimits=true)
+func (a *Agent) CheckCostLimits(estimatedTokens int) error {
+	// Initialize/reset daily metrics if needed
+	a.ResetDailyMetricsIfNeeded()
+
+	// Calculate estimated cost
+	estimatedCost := a.CalculateCost(estimatedTokens)
+
+	// Mode 1: Warn only (do not block)
+	if !a.EnforceCostLimits {
+		a.CostMetrics.Mutex.RLock()
+		currentCost := a.CostMetrics.DailyCost
+		a.CostMetrics.Mutex.RUnlock()
+
+		// Warn at alert threshold
+		if a.CostAlertThreshold > 0 && currentCost > a.MaxCostPerDay*a.CostAlertThreshold {
+			fmt.Printf("⚠️  [WARN] Agent '%s' approaching cost limit: $%.4f / $%.2f (%.0f%%)\n",
+				a.ID, currentCost, a.MaxCostPerDay,
+				(currentCost/a.MaxCostPerDay)*100)
+		}
+		return nil // Always allow in warn mode
+	}
+
+	// Mode 2: Enforce limits (block on exceeded)
+
+	// Check 1: Per-call token limit
+	if a.MaxTokensPerCall > 0 && estimatedTokens > a.MaxTokensPerCall {
+		return fmt.Errorf("❌ [COST BLOCK] Agent '%s': request %d tokens > limit %d tokens",
+			a.ID, estimatedTokens, a.MaxTokensPerCall)
+	}
+
+	// Check 2: Daily budget
+	a.CostMetrics.Mutex.RLock()
+	currentDailyCost := a.CostMetrics.DailyCost
+	a.CostMetrics.Mutex.RUnlock()
+
+	newDailyCost := currentDailyCost + estimatedCost
+	if a.MaxCostPerDay > 0 && newDailyCost > a.MaxCostPerDay {
+		return fmt.Errorf("❌ [COST BLOCK] Agent '%s': daily cost $%.4f + $%.4f > limit $%.2f",
+			a.ID, currentDailyCost, estimatedCost, a.MaxCostPerDay)
+	}
+
+	return nil // Cost checks passed
+}
+
+// UpdateCostMetrics updates the metrics after successful execution
+func (a *Agent) UpdateCostMetrics(actualTokens int, actualCost float64) {
+	a.CostMetrics.Mutex.Lock()
+	defer a.CostMetrics.Mutex.Unlock()
+
+	a.CostMetrics.CallCount++
+	a.CostMetrics.TotalTokens += actualTokens
+	a.CostMetrics.DailyCost += actualCost
 }
