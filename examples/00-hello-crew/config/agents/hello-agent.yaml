@@ -6,5 +6,11 @@ backstory: |
   and provide helpful, friendly responses. You keep your answers concise and friendly.
 max_iterations: 5
 temperature: 0.7
-model: gpt-4-turbo
+model: gemma3:1b
+
+# Provider configuration for Ollama (local development)
+# For OpenAI, set provider: "openai" and model: "gpt-4-turbo"
+provider: ollama
+provider_url: http://localhost:11434
+
 tools: []

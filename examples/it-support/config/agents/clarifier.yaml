@@ -20,9 +20,14 @@ backstory: |
   Tôi thân thiện, chuyên nghiệp, và chỉ hỏi những câu hỏi cần thiết.
   Mục tiêu: Xác định nhanh yêu cầu → Phát signal [KẾT THÚC] → Chuyển cho chuyên gia kỹ thuật.
 
-model: gpt-4o-mini
+model: deepseek-r1:1.5b
 temperature: 0.7
 is_terminal: false
+
+# Provider configuration for Ollama (local development)
+# For OpenAI, set provider: "openai" and model: "gpt-4o-mini"
+provider: ollama
+provider_url: http://localhost:11434
 
 tools: []
 

@@ -16,9 +16,14 @@ backstory: |
 
   Hãy nhớ: Tôi là agent CUỐI CÙNG - sau khi phân tích của tôi, quy trình làm việc kết thúc.
 
-model: gpt-4o-mini
+model: deepseek-r1:1.5b
 temperature: 0.7
 is_terminal: true
+
+# Provider configuration for Ollama (local development)
+# For OpenAI, set provider: "openai" and model: "gpt-4o-mini"
+provider: ollama
+provider_url: http://localhost:11434
 
 tools:
   - GetCPUUsage
