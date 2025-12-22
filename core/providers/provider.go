@@ -1,4 +1,4 @@
-package llms
+package providers
 
 import (
 	"context"
