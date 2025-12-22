@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -42,6 +43,7 @@ type RoutingConfig struct {
 }
 
 // CrewConfig represents the crew configuration
+// ✅ Phase 4: Extended Configuration - Added fields for all hardcoded defaults
 type CrewConfig struct {
 	Version     string `yaml:"version"`
 	Description string `yaml:"description"`
@@ -50,11 +52,44 @@ type CrewConfig struct {
 	Agents []string `yaml:"agents"`
 
 	Settings struct {
-		MaxHandoffs    int    `yaml:"max_handoffs"`
-		MaxRounds      int    `yaml:"max_rounds"`
-		TimeoutSeconds int    `yaml:"timeout_seconds"`
-		Language       string `yaml:"language"`
-		Organization   string `yaml:"organization"`
+		MaxHandoffs                 int    `yaml:"max_handoffs"`
+		MaxRounds                   int    `yaml:"max_rounds"`
+		TimeoutSeconds              int    `yaml:"timeout_seconds"`
+		Language                    string `yaml:"language"`
+		Organization                string `yaml:"organization"`
+
+		// ✅ Phase 1: Configurable timeouts and output limits
+		ParallelTimeoutSeconds      int `yaml:"parallel_timeout_seconds"`       // FIX #4 hardcoded value
+		MaxToolOutputChars          int `yaml:"max_tool_output_chars"`          // FIX #5 hardcoded value
+
+		// ✅ Phase 4: Extended configuration for all remaining hardcoded values
+		ToolExecutionTimeoutSeconds int `yaml:"tool_execution_timeout_seconds"` // Timeout per tool execution (was 5s)
+		ToolResultTimeoutSeconds    int `yaml:"tool_result_timeout_seconds"`    // Timeout for tool result processing (was 30s)
+		MinToolTimeoutMillis        int `yaml:"min_tool_timeout_millis"`        // Min tool timeout (was 100ms)
+		StreamChunkTimeoutMillis    int `yaml:"stream_chunk_timeout_millis"`    // Stream chunk timeout (was 500ms)
+		SSEKeepAliveSeconds         int `yaml:"sse_keep_alive_seconds"`         // SSE keep-alive (was 30s)
+		RequestStoreCleanupMinutes  int `yaml:"request_store_cleanup_minutes"`  // Cleanup interval (was 5m)
+
+		// Retry and backoff
+		RetryBackoffMinMillis       int `yaml:"retry_backoff_min_millis"`       // Initial backoff (was 100ms)
+		RetryBackoffMaxSeconds      int `yaml:"retry_backoff_max_seconds"`      // Max backoff (was 5s)
+
+		// Input validation limits
+		MaxInputSizeKB              int `yaml:"max_input_size_kb"`              // Max input size (was 10KB)
+		MinAgentIDLength            int `yaml:"min_agent_id_length"`            // Min agent ID length (was 1)
+		MaxAgentIDLength            int `yaml:"max_agent_id_length"`            // Max agent ID length (was 128)
+		MaxRequestBodySizeKB        int `yaml:"max_request_body_size_kb"`       // Max request body (was 100KB)
+
+		// Output and storage
+		StreamBufferSize            int `yaml:"stream_buffer_size"`             // Stream buffer size (was 100)
+		MaxStoredRequests           int `yaml:"max_stored_requests"`            // Max stored requests (was 1000)
+
+		// Client cache
+		ClientCacheTTLMinutes       int `yaml:"client_cache_ttl_minutes"`       // Client cache TTL (was 60 minutes)
+
+		// Graceful shutdown
+		GracefulShutdownCheckMillis int `yaml:"graceful_shutdown_check_millis"` // Shutdown check interval (was 100ms)
+		TimeoutWarningThresholdPct  int `yaml:"timeout_warning_threshold_pct"`  // Timeout warning % (was 20%)
 	} `yaml:"settings"`
 
 	Routing *RoutingConfig `yaml:"routing"`
@@ -401,4 +436,90 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 	}
 
 	return agent
+}
+
+// ConfigToHardcodedDefaults converts CrewConfig settings to HardcodedDefaults struct
+// ✅ Phase 4: Extended Configuration - Maps YAML values to runtime defaults
+// Returns defaults with YAML overrides applied; validation is performed after conversion
+func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
+	defaults := DefaultHardcodedDefaults()
+
+	// Phase 1 configurations
+	if config.Settings.ParallelTimeoutSeconds > 0 {
+		defaults.ParallelAgentTimeout = time.Duration(config.Settings.ParallelTimeoutSeconds) * time.Second
+	}
+	if config.Settings.MaxToolOutputChars > 0 {
+		defaults.MaxToolOutputChars = config.Settings.MaxToolOutputChars
+	}
+
+	// Phase 4 timeout configurations
+	if config.Settings.ToolExecutionTimeoutSeconds > 0 {
+		defaults.ToolExecutionTimeout = time.Duration(config.Settings.ToolExecutionTimeoutSeconds) * time.Second
+	}
+	if config.Settings.ToolResultTimeoutSeconds > 0 {
+		defaults.ToolResultTimeout = time.Duration(config.Settings.ToolResultTimeoutSeconds) * time.Second
+	}
+	if config.Settings.MinToolTimeoutMillis > 0 {
+		defaults.MinToolTimeout = time.Duration(config.Settings.MinToolTimeoutMillis) * time.Millisecond
+	}
+	if config.Settings.StreamChunkTimeoutMillis > 0 {
+		defaults.StreamChunkTimeout = time.Duration(config.Settings.StreamChunkTimeoutMillis) * time.Millisecond
+	}
+	if config.Settings.SSEKeepAliveSeconds > 0 {
+		defaults.SSEKeepAliveInterval = time.Duration(config.Settings.SSEKeepAliveSeconds) * time.Second
+	}
+	if config.Settings.RequestStoreCleanupMinutes > 0 {
+		defaults.RequestStoreCleanupInterval = time.Duration(config.Settings.RequestStoreCleanupMinutes) * time.Minute
+	}
+
+	// Phase 4 retry and backoff configurations
+	if config.Settings.RetryBackoffMinMillis > 0 {
+		defaults.RetryBackoffMinDuration = time.Duration(config.Settings.RetryBackoffMinMillis) * time.Millisecond
+	}
+	if config.Settings.RetryBackoffMaxSeconds > 0 {
+		defaults.RetryBackoffMaxDuration = time.Duration(config.Settings.RetryBackoffMaxSeconds) * time.Second
+	}
+
+	// Phase 4 input validation limits
+	if config.Settings.MaxInputSizeKB > 0 {
+		defaults.MaxInputSize = config.Settings.MaxInputSizeKB * 1024
+	}
+	if config.Settings.MinAgentIDLength > 0 {
+		defaults.MinAgentIDLength = config.Settings.MinAgentIDLength
+	}
+	if config.Settings.MaxAgentIDLength > 0 {
+		defaults.MaxAgentIDLength = config.Settings.MaxAgentIDLength
+	}
+	if config.Settings.MaxRequestBodySizeKB > 0 {
+		defaults.MaxRequestBodySize = config.Settings.MaxRequestBodySizeKB * 1024
+	}
+
+	// Phase 4 output and storage
+	if config.Settings.StreamBufferSize > 0 {
+		defaults.StreamBufferSize = config.Settings.StreamBufferSize
+	}
+	if config.Settings.MaxStoredRequests > 0 {
+		defaults.MaxStoredRequests = config.Settings.MaxStoredRequests
+	}
+
+	// Phase 4 client cache
+	if config.Settings.ClientCacheTTLMinutes > 0 {
+		defaults.ClientCacheTTL = time.Duration(config.Settings.ClientCacheTTLMinutes) * time.Minute
+	}
+
+	// Phase 4 graceful shutdown
+	if config.Settings.GracefulShutdownCheckMillis > 0 {
+		defaults.GracefulShutdownCheckInterval = time.Duration(config.Settings.GracefulShutdownCheckMillis) * time.Millisecond
+	}
+	if config.Settings.TimeoutWarningThresholdPct > 0 && config.Settings.TimeoutWarningThresholdPct <= 100 {
+		defaults.TimeoutWarningThreshold = float64(config.Settings.TimeoutWarningThresholdPct) / 100.0
+	}
+
+	// Validate all converted values
+	if err := defaults.Validate(); err != nil {
+		log.Printf("[CONFIG WARNING] Failed to validate defaults after conversion: %v - using fallback defaults", err)
+		return DefaultHardcodedDefaults()
+	}
+
+	return defaults
 }
