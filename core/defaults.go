@@ -4,6 +4,43 @@ import (
 	"time"
 )
 
+// ConfigMode defines how the system handles missing configuration values
+type ConfigMode string
+
+const (
+	// PermissiveMode allows missing config values and uses defaults
+	// System runs smoothly, no errors for missing config
+	PermissiveMode ConfigMode = "permissive"
+
+	// StrictMode requires all config values to be explicitly set
+	// System fails with clear error messages if values are missing
+	StrictMode ConfigMode = "strict"
+
+	// DefaultConfigMode is PermissiveMode for backward compatibility
+	DefaultConfigMode ConfigMode = PermissiveMode
+)
+
+// ConfigModeError represents configuration validation failures in Strict Mode
+type ConfigModeError struct {
+	Mode   ConfigMode
+	Errors []string
+}
+
+// Error implements the error interface
+func (cme *ConfigModeError) Error() string {
+	if len(cme.Errors) == 0 {
+		return "configuration validation error"
+	}
+
+	header := "Configuration Validation Errors (Mode: " + string(cme.Mode) + "):\n"
+	errorList := ""
+	for i, err := range cme.Errors {
+		errorList += "  " + string(rune('0'+i+1)) + ". " + err + "\n"
+	}
+
+	return header + errorList + "\nPlease configure these values in crew.yaml settings section or via environment variables"
+}
+
 // HardcodedDefaults consolidates all configurable default values
 // These defaults were previously hardcoded throughout the codebase.
 // They can now be overridden via:
@@ -13,6 +50,11 @@ import (
 //
 // ✅ Phase 4: Extended Configuration - Makes all hardcoded values configurable
 type HardcodedDefaults struct {
+	// ===== CONFIGURATION MODE =====
+	// Mode controls how system handles missing/invalid config values
+	// PermissiveMode (default): Use hardcoded defaults silently
+	// StrictMode: Fail loudly with clear error messages
+	Mode ConfigMode
 	// ===== TIMEOUT PARAMETERS =====
 	// ParallelAgentTimeout: Maximum time allowed for parallel agent execution
 	// Previously hardcoded in: crew.go:1183
@@ -119,6 +161,9 @@ type HardcodedDefaults struct {
 // DefaultHardcodedDefaults returns the global default configuration values
 func DefaultHardcodedDefaults() *HardcodedDefaults {
 	return &HardcodedDefaults{
+		// Configuration Mode
+		Mode: PermissiveMode, // Default: allow missing config, use defaults
+
 		// Timeout Parameters (Phase 1 fixes)
 		ParallelAgentTimeout:   60 * time.Second,     // ✅ FIX #4: Default parallel timeout
 		ToolExecutionTimeout:   5 * time.Second,      // Per-tool timeout
@@ -154,69 +199,77 @@ func DefaultHardcodedDefaults() *HardcodedDefaults {
 	}
 }
 
+// validateDuration checks a duration value and applies defaults or collects errors
+func (d *HardcodedDefaults) validateDuration(name string, value *time.Duration, defaultVal time.Duration, errors *[]string) {
+	if *value <= 0 {
+		if d.Mode == StrictMode {
+			*errors = append(*errors, name+" must be > 0 (got: "+value.String()+")")
+		} else {
+			*value = defaultVal
+		}
+	}
+}
+
+// validateInt checks an int value and applies defaults or collects errors
+func (d *HardcodedDefaults) validateInt(name string, value *int, defaultVal int, errors *[]string) {
+	if *value <= 0 {
+		if d.Mode == StrictMode {
+			*errors = append(*errors, name+" must be > 0")
+		} else {
+			*value = defaultVal
+		}
+	}
+}
+
 // Validate checks that all timeout values are sensible
 // Returns error if any timeout is invalid or contradictory
+// In StrictMode: fails if values are missing/invalid
+// In PermissiveMode: silently applies defaults for missing/invalid values
 func (d *HardcodedDefaults) Validate() error {
-	if d.ParallelAgentTimeout <= 0 {
-		d.ParallelAgentTimeout = 60 * time.Second
+	var errors []string
+
+	// Ensure mode is set
+	if d.Mode == "" {
+		d.Mode = PermissiveMode
 	}
-	if d.ToolExecutionTimeout <= 0 {
-		d.ToolExecutionTimeout = 5 * time.Second
-	}
-	if d.ToolResultTimeout <= 0 {
-		d.ToolResultTimeout = 30 * time.Second
-	}
-	if d.MinToolTimeout <= 0 {
-		d.MinToolTimeout = 100 * time.Millisecond
-	}
-	if d.StreamChunkTimeout <= 0 {
-		d.StreamChunkTimeout = 500 * time.Millisecond
-	}
-	if d.SSEKeepAliveInterval <= 0 {
-		d.SSEKeepAliveInterval = 30 * time.Second
-	}
-	if d.RequestStoreCleanupInterval <= 0 {
-		d.RequestStoreCleanupInterval = 5 * time.Minute
-	}
-	if d.RetryBackoffMinDuration <= 0 {
-		d.RetryBackoffMinDuration = 100 * time.Millisecond
-	}
-	if d.RetryBackoffMaxDuration <= 0 {
-		d.RetryBackoffMaxDuration = 5 * time.Second
-	}
-	if d.ClientCacheTTL <= 0 {
-		d.ClientCacheTTL = 1 * time.Hour
-	}
-	if d.GracefulShutdownCheckInterval <= 0 {
-		d.GracefulShutdownCheckInterval = 100 * time.Millisecond
-	}
+
+	// Validate timeouts
+	d.validateDuration("ParallelAgentTimeout", &d.ParallelAgentTimeout, 60*time.Second, &errors)
+	d.validateDuration("ToolExecutionTimeout", &d.ToolExecutionTimeout, 5*time.Second, &errors)
+	d.validateDuration("ToolResultTimeout", &d.ToolResultTimeout, 30*time.Second, &errors)
+	d.validateDuration("MinToolTimeout", &d.MinToolTimeout, 100*time.Millisecond, &errors)
+	d.validateDuration("StreamChunkTimeout", &d.StreamChunkTimeout, 500*time.Millisecond, &errors)
+	d.validateDuration("SSEKeepAliveInterval", &d.SSEKeepAliveInterval, 30*time.Second, &errors)
+	d.validateDuration("RequestStoreCleanupInterval", &d.RequestStoreCleanupInterval, 5*time.Minute, &errors)
+	d.validateDuration("RetryBackoffMinDuration", &d.RetryBackoffMinDuration, 100*time.Millisecond, &errors)
+	d.validateDuration("RetryBackoffMaxDuration", &d.RetryBackoffMaxDuration, 5*time.Second, &errors)
+	d.validateDuration("ClientCacheTTL", &d.ClientCacheTTL, 1*time.Hour, &errors)
+	d.validateDuration("GracefulShutdownCheckInterval", &d.GracefulShutdownCheckInterval, 100*time.Millisecond, &errors)
 
 	// Validate size limits
-	if d.MaxInputSize <= 0 {
-		d.MaxInputSize = 10 * 1024
-	}
-	if d.MinAgentIDLength <= 0 {
-		d.MinAgentIDLength = 1
-	}
-	if d.MaxAgentIDLength <= 0 {
-		d.MaxAgentIDLength = 128
-	}
-	if d.MaxRequestBodySize <= 0 {
-		d.MaxRequestBodySize = 100 * 1024
-	}
-	if d.MaxToolOutputChars <= 0 {
-		d.MaxToolOutputChars = 2000
-	}
-	if d.StreamBufferSize <= 0 {
-		d.StreamBufferSize = 100
-	}
-	if d.MaxStoredRequests <= 0 {
-		d.MaxStoredRequests = 1000
+	d.validateInt("MaxInputSize", &d.MaxInputSize, 10*1024, &errors)
+	d.validateInt("MinAgentIDLength", &d.MinAgentIDLength, 1, &errors)
+	d.validateInt("MaxAgentIDLength", &d.MaxAgentIDLength, 128, &errors)
+	d.validateInt("MaxRequestBodySize", &d.MaxRequestBodySize, 100*1024, &errors)
+	d.validateInt("MaxToolOutputChars", &d.MaxToolOutputChars, 2000, &errors)
+	d.validateInt("StreamBufferSize", &d.StreamBufferSize, 100, &errors)
+	d.validateInt("MaxStoredRequests", &d.MaxStoredRequests, 1000, &errors)
+
+	// Threshold validation
+	if d.TimeoutWarningThreshold <= 0 || d.TimeoutWarningThreshold >= 1 {
+		if d.Mode == StrictMode {
+			errors = append(errors, "TimeoutWarningThreshold must be between 0 and 1")
+		} else {
+			d.TimeoutWarningThreshold = 0.20
+		}
 	}
 
-	// Validate threshold
-	if d.TimeoutWarningThreshold <= 0 || d.TimeoutWarningThreshold >= 1 {
-		d.TimeoutWarningThreshold = 0.20
+	// Return accumulated errors if any
+	if len(errors) > 0 {
+		return &ConfigModeError{
+			Mode:   d.Mode,
+			Errors: errors,
+		}
 	}
 
 	return nil
