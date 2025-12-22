@@ -19,26 +19,26 @@ settings:
   config_mode: strict  # ← Production mode: explicit configuration required
 
   # ===== TIMEOUT PARAMETERS (all 11 required in Strict Mode) =====
-  parallel_timeout_seconds: 60
-  tool_execution_timeout_seconds: 5
-  tool_result_timeout_seconds: 30
-  min_tool_timeout_millis: 100
-  stream_chunk_timeout_millis: 500
-  sse_keep_alive_seconds: 30
-  request_store_cleanup_minutes: 5
-  retry_backoff_min_millis: 100
-  retry_backoff_max_seconds: 5
-  client_cache_ttl_minutes: 60
-  graceful_shutdown_check_millis: 100
+  parallel_timeout_seconds: 60              # Multiple agents running in parallel (seconds)
+  tool_execution_timeout_seconds: 5         # Single tool/function call max time (seconds)
+  tool_result_timeout_seconds: 30           # Tool result processing max time (seconds)
+  min_tool_timeout_millis: 100              # Sanity check: minimum tool timeout (ms)
+  stream_chunk_timeout_millis: 500          # Each streaming chunk processing timeout (ms)
+  sse_keep_alive_seconds: 30                # Keep-alive ping interval for SSE (seconds)
+  request_store_cleanup_minutes: 5          # Cleanup old request tracking data (minutes)
+  retry_backoff_min_millis: 100             # Initial wait before first retry (ms)
+  retry_backoff_max_seconds: 5              # Max backoff ceiling between retries (seconds)
+  client_cache_ttl_minutes: 60              # How long to cache LLM clients (minutes)
+  graceful_shutdown_check_millis: 100       # Check shutdown signal interval (ms)
 
   # ===== SIZE LIMITS (all 8 required in Strict Mode) =====
-  max_input_size_kb: 10
-  min_agent_id_length: 1
-  max_agent_id_length: 128
-  max_request_body_size_kb: 100
-  max_tool_output_chars: 2000
-  stream_buffer_size: 100
-  max_stored_requests: 1000
+  max_input_size_kb: 10                     # Prevent DoS: max user input (KB)
+  min_agent_id_length: 1                    # Prevent empty agent IDs (characters)
+  max_agent_id_length: 128                  # Prevent unbounded ID growth (characters)
+  max_request_body_size_kb: 100             # Prevent memory exhaustion: max HTTP body (KB)
+  max_tool_output_chars: 2000               # Truncate large tool outputs (characters)
+  stream_buffer_size: 100                   # Buffer capacity for streaming chunks
+  max_stored_requests: 1000                 # Keep max N requests in memory for debugging
 
   # ===== THRESHOLD (required in Strict Mode) =====
-  timeout_warning_threshold_pct: 20
+  timeout_warning_threshold_pct: 20         # Warn when 80% of timeout consumed (as decimal)

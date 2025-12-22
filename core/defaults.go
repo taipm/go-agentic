@@ -27,20 +27,55 @@ type ConfigModeError struct {
 	Errors []string
 }
 
+// parameterDescriptions maps parameter names to detailed explanations
+var parameterDescriptions = map[string]string{
+	"ParallelAgentTimeout": "Max time for multiple agents running in parallel (seconds). Default: 60s",
+	"ToolExecutionTimeout": "Max time for a single tool/function call to complete (seconds). Default: 5s",
+	"ToolResultTimeout": "Max time to wait for tool result processing after execution (seconds). Default: 30s",
+	"MinToolTimeout": "Sanity check: minimum allowed tool timeout to prevent unreasonably low values (milliseconds). Default: 100ms",
+	"StreamChunkTimeout": "Timeout for processing each chunk in streaming responses (milliseconds). Default: 500ms",
+	"SSEKeepAliveInterval": "Keep-alive ping interval for Server-Sent Events to prevent connection timeout (seconds). Default: 30s",
+	"RequestStoreCleanupInterval": "How often to clean up old request tracking data from memory (minutes). Default: 5m",
+	"RetryBackoffMinDuration": "Initial wait time before first retry on failure - exponential backoff starts here (milliseconds). Default: 100ms",
+	"RetryBackoffMaxDuration": "Maximum wait time between retries - ceiling for exponential backoff (seconds). Default: 5s",
+	"ClientCacheTTL": "How long to keep cached LLM provider clients (OpenAI/Ollama) before recreating (minutes). Default: 60m",
+	"GracefulShutdownCheckInterval": "How often to check for shutdown signal during long operations (milliseconds). Default: 100ms",
+	"MaxInputSize": "Prevents DoS attacks from extremely large user inputs (bytes, ~10KB = 10240). Default: 10240",
+	"MinAgentIDLength": "Prevents empty or whitespace-only agent identifiers (characters). Default: 1",
+	"MaxAgentIDLength": "Prevents unbounded identifier growth - practical limit for agent names (characters). Default: 128",
+	"MaxRequestBodySize": "Prevents memory exhaustion from oversized HTTP requests (bytes, ~100KB = 102400). Default: 102400",
+	"MaxToolOutputChars": "Truncates very large tool outputs to prevent LLM context overflow (characters). Default: 2000",
+	"StreamBufferSize": "Number of chunks to buffer during streaming responses - balance responsiveness vs memory (chunks). Default: 100",
+	"MaxStoredRequests": "Maximum number of requests to keep in memory for tracking/debugging (requests). Default: 1000",
+	"TimeoutWarningThreshold": "Warn when this percentage of timeout remains (0.0-1.0, e.g., 0.20 = warn at 80% used). Default: 0.20",
+}
+
 // Error implements the error interface
 func (cme *ConfigModeError) Error() string {
 	if len(cme.Errors) == 0 {
 		return "configuration validation error"
 	}
 
-	header := "Configuration Validation Errors (Mode: " + string(cme.Mode) + "):\n"
+	header := "Configuration Validation Errors (Mode: " + string(cme.Mode) + "):\n\n"
 	errorList := ""
 	for i, err := range cme.Errors {
-		// Use fmt.Sprintf to properly format number (not character codes)
+		// Format: "1. ParamName: error message"
+		// Extract parameter name if possible
 		errorList += fmt.Sprintf("  %d. %s\n", i+1, err)
 	}
 
-	return header + errorList + "\nPlease configure these values in crew.yaml settings section or via environment variables"
+	footer := "\n📋 PARAMETER DESCRIPTIONS:\n"
+	for paramName, description := range parameterDescriptions {
+		footer += fmt.Sprintf("   • %s: %s\n", paramName, description)
+	}
+
+	footer += "\n📝 NEXT STEPS:\n"
+	footer += "   1. Open your crew.yaml settings section\n"
+	footer += "   2. Add all 19 parameters listed above\n"
+	footer += "   3. Set values appropriate for your use case\n"
+	footer += "   4. For help: See crew-strict-documented.yaml example or docs\n"
+
+	return header + errorList + footer
 }
 
 // HardcodedDefaults consolidates all configurable default values
