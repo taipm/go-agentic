@@ -13,16 +13,25 @@ type Tool struct {
 	Handler     func(ctx context.Context, args map[string]interface{}) (string, error)
 }
 
+// ModelConfig represents configuration for a specific LLM model and provider
+type ModelConfig struct {
+	Model       string  // LLM model name (e.g., "gpt-4o", "deepseek-r1:32b")
+	Provider    string  // LLM provider (e.g., "openai", "ollama")
+	ProviderURL string  // Provider-specific URL (e.g., "https://api.openai.com", "http://localhost:11434")
+}
+
 // Agent represents an AI agent in the crew
 type Agent struct {
 	ID             string
 	Name           string
 	Role           string
 	Backstory      string
-	Model          string
-	SystemPrompt   string // Custom system prompt from config
-	Provider       string // LLM provider: "openai" (default) or "ollama"
-	ProviderURL    string // Provider-specific URL (e.g., "http://localhost:11434" for Ollama)
+	Model          string       // Deprecated: Use Primary.Model instead
+	Provider       string       // Deprecated: Use Primary.Provider instead
+	ProviderURL    string       // Deprecated: Use Primary.ProviderURL instead
+	Primary        *ModelConfig // Primary LLM model configuration (required)
+	Backup         *ModelConfig // Backup LLM model configuration (optional)
+	SystemPrompt   string       // Custom system prompt from config
 	Tools          []*Tool
 	Temperature    float64
 	IsTerminal     bool
@@ -69,12 +78,15 @@ type CrewResponse struct {
 }
 
 // Crew represents a group of agents working together
+// ✅ FIX #4 & #5: Made ParallelAgentTimeout and MaxToolOutputChars configurable (were hardcoded constants)
 type Crew struct {
-	Agents      []*Agent
-	Tasks       []*Task
-	MaxRounds   int
-	MaxHandoffs int
-	Routing     *RoutingConfig // Routing configuration from crew.yaml
+	Agents                  []*Agent
+	Tasks                   []*Task
+	MaxRounds               int
+	MaxHandoffs             int
+	ParallelAgentTimeout    time.Duration // ✅ FIX #4: Timeout for parallel agent execution (default: 60s)
+	MaxToolOutputChars      int           // ✅ FIX #5: Max characters in tool output (default: 2000)
+	Routing                 *RoutingConfig // Routing configuration from crew.yaml
 }
 
 // StreamEvent represents a streaming event sent to the client

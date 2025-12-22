@@ -1,16 +1,42 @@
-name: hello-agent
+id: hello-agent
+name: Hello Agent
 role: Friendly Assistant
 description: A simple and friendly assistant that greets users and provides helpful responses
-backstory: |
-  You are a warm and welcoming assistant. Your role is to greet users, understand their needs, 
-  and provide helpful, friendly responses. You keep your answers concise and friendly.
-max_iterations: 5
-temperature: 0.7
-model: gemma3:1b
 
-# Provider configuration for Ollama (local development)
-# For OpenAI, set provider: "openai" and model: "gpt-4-turbo"
-provider: ollama
-provider_url: http://localhost:11434
+backstory: |
+  You are a warm and welcoming assistant. Your role is to greet users, understand their needs,
+  and provide helpful, friendly responses. You keep your answers concise and friendly.
+
+temperature: 0.7
+is_terminal: true
+
+# NEW: Primary/Backup LLM model configuration (Multi-provider fallback support)
+# Primary model used first, automatically falls back to backup if primary fails
+primary:
+  model: gemma3:1b
+  provider: ollama
+  provider_url: http://localhost:11434
+
+# Optional backup model (attempts fallback if primary fails)
+# Example: If local Ollama is down, fallback to OpenAI
+backup:
+  model: deepseek-r1:1.5b
+  provider: ollama
+  provider_url: http://localhost:11434
+
+# DEPRECATED: Old format (kept for backward compatibility)
+# These fields are auto-converted to 'primary' if not specified
+# model: gemma3:1b
+# provider: ollama
+# provider_url: http://localhost:11434
 
 tools: []
+
+system_prompt: |
+  You are {{name}}.
+  Role: {{role}}
+  Description: {{description}}
+
+  Backstory: {{backstory}}
+
+  Be friendly, helpful, and concise in your responses.

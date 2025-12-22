@@ -60,21 +60,30 @@ type CrewConfig struct {
 	Routing *RoutingConfig `yaml:"routing"`
 }
 
+// ModelConfigYAML represents YAML configuration for a model (for parsing)
+type ModelConfigYAML struct {
+	Model       string `yaml:"model"`
+	Provider    string `yaml:"provider"`
+	ProviderURL string `yaml:"provider_url"`
+}
+
 // AgentConfig represents an agent configuration
 type AgentConfig struct {
-	ID             string   `yaml:"id"`
-	Name           string   `yaml:"name"`
-	Description    string   `yaml:"description"`
-	Role           string   `yaml:"role"`
-	Backstory      string   `yaml:"backstory"`
-	Model          string   `yaml:"model"`
-	Temperature    float64  `yaml:"temperature"`
-	IsTerminal     bool     `yaml:"is_terminal"`
-	Tools          []string `yaml:"tools"`
-	HandoffTargets []string `yaml:"handoff_targets"`
-	SystemPrompt   string   `yaml:"system_prompt"`
-	Provider       string   `yaml:"provider"`         // "openai" (default) or "ollama"
-	ProviderURL    string   `yaml:"provider_url"`     // Provider-specific URL (e.g., "http://localhost:11434" for Ollama)
+	ID             string           `yaml:"id"`
+	Name           string           `yaml:"name"`
+	Description    string           `yaml:"description"`
+	Role           string           `yaml:"role"`
+	Backstory      string           `yaml:"backstory"`
+	Model          string           `yaml:"model"`         // Deprecated: Use Primary instead
+	Temperature    float64          `yaml:"temperature"`
+	IsTerminal     bool             `yaml:"is_terminal"`
+	Tools          []string         `yaml:"tools"`
+	HandoffTargets []string         `yaml:"handoff_targets"`
+	SystemPrompt   string           `yaml:"system_prompt"`
+	Provider       string           `yaml:"provider"`      // Deprecated: Use Primary.Provider instead
+	ProviderURL    string           `yaml:"provider_url"`  // Deprecated: Use Primary.ProviderURL instead
+	Primary        *ModelConfigYAML `yaml:"primary"`       // Primary LLM model configuration
+	Backup         *ModelConfigYAML `yaml:"backup"`        // Backup LLM model configuration
 }
 
 // LoadCrewConfig loads the crew configuration from a YAML file
@@ -158,10 +167,24 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 		return nil, fmt.Errorf("failed to parse agent config YAML: %w", err)
 	}
 
-	// Set defaults
-	if config.Model == "" {
-		config.Model = "gpt-4o"
+	// Handle backward compatibility: convert old format to new format
+	if config.Primary == nil {
+		// Old format: model, provider, provider_url at top level
+		config.Primary = &ModelConfigYAML{
+			Model:       config.Model,
+			Provider:    config.Provider,
+			ProviderURL: config.ProviderURL,
+		}
+
+		// Set defaults for backward compatibility
+		if config.Primary.Model == "" {
+			config.Primary.Model = "gpt-4o"
+		}
+		if config.Primary.Provider == "" {
+			config.Primary.Provider = "openai"
+		}
 	}
+
 	if config.Temperature == 0 {
 		config.Temperature = 0.7
 	}
@@ -285,6 +308,7 @@ func ValidateCrewConfig(config *CrewConfig) error {
 
 // ValidateAgentConfig validates agent configuration structure and constraints
 // ✅ FIX for Issue #6: Validate agent config at load time
+// ✅ Support for primary/backup LLM model configuration
 func ValidateAgentConfig(config *AgentConfig) error {
 	// ✅ FIX for Issue #23: Enhanced required field validation
 	// Validate required fields strictly
@@ -303,6 +327,29 @@ func ValidateAgentConfig(config *AgentConfig) error {
 		return fmt.Errorf("agent '%s': temperature must be between 0 and 2, got %f", config.ID, config.Temperature)
 	}
 
+	// Validate primary LLM model configuration
+	if config.Primary == nil {
+		return fmt.Errorf("agent '%s': primary model configuration is missing", config.ID)
+	}
+	if config.Primary.Model == "" {
+		return fmt.Errorf("agent '%s': primary.model is required", config.ID)
+	}
+	if config.Primary.Provider == "" {
+		return fmt.Errorf("agent '%s': primary.provider is required", config.ID)
+	}
+
+	// Validate backup model configuration if present
+	if config.Backup != nil {
+		if config.Backup.Model == "" {
+			return fmt.Errorf("agent '%s': backup.model must not be empty if backup is specified", config.ID)
+		}
+		if config.Backup.Provider == "" {
+			return fmt.Errorf("agent '%s': backup.provider must not be empty if backup is specified", config.ID)
+		}
+		// Log info about backup configuration
+		log.Printf("[CONFIG INFO] agent '%s': backup model '%s' (%s) configured", config.ID, config.Backup.Model, config.Backup.Provider)
+	}
+
 	// Warn about suspicious configurations
 	if config.SystemPrompt == "" && config.Backstory == "" {
 		log.Printf("[CONFIG WARNING] agent '%s': both 'system_prompt' and 'backstory' are empty - agent may not have proper context", config.ID)
@@ -313,15 +360,33 @@ func ValidateAgentConfig(config *AgentConfig) error {
 
 // CreateAgentFromConfig creates an Agent from an AgentConfig
 func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agent {
+	// Convert YAML model config to runtime ModelConfig
+	primary := &ModelConfig{
+		Model:       config.Primary.Model,
+		Provider:    config.Primary.Provider,
+		ProviderURL: config.Primary.ProviderURL,
+	}
+
+	var backup *ModelConfig
+	if config.Backup != nil {
+		backup = &ModelConfig{
+			Model:       config.Backup.Model,
+			Provider:    config.Backup.Provider,
+			ProviderURL: config.Backup.ProviderURL,
+		}
+	}
+
 	agent := &Agent{
 		ID:             config.ID,
 		Name:           config.Name,
 		Role:           config.Role,
 		Backstory:      config.Backstory,
-		Model:          config.Model,
+		Model:          config.Model,             // For backward compatibility
 		SystemPrompt:   config.SystemPrompt,
-		Provider:       config.Provider,     // Multi-provider support
-		ProviderURL:    config.ProviderURL,  // Multi-provider support
+		Provider:       config.Provider,          // For backward compatibility
+		ProviderURL:    config.ProviderURL,       // For backward compatibility
+		Primary:        primary,                  // New: primary model config
+		Backup:         backup,                   // New: backup model config (optional)
 		Temperature:    config.Temperature,
 		IsTerminal:     config.IsTerminal,
 		HandoffTargets: config.HandoffTargets,

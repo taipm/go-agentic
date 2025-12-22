@@ -289,6 +289,10 @@ func TestValidateAgentConfigValidConfig(t *testing.T) {
 		Name:        "Test Agent",
 		Role:        "test_role",
 		Temperature: 0.7,
+		Primary: &ModelConfigYAML{
+			Model:    "gpt-4o",
+			Provider: "openai",
+		},
 	}
 
 	err := ValidateAgentConfig(config)
@@ -399,6 +403,10 @@ func TestValidateAgentConfigTemperatureBoundaries(t *testing.T) {
 			Name:        "Test Agent",
 			Role:        "test_role",
 			Temperature: tc.temp,
+			Primary: &ModelConfigYAML{
+				Model:    "gpt-4o",
+				Provider: "openai",
+			},
 		}
 
 		err := ValidateAgentConfig(config)
@@ -419,4 +427,172 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// ===== Backup LLM Model Tests (NEW) =====
+
+// TestValidateAgentConfigWithPrimaryModel validates agent with primary model
+func TestValidateAgentConfigWithPrimaryModel(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:       "gpt-4o",
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err != nil {
+		t.Errorf("Valid agent with primary model should pass validation, got error: %v", err)
+	}
+}
+
+// TestValidateAgentConfigWithPrimaryAndBackup validates agent with primary and backup
+func TestValidateAgentConfigWithPrimaryAndBackup(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:       "gpt-4o",
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+		Backup: &ModelConfigYAML{
+			Model:       "deepseek-r1:32b",
+			Provider:    "ollama",
+			ProviderURL: "http://localhost:11434",
+		},
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err != nil {
+		t.Errorf("Valid agent with primary and backup should pass validation, got error: %v", err)
+	}
+}
+
+// TestValidateAgentConfigMissingPrimaryModel validates primary model is required
+func TestValidateAgentConfigMissingPrimaryModel(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		// Primary is nil!
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err == nil {
+		t.Error("Should require primary model configuration")
+	}
+	if err.Error() != "agent 'agent1': primary model configuration is missing" {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+// TestValidateAgentConfigEmptyPrimaryModel validates primary.model is required
+func TestValidateAgentConfigEmptyPrimaryModel(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:       "", // ← Empty!
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err == nil {
+		t.Error("Should require primary.model")
+	}
+	if err.Error() != "agent 'agent1': primary.model is required" {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+// TestValidateAgentConfigEmptyPrimaryProvider validates primary.provider is required
+func TestValidateAgentConfigEmptyPrimaryProvider(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:       "gpt-4o",
+			Provider:    "", // ← Empty!
+			ProviderURL: "https://api.openai.com",
+		},
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err == nil {
+		t.Error("Should require primary.provider")
+	}
+	if err.Error() != "agent 'agent1': primary.provider is required" {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+// TestValidateAgentConfigEmptyBackupModel validates backup.model is required if backup is specified
+func TestValidateAgentConfigEmptyBackupModel(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:       "gpt-4o",
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+		Backup: &ModelConfigYAML{
+			Model:       "", // ← Empty!
+			Provider:    "ollama",
+			ProviderURL: "http://localhost:11434",
+		},
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err == nil {
+		t.Error("Should require backup.model if backup is specified")
+	}
+	if err.Error() != "agent 'agent1': backup.model must not be empty if backup is specified" {
+		t.Errorf("Wrong error message: %v", err)
+	}
+}
+
+// TestValidateAgentConfigEmptyBackupProvider validates backup.provider is required if backup is specified
+func TestValidateAgentConfigEmptyBackupProvider(t *testing.T) {
+	config := &AgentConfig{
+		ID:   "agent1",
+		Name: "Test Agent",
+		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:       "gpt-4o",
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+		Backup: &ModelConfigYAML{
+			Model:       "deepseek-r1:32b",
+			Provider:    "", // ← Empty!
+			ProviderURL: "http://localhost:11434",
+		},
+		Temperature: 0.7,
+	}
+
+	err := ValidateAgentConfig(config)
+	if err == nil {
+		t.Error("Should require backup.provider if backup is specified")
+	}
+	if err.Error() != "agent 'agent1': backup.provider must not be empty if backup is specified" {
+		t.Errorf("Wrong error message: %v", err)
+	}
 }

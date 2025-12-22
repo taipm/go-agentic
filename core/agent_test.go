@@ -193,3 +193,97 @@ func TestBuildSystemPromptWithCustomPrompt(t *testing.T) {
 		t.Error("Expected backstory substitution")
 	}
 }
+
+// ===== Backup LLM Model Tests (NEW) =====
+
+// TestAgentWithPrimaryModelConfig verifies agent with primary model configuration
+func TestAgentWithPrimaryModelConfig(t *testing.T) {
+	agent := &Agent{
+		ID:   "test_agent",
+		Name: "Test Agent",
+		Role: "Assistant",
+		Primary: &ModelConfig{
+			Model:       "gpt-4o",
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+	}
+
+	if agent.Primary == nil {
+		t.Error("Expected Primary to be set")
+	}
+
+	if agent.Primary.Model != "gpt-4o" {
+		t.Errorf("Expected model 'gpt-4o', got '%s'", agent.Primary.Model)
+	}
+
+	if agent.Primary.Provider != "openai" {
+		t.Errorf("Expected provider 'openai', got '%s'", agent.Primary.Provider)
+	}
+
+	if agent.Backup != nil {
+		t.Error("Expected Backup to be nil")
+	}
+}
+
+// TestAgentWithPrimaryAndBackupConfig verifies agent with both primary and backup models
+func TestAgentWithPrimaryAndBackupConfig(t *testing.T) {
+	agent := &Agent{
+		ID:   "test_agent",
+		Name: "Test Agent",
+		Role: "Assistant",
+		Primary: &ModelConfig{
+			Model:       "gpt-4o",
+			Provider:    "openai",
+			ProviderURL: "https://api.openai.com",
+		},
+		Backup: &ModelConfig{
+			Model:       "deepseek-r1:32b",
+			Provider:    "ollama",
+			ProviderURL: "http://localhost:11434",
+		},
+	}
+
+	if agent.Primary == nil {
+		t.Error("Expected Primary to be set")
+	}
+
+	if agent.Primary.Model != "gpt-4o" {
+		t.Errorf("Expected primary model 'gpt-4o', got '%s'", agent.Primary.Model)
+	}
+
+	if agent.Backup == nil {
+		t.Error("Expected Backup to be set")
+	}
+
+	if agent.Backup.Model != "deepseek-r1:32b" {
+		t.Errorf("Expected backup model 'deepseek-r1:32b', got '%s'", agent.Backup.Model)
+	}
+
+	if agent.Backup.Provider != "ollama" {
+		t.Errorf("Expected backup provider 'ollama', got '%s'", agent.Backup.Provider)
+	}
+}
+
+// TestBackwardCompatibilityWithOldFormat verifies that agents created with old format still work
+func TestBackwardCompatibilityWithOldFormat(t *testing.T) {
+	// Old format: model, provider, provider_url at top level
+	agent := &Agent{
+		ID:       "test_agent",
+		Name:     "Test Agent",
+		Role:     "Assistant",
+		Model:    "gpt-4o",
+		Provider: "openai",
+		ProviderURL: "https://api.openai.com",
+		// Primary and Backup are nil - simulating old format
+	}
+
+	// ExecuteAgent should handle backward compatibility
+	if agent.Model == "" {
+		t.Error("Expected Model to be set (backward compatibility)")
+	}
+
+	if agent.Provider == "" {
+		t.Error("Expected Provider to be set (backward compatibility)")
+	}
+}

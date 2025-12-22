@@ -1,7 +1,11 @@
+version: "1.0"
 name: hello-crew
 description: A minimal crew with a single Hello agent
+entry_point: hello-agent
+
 agents:
   - hello-agent
+
 tasks:
   - name: respond-to-user
     description: Respond to the user's message

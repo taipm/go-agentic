@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	providers "github.com/taipm/go-agentic/core/providers"
@@ -53,8 +54,14 @@ type OllamaChatResponse struct {
 func init() {
 	// Register Ollama provider factory
 	providers.NewOllamaProvider = func(baseURL string) (providers.LLMProvider, error) {
+		// ✅ FIX #2: Check environment variable OLLAMA_URL if baseURL not provided
 		if baseURL == "" {
-			baseURL = "http://localhost:11434" // Default Ollama URL
+			baseURL = os.Getenv("OLLAMA_URL")
+		}
+
+		// If still empty, require explicit configuration
+		if baseURL == "" {
+			return nil, fmt.Errorf("Ollama URL not specified: use 'provider_url' in agent YAML config or set OLLAMA_URL environment variable (e.g., http://localhost:11434)")
 		}
 
 		// Validate URL format

@@ -402,14 +402,12 @@ type CrewExecutor struct {
 
 // NewCrewExecutor creates a new crew executor
 // Note: crew.Routing MUST be set for signal-based routing to work
+// Best Practice: Use entry_point from crew.yaml instead of relying on IsTerminal
 func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
-	// Find entry agent (first agent that's not terminal)
+	// Find entry agent - first agent is default if no routing configured
 	var entryAgent *Agent
-	for _, agent := range crew.Agents {
-		if !agent.IsTerminal {
-			entryAgent = agent
-			break
-		}
+	if len(crew.Agents) > 0 {
+		entryAgent = crew.Agents[0] // First agent is default entry point
 	}
 
 	return &CrewExecutor{
@@ -460,8 +458,20 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 		Routing:     crewConfig.Routing, // ← Routing loaded from YAML
 	}
 
-	// Create and return executor
-	return NewCrewExecutor(crew, apiKey), nil
+	// Create executor
+	executor := NewCrewExecutor(crew, apiKey)
+
+	// Set entry agent based on entry_point from YAML (best practice)
+	if crewConfig.EntryPoint != "" {
+		for _, agent := range executor.crew.Agents {
+			if agent.ID == crewConfig.EntryPoint {
+				executor.entryAgent = agent
+				break
+			}
+		}
+	}
+
+	return executor, nil
 }
 
 // SetVerbose enables or disables verbose output
@@ -577,7 +587,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			}
 
 			// Format results for feedback
-			resultText := formatToolResults(toolResults)
+			resultText := ce.formatToolResults(toolResults)
 
 			// Add results to history
 			ce.history = append(ce.history, Message{
@@ -724,7 +734,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 			toolResults := ce.executeCalls(ctx, response.ToolCalls, currentAgent)
 
 			// Format results for feedback
-			resultText := formatToolResults(toolResults)
+			resultText := ce.formatToolResults(toolResults)
 			if ce.Verbose {
 				fmt.Println(resultText)
 			}
@@ -1169,8 +1179,9 @@ func (ce *CrewExecutor) findNextAgent(current *Agent) *Agent {
 	return nil
 }
 
-// ParallelAgentTimeout is the default timeout for each parallel agent execution
-const ParallelAgentTimeout = 60 * time.Second
+// DefaultParallelAgentTimeout is the default timeout for each parallel agent execution
+// ✅ FIX #4: Now uses Crew.ParallelAgentTimeout field for configurability
+const DefaultParallelAgentTimeout = 60 * time.Second
 
 // ExecuteParallelStream executes multiple agents in parallel and collects their results
 // Used for parallel execution of agents within a parallel group
@@ -1188,14 +1199,20 @@ func (ce *CrewExecutor) ExecuteParallelStream(
 	errorChan := make(chan error, len(agents))
 	mu := sync.Mutex{}
 
+	// Determine timeout - use crew config if set, otherwise use default
+	parallelTimeout := ce.crew.ParallelAgentTimeout
+	if parallelTimeout <= 0 {
+		parallelTimeout = DefaultParallelAgentTimeout
+	}
+
 	// Launch all agents in parallel using goroutines
 	for _, agent := range agents {
 		wg.Add(1)
 		go func(ag *Agent) {
 			defer wg.Done()
 
-			// Create timeout context for this agent
-			agentCtx, cancel := context.WithTimeout(ctx, ParallelAgentTimeout)
+			// Create timeout context for this agent (✅ FIX #4: Now configurable)
+			agentCtx, cancel := context.WithTimeout(ctx, parallelTimeout)
 			defer cancel()
 
 			// Send agent start event
@@ -1287,6 +1304,13 @@ func (ce *CrewExecutor) ExecuteParallel(
 	// If any goroutine errors, all others are cancelled automatically
 	g, gctx := errgroup.WithContext(ctx)
 
+	// Determine timeout - use crew config if set, otherwise use default
+	// ✅ FIX #4: Now uses configurable Crew.ParallelAgentTimeout
+	parallelTimeout := ce.crew.ParallelAgentTimeout
+	if parallelTimeout <= 0 {
+		parallelTimeout = DefaultParallelAgentTimeout
+	}
+
 	// Thread-safe result map
 	resultMap := make(map[string]*AgentResponse)
 	resultMutex := sync.Mutex{}
@@ -1302,7 +1326,7 @@ func (ce *CrewExecutor) ExecuteParallel(
 
 			// Create timeout context for this agent
 			// gctx automatically propagates cancellation from parent or if another goroutine errors
-			agentCtx, cancel := context.WithTimeout(gctx, ParallelAgentTimeout)
+			agentCtx, cancel := context.WithTimeout(gctx, parallelTimeout)
 			defer cancel()
 
 			// Execute the agent with timeout
@@ -1326,7 +1350,7 @@ func (ce *CrewExecutor) ExecuteParallel(
 				toolResults := ce.executeCalls(agentCtx, response.ToolCalls, ag)
 
 				if ce.Verbose {
-					resultText := formatToolResults(toolResults)
+					resultText := ce.formatToolResults(toolResults)
 					fmt.Println(resultText)
 				}
 			}
@@ -1411,8 +1435,23 @@ type ToolResult struct {
 }
 
 // formatToolResults formats tool results for agent feedback
+// ✅ DEPRECATED: Use ce.formatToolResults() method instead (for configurability)
 func formatToolResults(results []ToolResult) string {
-	const maxOutputChars = 2000 // Maximum characters per tool output to prevent context overflow
+	return defaultFormatToolResults(results, 2000) // Default: 2000 chars
+}
+
+// formatToolResults is a method on CrewExecutor to use configurable MaxToolOutputChars
+// ✅ FIX #5: Uses crew.MaxToolOutputChars field instead of hardcoded constant
+func (ce *CrewExecutor) formatToolResults(results []ToolResult) string {
+	return defaultFormatToolResults(results, ce.crew.MaxToolOutputChars)
+}
+
+// defaultFormatToolResults is the actual implementation shared by both functions
+func defaultFormatToolResults(results []ToolResult, maxOutputChars int) string {
+	// Default to 2000 if not configured
+	if maxOutputChars <= 0 {
+		maxOutputChars = 2000
+	}
 
 	var sb strings.Builder
 

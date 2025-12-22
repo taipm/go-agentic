@@ -12,21 +12,19 @@ run:
 	@if [ ! -f .env ]; then \
 		echo "Creating .env from .env.example..."; \
 		cp .env.example .env; \
-		echo "Please edit .env and add your OPENAI_API_KEY"; \
-		exit 1; \
+		echo "Note: Ollama is the default. Ensure 'ollama serve' is running."; \
+		echo "To use OpenAI instead, edit .env and set OPENAI_API_KEY"; \
 	fi
-	@export $$(cat .env | xargs); \
-	go run cmd/main.go
+	@set -a; . ./.env; set +a; go run cmd/main.go
 
 run-server:
 	@if [ ! -f .env ]; then \
 		echo "Creating .env from .env.example..."; \
 		cp .env.example .env; \
-		echo "Please edit .env and add your OPENAI_API_KEY"; \
-		exit 1; \
+		echo "Note: Ollama is the default. Ensure 'ollama serve' is running."; \
+		echo "To use OpenAI instead, edit .env and set OPENAI_API_KEY"; \
 	fi
-	@export $$(cat .env | xargs); \
-	go run cmd/main.go -server -port 8081
+	@set -a; . ./.env; set +a; go run cmd/main.go -server -port 8081
 
 build:
 	@go build -o hello-crew cmd/main.go

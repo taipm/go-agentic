@@ -22,14 +22,16 @@ type clientEntry struct {
 	expiresAt time.Time
 }
 
-// clientTTL defines how long a cached client remains valid before expiring
-// Uses sliding window: TTL is refreshed on each access
-const clientTTL = 1 * time.Hour
+// defaultClientTTL is the default TTL for cached OpenAI clients
+// Can be overridden per provider instance
+const defaultClientTTL = 1 * time.Hour
 
 // OpenAIProvider implements LLMProvider interface using OpenAI API
+// ✅ FIX #3: Made clientTTL configurable (was hardcoded constant)
 type OpenAIProvider struct {
-	apiKey string
-	client openai.Client
+	apiKey    string
+	client    openai.Client
+	clientTTL time.Duration // Configurable TTL for client cache
 }
 
 // cachedClients holds OpenAI client instances with TTL-based expiration
@@ -39,7 +41,8 @@ var (
 )
 
 // getOrCreateOpenAIClient returns a cached OpenAI client or creates a new one
-// Clients expire after clientTTL (1 hour) of inactivity to prevent memory leak
+// ✅ FIX #3: Updated to use defaultClientTTL constant (configurable per provider)
+// Clients expire after TTL of inactivity to prevent memory leak
 func getOrCreateOpenAIClient(apiKey string) openai.Client {
 	clientMutex.Lock()
 	defer clientMutex.Unlock()
@@ -48,7 +51,7 @@ func getOrCreateOpenAIClient(apiKey string) openai.Client {
 	if cached, exists := cachedClients[apiKey]; exists {
 		if time.Now().Before(cached.expiresAt) {
 			// Refresh expiry time on access (sliding window)
-			cached.expiresAt = time.Now().Add(clientTTL)
+			cached.expiresAt = time.Now().Add(defaultClientTTL)
 			return cached.client
 		}
 		// Expired - delete from cache
@@ -62,7 +65,7 @@ func getOrCreateOpenAIClient(apiKey string) openai.Client {
 	cachedClients[apiKey] = &clientEntry{
 		client:    client,
 		createdAt: time.Now(),
-		expiresAt: time.Now().Add(clientTTL),
+		expiresAt: time.Now().Add(defaultClientTTL),
 	}
 
 	return client
@@ -96,8 +99,9 @@ func init() {
 			return nil, fmt.Errorf("OpenAI API key cannot be empty")
 		}
 		return &OpenAIProvider{
-			apiKey: apiKey,
-			client: getOrCreateOpenAIClient(apiKey),
+			apiKey:    apiKey,
+			client:    getOrCreateOpenAIClient(apiKey),
+			clientTTL: defaultClientTTL, // ✅ FIX #3: Use default TTL (configurable per provider)
 		}, nil
 	}
 }

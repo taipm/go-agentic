@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	providers "github.com/taipm/go-agentic/core/providers"
-	_ "github.com/taipm/go-agentic/core/providers/openai" // Register OpenAI provider
+	_ "github.com/taipm/go-agentic/core/providers/openai"  // Register OpenAI provider
+	_ "github.com/taipm/go-agentic/core/providers/ollama"  // Register Ollama provider
 )
 
 // providerFactory is the global LLM provider factory instance
@@ -14,29 +15,68 @@ var providerFactory = providers.GetGlobalFactory()
 
 // ExecuteAgent runs an agent and returns its response
 // Uses provider factory to support multiple LLM backends (OpenAI, Ollama, etc.)
-// ✅ FIX for hardcoded model bug (line 100): Now uses agent.Model from config
+// Supports fallback to backup LLM model if primary fails
+// ✅ FIX for hardcoded model bug: Now uses agent.Primary.Model from config
+// ✅ NEW: Backup LLM model support with automatic fallback
 func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Message, apiKey string) (*AgentResponse, error) {
-	// Determine which provider to use based on agent configuration
-	providerType := agent.Provider
-	if providerType == "" {
-		providerType = "ollama" // Default to Ollama for local development
+	// Get model configs (use new Primary/Backup if available, else fall back to old fields)
+	primaryConfig := agent.Primary
+	backupConfig := agent.Backup
+
+	// Handle backward compatibility: if Primary is nil, use old format
+	if primaryConfig == nil {
+		// ✅ FIX #1: Validation instead of hardcoding "openai" default
+		if agent.Provider == "" {
+			return nil, fmt.Errorf("agent '%s': provider not specified in config - must be 'openai' or 'ollama'", agent.ID)
+		}
+		primaryConfig = &ModelConfig{
+			Model:       agent.Model,
+			Provider:    agent.Provider,
+			ProviderURL: agent.ProviderURL,
+		}
 	}
 
-	// Get provider instance (cached or new)
-	provider, err := providerFactory.GetProvider(providerType, agent.ProviderURL, apiKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get LLM provider: %w", err)
-	}
-
-	// Build system prompt
+	// Build system prompt once (reused for both primary and backup)
 	systemPrompt := buildSystemPrompt(agent)
-
-	// Convert history to provider-agnostic messages
 	messages := convertToProviderMessages(history)
+
+	// 1️⃣ TRY PRIMARY MODEL
+	response, primaryErr := executeWithModelConfig(ctx, agent, systemPrompt, messages, primaryConfig, apiKey)
+	if primaryErr == nil {
+		return response, nil
+	}
+
+	// 2️⃣ IF PRIMARY FAILED AND BACKUP EXISTS, TRY BACKUP
+	if backupConfig != nil {
+		fmt.Printf("[FALLBACK] Primary model '%s' (%s) failed: %v. Trying backup model '%s' (%s)...\n",
+			primaryConfig.Model, primaryConfig.Provider, primaryErr, backupConfig.Model, backupConfig.Provider)
+
+		response, backupErr := executeWithModelConfig(ctx, agent, systemPrompt, messages, backupConfig, apiKey)
+		if backupErr == nil {
+			fmt.Printf("[FALLBACK SUCCESS] Backup model '%s' succeeded\n", backupConfig.Model)
+			return response, nil
+		}
+
+		// Both failed - return detailed error
+		return nil, fmt.Errorf("both primary and backup models failed: primary=%v, backup=%v", primaryErr, backupErr)
+	}
+
+	// No backup available - return primary error
+	return nil, fmt.Errorf("primary model failed: %w", primaryErr)
+}
+
+// executeWithModelConfig executes an agent with a specific model configuration
+// Helper function used by ExecuteAgent to reduce code duplication
+func executeWithModelConfig(ctx context.Context, agent *Agent, systemPrompt string, messages []providers.ProviderMessage, modelConfig *ModelConfig, apiKey string) (*AgentResponse, error) {
+	// Get provider instance
+	provider, err := providerFactory.GetProvider(modelConfig.Provider, modelConfig.ProviderURL, apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LLM provider '%s': %w", modelConfig.Provider, err)
+	}
 
 	// Create completion request
 	request := &providers.CompletionRequest{
-		Model:        agent.Model, // ✅ FIX: Use agent.Model from config, not hardcoded
+		Model:        modelConfig.Model,
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
@@ -46,7 +86,7 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 	// Call provider
 	response, err := provider.Complete(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("provider completion failed: %w", err)
+		return nil, err
 	}
 
 	return &AgentResponse{
@@ -59,28 +99,67 @@ func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Mes
 
 // ExecuteAgentStream runs an agent with streaming responses
 // Streams response chunks to the provided channel
+// Supports fallback to backup LLM model if primary fails
+// ✅ NEW: Backup LLM model support with streaming fallback
 func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history []Message, apiKey string, streamChan chan<- providers.StreamChunk) error {
-	// Determine which provider to use based on agent configuration
-	providerType := agent.Provider
-	if providerType == "" {
-		providerType = "ollama" // Default to Ollama for local development
+	// Get model configs (use new Primary/Backup if available, else fall back to old fields)
+	primaryConfig := agent.Primary
+	backupConfig := agent.Backup
+
+	// Handle backward compatibility: if Primary is nil, use old format
+	if primaryConfig == nil {
+		// ✅ FIX #1: Validation instead of hardcoding "openai" default
+		if agent.Provider == "" {
+			return fmt.Errorf("agent '%s': provider not specified in config - must be 'openai' or 'ollama'", agent.ID)
+		}
+		primaryConfig = &ModelConfig{
+			Model:       agent.Model,
+			Provider:    agent.Provider,
+			ProviderURL: agent.ProviderURL,
+		}
 	}
 
-	// Get provider instance (cached or new)
-	provider, err := providerFactory.GetProvider(providerType, agent.ProviderURL, apiKey)
-	if err != nil {
-		return fmt.Errorf("failed to get LLM provider: %w", err)
-	}
-
-	// Build system prompt
+	// Build system prompt once (reused for both primary and backup)
 	systemPrompt := buildSystemPrompt(agent)
-
-	// Convert history to provider-agnostic messages
 	messages := convertToProviderMessages(history)
+
+	// 1️⃣ TRY PRIMARY MODEL WITH STREAMING
+	primaryErr := executeWithModelConfigStream(ctx, agent, systemPrompt, messages, primaryConfig, apiKey, streamChan)
+	if primaryErr == nil {
+		return nil
+	}
+
+	// 2️⃣ IF PRIMARY FAILED AND BACKUP EXISTS, TRY BACKUP
+	if backupConfig != nil {
+		fmt.Printf("[FALLBACK] Primary model '%s' (%s) streaming failed: %v. Trying backup model '%s' (%s)...\n",
+			primaryConfig.Model, primaryConfig.Provider, primaryErr, backupConfig.Model, backupConfig.Provider)
+
+		backupErr := executeWithModelConfigStream(ctx, agent, systemPrompt, messages, backupConfig, apiKey, streamChan)
+		if backupErr == nil {
+			fmt.Printf("[FALLBACK SUCCESS] Backup model '%s' streaming succeeded\n", backupConfig.Model)
+			return nil
+		}
+
+		// Both failed - return detailed error
+		return fmt.Errorf("both primary and backup models failed for streaming: primary=%v, backup=%v", primaryErr, backupErr)
+	}
+
+	// No backup available - return primary error
+	return fmt.Errorf("primary model streaming failed: %w", primaryErr)
+}
+
+// executeWithModelConfigStream executes an agent with streaming using a specific model configuration
+// Helper function used by ExecuteAgentStream to reduce code duplication
+func executeWithModelConfigStream(ctx context.Context, agent *Agent, systemPrompt string, messages []providers.ProviderMessage, modelConfig *ModelConfig, apiKey string, streamChan chan<- providers.StreamChunk) error {
+	// Get provider instance
+	provider, err := providerFactory.GetProvider(modelConfig.Provider, modelConfig.ProviderURL, apiKey)
+	if err != nil {
+		return fmt.Errorf("failed to get LLM provider '%s': %w", modelConfig.Provider, err)
+	}
 
 	// Create completion request
 	request := &providers.CompletionRequest{
-		Model:        agent.Model,
+		Model:        modelConfig.Model,
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
