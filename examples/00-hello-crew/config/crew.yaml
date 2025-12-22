@@ -22,14 +22,14 @@ settings:
   parallel_timeout_seconds: 60
   tool_execution_timeout_seconds: 5
   tool_result_timeout_seconds: 30
-  min_tool_timeout_ms: 100
-  stream_chunk_timeout_ms: 500
+  min_tool_timeout_millis: 100
+  stream_chunk_timeout_millis: 500
   sse_keep_alive_seconds: 30
   request_store_cleanup_minutes: 5
-  retry_backoff_min_ms: 100
+  retry_backoff_min_millis: 100
   retry_backoff_max_seconds: 5
   client_cache_ttl_minutes: 60
-  graceful_shutdown_check_interval_ms: 100
+  graceful_shutdown_check_millis: 100
 
   # ===== SIZE LIMITS (all 8 required in Strict Mode) =====
   max_input_size_kb: 10

@@ -444,12 +444,31 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 // ConfigToHardcodedDefaults converts CrewConfig settings to HardcodedDefaults struct
 // ✅ Phase 4: Extended Configuration - Maps YAML values to runtime defaults
 // Returns defaults with YAML overrides applied; validation is performed after conversion
+// ✅ Phase 5.1: In STRICT MODE, missing values are NOT defaulted and remain 0, causing validation to fail
 func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
-	defaults := DefaultHardcodedDefaults()
+	// In PERMISSIVE MODE: Start with all defaults
+	// In STRICT MODE: Start with all 0 values (except mode), require explicit YAML config
+	var defaults *HardcodedDefaults
 
-	// ✅ Phase 5.1: Set configuration mode from YAML
+	// ✅ Phase 5.1: Check config mode FIRST
+	configMode := PermissiveMode
 	if config.Settings.ConfigMode != "" {
-		defaults.Mode = ConfigMode(config.Settings.ConfigMode)
+		configMode = ConfigMode(config.Settings.ConfigMode)
+	}
+
+	// In STRICT MODE, don't use defaults - start with empty values
+	if configMode == StrictMode {
+		defaults = &HardcodedDefaults{
+			Mode: StrictMode,
+			// All timeout/int fields default to 0
+			// All duration fields default to 0 (0 seconds)
+			// All float fields default to 0
+			// Validation will catch these as errors
+		}
+	} else {
+		// In PERMISSIVE MODE, start with defaults
+		defaults = DefaultHardcodedDefaults()
+		defaults.Mode = PermissiveMode
 	}
 
 	// Phase 1 configurations
@@ -525,6 +544,13 @@ func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
 
 	// Validate all converted values
 	if err := defaults.Validate(); err != nil {
+		// ✅ Phase 5.1: In STRICT MODE, validation errors are FATAL - no fallback
+		if defaults.Mode == StrictMode {
+			log.Printf("[CONFIG ERROR] STRICT MODE validation failed: %v", err)
+			// Return nil will be caught by caller
+			return nil
+		}
+		// In PERMISSIVE MODE, fallback to defaults
 		log.Printf("[CONFIG WARNING] Failed to validate defaults after conversion: %v - using fallback defaults", err)
 		return DefaultHardcodedDefaults()
 	}

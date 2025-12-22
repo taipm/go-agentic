@@ -467,6 +467,11 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 	// ✅ Phase 5: Convert YAML config to runtime defaults
 	executor.defaults = ConfigToHardcodedDefaults(crewConfig)
 
+	// ✅ Phase 5.1: Check if defaults is nil (STRICT MODE validation failed)
+	if executor.defaults == nil {
+		return nil, fmt.Errorf("STRICT MODE configuration validation failed - see errors above")
+	}
+
 	// Validate configuration and log mode warning if needed
 	if err := executor.defaults.Validate(); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
