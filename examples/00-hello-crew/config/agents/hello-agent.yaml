@@ -32,6 +32,29 @@ backup:
 
 tools: []
 
+# ✅ WEEK 1: Agent-level cost control configuration
+# Set per-agent limits for token usage and cost
+# Optional: All fields have sensible defaults if not specified
+
+# Maximum tokens per API call (default: 1000 tokens)
+max_tokens_per_call: 1000
+
+# Maximum tokens per 24-hour period (default: 50,000 tokens/day)
+max_tokens_per_day: 50000
+
+# Maximum cost per 24-hour period in USD (default: $10/day)
+max_cost_per_day: 10.0
+
+# Alert threshold: warn when usage exceeds this % of daily limit (default: 0.80 = 80%)
+# Range: 0.0 to 1.0
+# E.g., 0.80 = warn when $8 spent out of $10 daily limit
+cost_alert_threshold: 0.80
+
+# Enforcement mode (default: false = warn only)
+#   true  = BLOCK execution if limit exceeded (strict budget control)
+#   false = WARN only (log warning but execute anyway)
+enforce_cost_limits: false
+
 system_prompt: |
   You are {{name}}.
   Role: {{role}}

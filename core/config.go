@@ -122,6 +122,13 @@ type AgentConfig struct {
 	ProviderURL    string           `yaml:"provider_url"`  // Deprecated: Use Primary.ProviderURL instead
 	Primary        *ModelConfigYAML `yaml:"primary"`       // Primary LLM model configuration
 	Backup         *ModelConfigYAML `yaml:"backup"`        // Backup LLM model configuration
+
+	// ✅ WEEK 1: Agent-level cost control configuration
+	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // Max tokens per call (e.g., 1000)
+	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // Max tokens per day (e.g., 50000)
+	MaxCostPerDay      float64 `yaml:"max_cost_per_day"`      // Max cost per day in USD (e.g., 10.00)
+	CostAlertThreshold float64 `yaml:"cost_alert_threshold"`  // Alert when usage % exceeds this (e.g., 0.80)
+	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`   // true=block, false=warn only
 }
 
 // LoadCrewConfig loads the crew configuration from a YAML file
@@ -226,6 +233,23 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 	if config.Temperature == 0 {
 		config.Temperature = 0.7
 	}
+
+	// ✅ WEEK 1: Set defaults for cost control configuration
+	// These can be overridden in YAML; defaults allow agents to work without explicit config
+	if config.MaxTokensPerCall == 0 {
+		config.MaxTokensPerCall = 1000 // Default: 1K tokens per call
+	}
+	if config.MaxTokensPerDay == 0 {
+		config.MaxTokensPerDay = 50000 // Default: 50K tokens per day
+	}
+	if config.MaxCostPerDay == 0 {
+		config.MaxCostPerDay = 10.0 // Default: $10 per day
+	}
+	if config.CostAlertThreshold == 0 {
+		config.CostAlertThreshold = 0.80 // Default: warn at 80% usage
+	}
+	// EnforceCostLimits defaults to false (warn-only mode) - configurable per agent
+	// Note: Explicit true in YAML will be respected; false is the safe default
 
 	// ✅ FIX for Issue #6: Validate agent configuration at load time
 	// This catches invalid agent configs immediately with clear error messages
@@ -365,6 +389,20 @@ func ValidateAgentConfig(config *AgentConfig) error {
 		return fmt.Errorf("agent '%s': temperature must be between 0 and 2, got %f", config.ID, config.Temperature)
 	}
 
+	// ✅ WEEK 1: Validate cost control configuration
+	if config.MaxTokensPerCall < 0 {
+		return fmt.Errorf("agent '%s': max_tokens_per_call must be >= 0, got %d", config.ID, config.MaxTokensPerCall)
+	}
+	if config.MaxTokensPerDay < 0 {
+		return fmt.Errorf("agent '%s': max_tokens_per_day must be >= 0, got %d", config.ID, config.MaxTokensPerDay)
+	}
+	if config.MaxCostPerDay < 0 {
+		return fmt.Errorf("agent '%s': max_cost_per_day must be >= 0, got %f", config.ID, config.MaxCostPerDay)
+	}
+	if config.CostAlertThreshold < 0 || config.CostAlertThreshold > 1 {
+		return fmt.Errorf("agent '%s': cost_alert_threshold must be between 0 and 1, got %f", config.ID, config.CostAlertThreshold)
+	}
+
 	// Validate primary LLM model configuration
 	if config.Primary == nil {
 		return fmt.Errorf("agent '%s': primary model configuration is missing", config.ID)
@@ -429,6 +467,19 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 		IsTerminal:     config.IsTerminal,
 		HandoffTargets: config.HandoffTargets,
 		Tools:          []*Tool{},
+
+		// ✅ WEEK 1: Agent-level cost control configuration
+		MaxTokensPerCall:   config.MaxTokensPerCall,
+		MaxTokensPerDay:    config.MaxTokensPerDay,
+		MaxCostPerDay:      config.MaxCostPerDay,
+		CostAlertThreshold: config.CostAlertThreshold,
+		EnforceCostLimits:  config.EnforceCostLimits,
+		CostMetrics: AgentCostMetrics{
+			CallCount:     0,
+			TotalTokens:   0,
+			DailyCost:     0,
+			LastResetTime: time.Time{}, // Will be initialized on first use
+		},
 	}
 
 	// Add tools from config

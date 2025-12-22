@@ -168,7 +168,20 @@ func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history
 
 // executeWithModelConfigStream executes an agent with streaming using a specific model configuration
 // Helper function used by ExecuteAgentStream to reduce code duplication
+// ✅ WEEK 1: Now includes cost checking before execution and metric updates after
 func executeWithModelConfigStream(ctx context.Context, agent *Agent, systemPrompt string, messages []providers.ProviderMessage, modelConfig *ModelConfig, apiKey string, streamChan chan<- providers.StreamChunk) error {
+	// ✅ Step 1: Estimate tokens BEFORE execution
+	systemAndPromptContent := systemPrompt
+	for _, msg := range messages {
+		systemAndPromptContent += msg.Content
+	}
+	estimatedTokens := agent.EstimateTokens(systemAndPromptContent)
+
+	// ✅ Step 2: Check cost limits (BEFORE execution)
+	if err := agent.CheckCostLimits(estimatedTokens); err != nil {
+		return err // BLOCK if limit exceeded (when EnforceCostLimits=true)
+	}
+
 	// Get provider instance
 	provider, err := providerFactory.GetProvider(modelConfig.Provider, modelConfig.ProviderURL, apiKey)
 	if err != nil {
@@ -185,7 +198,15 @@ func executeWithModelConfigStream(ctx context.Context, agent *Agent, systemPromp
 	}
 
 	// Call provider with streaming
-	return provider.CompleteStream(ctx, request, streamChan)
+	err = provider.CompleteStream(ctx, request, streamChan)
+
+	// ✅ Step 3: Update metrics AFTER successful execution
+	if err == nil {
+		actualCost := agent.CalculateCost(estimatedTokens)
+		agent.UpdateCostMetrics(estimatedTokens, actualCost)
+	}
+
+	return err
 }
 
 // convertToProviderMessages converts internal Message format to provider-agnostic format
