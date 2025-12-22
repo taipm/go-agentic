@@ -1,6 +1,7 @@
 package crewai
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -219,6 +220,16 @@ func (d *HardcodedDefaults) validateInt(name string, value *int, defaultVal int,
 			*value = defaultVal
 		}
 	}
+}
+
+// LogConfigurationMode returns a message about the current configuration mode
+// In StrictMode: warns that defaults are NOT being used
+// In PermissiveMode: info that safe defaults are being used
+func (d *HardcodedDefaults) LogConfigurationMode() string {
+	if d.Mode == StrictMode {
+		return fmt.Sprintf("⚠️  STRICT MODE: All configuration parameters MUST be explicitly set. Defaults are NOT being used.")
+	}
+	return fmt.Sprintf("ℹ️  PERMISSIVE MODE: Using safe defaults for missing configuration parameters.")
 }
 
 // Validate checks that all timeout values are sensible

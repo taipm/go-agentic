@@ -467,6 +467,12 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 	// ✅ Phase 5: Convert YAML config to runtime defaults
 	executor.defaults = ConfigToHardcodedDefaults(crewConfig)
 
+	// Validate configuration and log mode warning if needed
+	if err := executor.defaults.Validate(); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+	log.Println(executor.defaults.LogConfigurationMode())
+
 	// Set entry agent based on entry_point from YAML (best practice)
 	if crewConfig.EntryPoint != "" {
 		for _, agent := range executor.crew.Agents {

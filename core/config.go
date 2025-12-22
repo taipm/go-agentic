@@ -52,6 +52,9 @@ type CrewConfig struct {
 	Agents []string `yaml:"agents"`
 
 	Settings struct {
+		// ✅ Phase 5.1: Configuration Mode (Permissive vs Strict)
+		ConfigMode                  string `yaml:"config_mode"`  // "permissive" (default) or "strict"
+
 		MaxHandoffs                 int    `yaml:"max_handoffs"`
 		MaxRounds                   int    `yaml:"max_rounds"`
 		TimeoutSeconds              int    `yaml:"timeout_seconds"`
@@ -443,6 +446,11 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 // Returns defaults with YAML overrides applied; validation is performed after conversion
 func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
 	defaults := DefaultHardcodedDefaults()
+
+	// ✅ Phase 5.1: Set configuration mode from YAML
+	if config.Settings.ConfigMode != "" {
+		defaults.Mode = ConfigMode(config.Settings.ConfigMode)
+	}
 
 	// Phase 1 configurations
 	if config.Settings.ParallelTimeoutSeconds > 0 {

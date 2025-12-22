@@ -2,6 +2,7 @@ package crewai
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,15 @@ type ModelConfig struct {
 	ProviderURL string  // Provider-specific URL (e.g., "https://api.openai.com", "http://localhost:11434")
 }
 
+// AgentCostMetrics tracks cost and token usage for an agent
+type AgentCostMetrics struct {
+	CallCount      int           // Number of calls this period
+	TotalTokens    int           // Total tokens used
+	DailyCost      float64       // Total cost today
+	LastResetTime  time.Time     // When daily counter resets
+	Mutex          sync.RWMutex  // Protect concurrent access
+}
+
 // Agent represents an AI agent in the crew
 type Agent struct {
 	ID             string
@@ -36,6 +46,14 @@ type Agent struct {
 	Temperature    float64
 	IsTerminal     bool
 	HandoffTargets []string // List of agent IDs that this agent can hand off to
+
+	// ✅ NEW: Cost Control Configuration (Week 1)
+	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // Max tokens per single call (e.g., 1000)
+	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // Max cumulative tokens per day (e.g., 50000)
+	MaxCostPerDay      float64 `yaml:"max_cost_per_day"`      // Max daily budget in USD (e.g., 10.00)
+	CostAlertThreshold float64 `yaml:"cost_alert_threshold"`  // Warn when % of budget used (e.g., 0.80 = 80%)
+	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`   // true=block, false=warn (default: true)
+	CostMetrics        AgentCostMetrics `json:"-" yaml:"-"` // Runtime metrics (not serialized)
 }
 
 // Task represents a task to be executed by an agent
