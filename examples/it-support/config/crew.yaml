@@ -15,6 +15,17 @@ settings:
   language: en
   organization: IT-Support-Team
 
+  # ✅ NEW Phase 1 Configuration Fields (Fix #4 & #5)
+  # Parallel Agent Execution Timeout (Fix #4)
+  # For IT Support: Increase to allow time for diagnostic tools
+  # Default: 60 seconds if not specified or zero
+  parallel_timeout_seconds: 120
+
+  # Tool Output Truncation Limit (Fix #5)
+  # For IT Support: Increase to capture full diagnostic output
+  # Default: 2000 characters if not specified or zero
+  max_tool_output_chars: 5000
+
 # Routing configuration - defines how agents interact and hand off
 routing:
   # Define which signals each agent can emit and where they route to

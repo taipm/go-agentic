@@ -10,3 +10,17 @@ tasks:
   - name: respond-to-user
     description: Respond to the user's message
     agent: hello-agent
+
+# ✅ NEW Phase 1 Configuration Fields (Fix #4 & #5)
+settings:
+  # Parallel Agent Execution Timeout (Fix #4)
+  # Maximum time allowed for parallel agent execution (in seconds)
+  # Default: 60 seconds if not specified or zero
+  # Increase for complex tasks, decrease for quick responses
+  parallel_timeout_seconds: 60
+
+  # Tool Output Truncation Limit (Fix #5)
+  # Maximum characters allowed in tool output before truncation
+  # Default: 2000 characters if not specified or zero
+  # Increase for detailed outputs, decrease to save context
+  max_tool_output_chars: 2000
