@@ -90,6 +90,8 @@ docs/
 ├── CONFIG_QUICK_REFERENCE.md             ← Tham khảo nhanh
 ├── CONFIG_SCHEMA_REFERENCE.md            ← Schema & validation
 ├── TEAM_SETUP_EXAMPLES.md                ← Ví dụ thực tế
+├── CORE_LIBRARY_UPDATES.md               ← NEW: Core features
+├── AGENT_MODEL_CONFIGURATION.md          ← NEW: Model setup
 ├── LIBRARY_USAGE.md                      ← Core library guide
 ├── ARCHITECTURE.md                       ← System architecture
 └── ...
@@ -150,6 +152,7 @@ Level 1: Beginner (30 minutes)
 
 Level 2: Intermediate (2 hours)
 ├─ CONFIG_SPECIFICATION.md (Sections 1-2)
+├─ AGENT_MODEL_CONFIGURATION.md (Understand models)
 ├─ TEAM_SETUP_EXAMPLES.md (Pick one team)
 ├─ Customize the team
 └─ Test it
@@ -157,12 +160,14 @@ Level 2: Intermediate (2 hours)
 Level 3: Advanced (4 hours)
 ├─ CONFIG_SPECIFICATION.md (Full)
 ├─ CONFIG_SCHEMA_REFERENCE.md
+├─ CORE_LIBRARY_UPDATES.md (New features)
 ├─ Design custom team from scratch
 ├─ Implement signal routing
 └─ Test edge cases
 
 Level 4: Expert (Ongoing)
 ├─ All documents
+├─ CORE_LIBRARY_UPDATES.md (Advanced features)
 ├─ LIBRARY_USAGE.md (Tool integration)
 ├─ ARCHITECTURE.md
 └─ Build production systems
@@ -199,10 +204,19 @@ Level 4: Expert (Ongoing)
 → [CONFIG_SPECIFICATION.md](CONFIG_SPECIFICATION.md) - Section 1.3 & 1.4
 
 **...lựa chọn provider nào (Ollama vs OpenAI)**
-→ [CONFIG_QUICK_REFERENCE.md](CONFIG_QUICK_REFERENCE.md) - Provider Setup section
+→ [AGENT_MODEL_CONFIGURATION.md](AGENT_MODEL_CONFIGURATION.md) - Provider Setup
 
 **...biết temperature nên set bao nhiêu**
-→ [CONFIG_QUICK_REFERENCE.md](CONFIG_QUICK_REFERENCE.md) - Temperature Setting decision tree
+→ [AGENT_MODEL_CONFIGURATION.md](AGENT_MODEL_CONFIGURATION.md) - Temperature Configuration
+
+**...tìm hiểu tính năng mới của core library**
+→ [CORE_LIBRARY_UPDATES.md](CORE_LIBRARY_UPDATES.md) - All new features
+
+**...cấu hình model fallback (primary & backup)**
+→ [AGENT_MODEL_CONFIGURATION.md](AGENT_MODEL_CONFIGURATION.md) - Backup Model section
+
+**...thiết lập metrics và monitoring**
+→ [CORE_LIBRARY_UPDATES.md](CORE_LIBRARY_UPDATES.md) - Section 5 Metrics
 
 ---
 
