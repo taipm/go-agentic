@@ -14,6 +14,7 @@ import (
 )
 
 // ✅ FIX for Issue #18 (Graceful Shutdown)
+// ✅ Phase 5: Integration - Uses HardcodedDefaults for configurable shutdown behavior
 // GracefulShutdownManager manages server lifecycle and safe shutdown
 // Ensures all active requests complete before stopping
 // Prevents data loss and resource leaks during shutdown
@@ -35,6 +36,7 @@ type GracefulShutdownManager struct {
 
 	// Configuration
 	GracefulTimeout time.Duration // Default 30s
+	defaults        *HardcodedDefaults // ✅ Phase 5: Runtime configuration defaults
 	logger          *log.Logger
 
 	// Shutdown callback for custom cleanup
@@ -42,11 +44,13 @@ type GracefulShutdownManager struct {
 }
 
 // NewGracefulShutdownManager creates a new shutdown manager
+// ✅ Phase 5: Initializes with HardcodedDefaults for shutdown configuration
 func NewGracefulShutdownManager() *GracefulShutdownManager {
 	return &GracefulShutdownManager{
 		activeStreams:   make(map[string]context.CancelFunc),
 		shutdownChan:    make(chan os.Signal, 1),
 		GracefulTimeout: 30 * time.Second,
+		defaults:        DefaultHardcodedDefaults(), // ✅ Phase 5: Initialize with default values
 		logger:          log.New(os.Stdout, "[SHUTDOWN] ", log.LstdFlags),
 	}
 }
@@ -106,7 +110,7 @@ func (gsm *GracefulShutdownManager) Shutdown(ctx context.Context) error {
 			}
 			return fmt.Errorf("shutdown timeout: %d active requests", activeCount)
 
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(gsm.defaults.GracefulShutdownCheckInterval): // ✅ Phase 5: Configurable check interval
 			// Check again after brief wait
 			activeCount := atomic.LoadInt32(&gsm.activeRequests)
 			if activeCount > 0 {

@@ -202,10 +202,11 @@ type RequestStore struct {
 }
 
 // NewRequestStore creates a new request store
-// maxSize: Keep last N requests (default: 1000)
+// maxSize: Keep last N requests (default: 1000, configurable via HardcodedDefaults)
+// ✅ Phase 5: Uses HardcodedDefaults.MaxStoredRequests for configuration
 func NewRequestStore(maxSize int) *RequestStore {
 	if maxSize <= 0 {
-		maxSize = 1000
+		maxSize = DefaultHardcodedDefaults().MaxStoredRequests // ✅ Phase 5: From HardcodedDefaults
 	}
 	return &RequestStore{
 		requests: make(map[string]*RequestMetadata),

@@ -394,15 +394,17 @@ type CrewExecutor struct {
 	apiKey         string
 	entryAgent     *Agent
 	history        []Message
-	Verbose        bool   // If true, print agent responses and tool results to stdout
-	ResumeAgentID  string // If set, execution will start from this agent instead of entry agent
+	Verbose        bool               // If true, print agent responses and tool results to stdout
+	ResumeAgentID  string             // If set, execution will start from this agent instead of entry agent
 	ToolTimeouts   *ToolTimeoutConfig // ✅ FIX for Issue #11: Timeout configuration
 	Metrics        *MetricsCollector  // ✅ FIX for Issue #14: Metrics collection for observability
+	defaults       *HardcodedDefaults // ✅ Phase 5: Runtime configuration defaults
 }
 
 // NewCrewExecutor creates a new crew executor
 // Note: crew.Routing MUST be set for signal-based routing to work
 // Best Practice: Use entry_point from crew.yaml instead of relying on IsTerminal
+// ✅ Phase 5: Initializes with default HardcodedDefaults
 func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 	// Find entry agent - first agent is default if no routing configured
 	var entryAgent *Agent
@@ -415,8 +417,9 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 		apiKey:       apiKey,
 		entryAgent:   entryAgent,
 		history:      []Message{},
-		ToolTimeouts: NewToolTimeoutConfig(), // ✅ FIX for Issue #11: Initialize timeout config
-		Metrics:      NewMetricsCollector(),  // ✅ FIX for Issue #14: Initialize metrics collector
+		ToolTimeouts: NewToolTimeoutConfig(),     // ✅ FIX for Issue #11: Initialize timeout config
+		Metrics:      NewMetricsCollector(),      // ✅ FIX for Issue #14: Initialize metrics collector
+		defaults:     DefaultHardcodedDefaults(), // ✅ Phase 5: Initialize with default values
 	}
 }
 
@@ -460,6 +463,9 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 
 	// Create executor
 	executor := NewCrewExecutor(crew, apiKey)
+
+	// ✅ Phase 5: Convert YAML config to runtime defaults
+	executor.defaults = ConfigToHardcodedDefaults(crewConfig)
 
 	// Set entry agent based on entry_point from YAML (best practice)
 	if crewConfig.EntryPoint != "" {
@@ -1199,10 +1205,10 @@ func (ce *CrewExecutor) ExecuteParallelStream(
 	errorChan := make(chan error, len(agents))
 	mu := sync.Mutex{}
 
-	// Determine timeout - use crew config if set, otherwise use default
-	parallelTimeout := ce.crew.ParallelAgentTimeout
+	// ✅ Phase 5: Determine timeout - use defaults from HardcodedDefaults
+	parallelTimeout := ce.defaults.ParallelAgentTimeout
 	if parallelTimeout <= 0 {
-		parallelTimeout = DefaultParallelAgentTimeout
+		parallelTimeout = 60 * time.Second // Fallback
 	}
 
 	// Launch all agents in parallel using goroutines
@@ -1304,11 +1310,11 @@ func (ce *CrewExecutor) ExecuteParallel(
 	// If any goroutine errors, all others are cancelled automatically
 	g, gctx := errgroup.WithContext(ctx)
 
-	// Determine timeout - use crew config if set, otherwise use default
+	// ✅ Phase 5: Determine timeout - use defaults from HardcodedDefaults
 	// ✅ FIX #4: Now uses configurable Crew.ParallelAgentTimeout
-	parallelTimeout := ce.crew.ParallelAgentTimeout
+	parallelTimeout := ce.defaults.ParallelAgentTimeout
 	if parallelTimeout <= 0 {
-		parallelTimeout = DefaultParallelAgentTimeout
+		parallelTimeout = 60 * time.Second // Fallback
 	}
 
 	// Thread-safe result map

@@ -20,6 +20,7 @@ type StreamRequest struct {
 }
 
 // ✅ FIX for Issue #10 (Input Validation)
+// ✅ Phase 5: Integration - Uses HardcodedDefaults for configurable limits
 // InputValidator validates user input to prevent security issues and ensure reliability
 type InputValidator struct {
 	MaxQueryLen    int
@@ -27,20 +28,27 @@ type InputValidator struct {
 	MaxHistoryLen  int
 	MaxMessageSize int
 	AllowedRoles   map[string]bool
+	defaults       *HardcodedDefaults // ✅ Phase 5: Reference to runtime defaults
 }
 
 // NewInputValidator creates a validator with recommended limits
-func NewInputValidator() *InputValidator {
+// ✅ Phase 5: Now accepts HardcodedDefaults for configurable limits
+func NewInputValidator(defaults *HardcodedDefaults) *InputValidator {
+	if defaults == nil {
+		defaults = DefaultHardcodedDefaults()
+	}
+
 	return &InputValidator{
-		MaxQueryLen:    10000,  // 10KB max query
-		MinQueryLen:    1,      // At least 1 character
-		MaxHistoryLen:  1000,   // Max 1000 messages
-		MaxMessageSize: 100000, // 100KB per message
+		MaxQueryLen:    defaults.MaxInputSize,       // ✅ From HardcodedDefaults
+		MinQueryLen:    1,
+		MaxHistoryLen:  1000,
+		MaxMessageSize: defaults.MaxRequestBodySize, // ✅ From HardcodedDefaults
 		AllowedRoles: map[string]bool{
 			"user":      true,
 			"assistant": true,
 			"system":    true,
 		},
+		defaults: defaults,
 	}
 }
 
@@ -123,17 +131,25 @@ type executorSnapshot struct {
 
 // HTTPHandler handles HTTP requests for crew execution
 // Uses RWMutex for optimal read-heavy workload (many concurrent StreamHandlers, few SetVerbose/SetResumeAgent calls)
+// ✅ Phase 5: Integration - Uses HardcodedDefaults for configurable streaming
 type HTTPHandler struct {
 	executor  *CrewExecutor
-	mu        sync.RWMutex // Changed from sync.Mutex for better concurrency (read-heavy pattern)
-	validator *InputValidator // ✅ FIX for Issue #10: Validate input
+	defaults  *HardcodedDefaults     // ✅ Phase 5: Runtime configuration defaults
+	mu        sync.RWMutex           // Changed from sync.Mutex for better concurrency (read-heavy pattern)
+	validator *InputValidator        // ✅ FIX for Issue #10: Validate input
 }
 
 // NewHTTPHandler creates a new HTTP handler
-func NewHTTPHandler(executor *CrewExecutor) *HTTPHandler {
+// ✅ Phase 5: Now accepts HardcodedDefaults for configurable behavior
+func NewHTTPHandler(executor *CrewExecutor, defaults *HardcodedDefaults) *HTTPHandler {
+	if defaults == nil {
+		defaults = DefaultHardcodedDefaults()
+	}
+
 	return &HTTPHandler{
 		executor:  executor,
-		validator: NewInputValidator(),
+		defaults:  defaults,
+		validator: NewInputValidator(defaults),
 	}
 }
 
@@ -270,7 +286,7 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 			}
 
-		case <-time.After(30 * time.Second):
+		case <-time.After(h.defaults.SSEKeepAliveInterval): // ✅ Phase 5: Configurable SSE keep-alive
 			// Keep-alive ping
 			SendStreamEvent(w, NewStreamEvent("ping", "system", ""))
 			flusher.Flush()
@@ -363,8 +379,9 @@ func (h *HTTPHandler) GetResumeAgent() string {
 }
 
 // StartHTTPServer starts the HTTP server with SSE streaming
+// ✅ Phase 5: Uses default HardcodedDefaults for streaming configuration
 func StartHTTPServer(executor *CrewExecutor, port int) error {
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	http.HandleFunc("/api/crew/stream", handler.StreamHandler)
 	http.HandleFunc("/health", handler.HealthHandler)
@@ -388,8 +405,9 @@ func StartHTTPServer(executor *CrewExecutor, port int) error {
 }
 
 // StartHTTPServerWithCustomUI starts the HTTP server with custom HTML UI
+// ✅ Phase 5: Uses default HardcodedDefaults for streaming configuration
 func StartHTTPServerWithCustomUI(executor *CrewExecutor, port int, htmlContent string) error {
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	http.HandleFunc("/api/crew/stream", handler.StreamHandler)
 	http.HandleFunc("/health", handler.HealthHandler)

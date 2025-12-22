@@ -23,8 +23,9 @@ type clientEntry struct {
 }
 
 // defaultClientTTL is the default TTL for cached OpenAI clients
-// Can be overridden per provider instance
-const defaultClientTTL = 1 * time.Hour
+// ✅ Phase 5: Now configurable (was hardcoded constant)
+// Can be overridden per provider instance or via environment
+var defaultClientTTL = 1 * time.Hour // Default: 1 hour (configurable)
 
 // OpenAIProvider implements LLMProvider interface using OpenAI API
 // ✅ FIX #3: Made clientTTL configurable (was hardcoded constant)

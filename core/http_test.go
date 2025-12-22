@@ -27,7 +27,7 @@ func TestStreamHandlerNoRaceCondition(t *testing.T) {
 	executor := NewCrewExecutor(crew, "test-key")
 
 	// Create handler
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	// Test parameters
 	numRequests := 50
@@ -110,7 +110,7 @@ func TestSnapshotIsolatesStateChanges(t *testing.T) {
 	}
 	executor := NewCrewExecutor(crew, "key")
 
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	// Set initial state
 	handler.SetVerbose(false)
@@ -153,7 +153,7 @@ func TestConcurrentReads(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	handler.SetVerbose(true)
 	handler.SetResumeAgent("test-agent")
@@ -193,7 +193,7 @@ func TestWriteLockPreventsRaces(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	numWriters := 20
 	var wg sync.WaitGroup
@@ -226,7 +226,7 @@ func TestClearResumeAgent(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	// Set resume agent
 	handler.SetResumeAgent("test-agent")
@@ -253,7 +253,7 @@ func TestHighConcurrencyStress(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	numRequests := 200
 	numWriters := 5
@@ -337,7 +337,7 @@ func TestStateConsistency(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	// Initial state
 	handler.SetVerbose(true)
@@ -372,7 +372,7 @@ func TestNoDeadlock(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	done := make(chan bool, 1)
 
@@ -413,7 +413,7 @@ func TestNoDeadlock(t *testing.T) {
 
 // TestValidateQueryLength verifies query length validation
 func TestValidateQueryLength(t *testing.T) {
-	validator := NewInputValidator()
+	validator := NewInputValidator(DefaultHardcodedDefaults())
 
 	tests := []struct {
 		name      string
@@ -433,18 +433,18 @@ func TestValidateQueryLength(t *testing.T) {
 		})
 	}
 
-	// Test max length query (exactly 10000 chars)
+	// Test max length query (exactly 10240 chars = 10KB default limit)
 	t.Run("max length query", func(t *testing.T) {
-		maxQuery := strings.Repeat("a", 10000)
+		maxQuery := strings.Repeat("a", 10240)
 		err := validator.ValidateQuery(maxQuery)
 		if err != nil {
 			t.Errorf("Expected no error for max length query, got: %v", err)
 		}
 	})
 
-	// Test exceeds max length (10001 chars)
+	// Test exceeds max length (10241 chars)
 	t.Run("exceeds max length", func(t *testing.T) {
-		overQuery := strings.Repeat("a", 10001)
+		overQuery := strings.Repeat("a", 10241)
 		err := validator.ValidateQuery(overQuery)
 		if err == nil {
 			t.Error("Expected error for exceeding max length, got nil")
@@ -454,7 +454,7 @@ func TestValidateQueryLength(t *testing.T) {
 
 // TestValidateQueryUTF8 verifies UTF-8 validation
 func TestValidateQueryUTF8(t *testing.T) {
-	validator := NewInputValidator()
+	validator := NewInputValidator(DefaultHardcodedDefaults())
 
 	// Invalid UTF-8 sequence
 	invalidUTF8 := "hello\xff\xfe"
@@ -473,7 +473,7 @@ func TestValidateQueryUTF8(t *testing.T) {
 
 // TestValidateQueryControlChars verifies control character detection
 func TestValidateQueryControlChars(t *testing.T) {
-	validator := NewInputValidator()
+	validator := NewInputValidator(DefaultHardcodedDefaults())
 
 	tests := []struct {
 		name      string
@@ -499,7 +499,7 @@ func TestValidateQueryControlChars(t *testing.T) {
 
 // TestValidateAgentIDFormat verifies agent ID format validation
 func TestValidateAgentIDFormat(t *testing.T) {
-	validator := NewInputValidator()
+	validator := NewInputValidator(DefaultHardcodedDefaults())
 
 	tests := []struct {
 		name      string
@@ -539,7 +539,7 @@ func TestValidateAgentIDFormat(t *testing.T) {
 
 // TestValidateHistory verifies history validation
 func TestValidateHistory(t *testing.T) {
-	validator := NewInputValidator()
+	validator := NewInputValidator(DefaultHardcodedDefaults())
 
 	t.Run("valid history", func(t *testing.T) {
 		history := []Message{
@@ -574,8 +574,10 @@ func TestValidateHistory(t *testing.T) {
 	})
 
 	t.Run("message too large", func(t *testing.T) {
+		// MaxRequestBodySize default is 100 * 1024 = 102400 bytes
+		// Create message larger than that
 		history := []Message{
-			{Role: "user", Content: string(make([]byte, 100001))},
+			{Role: "user", Content: string(make([]byte, 102401))},
 		}
 		err := validator.ValidateHistory(history)
 		if err == nil {
@@ -592,12 +594,14 @@ func TestStreamHandlerInputValidation(t *testing.T) {
 		},
 	}
 	executor := NewCrewExecutor(crew, "test-key")
-	handler := NewHTTPHandler(executor)
+	handler := NewHTTPHandler(executor, DefaultHardcodedDefaults())
 
 	t.Run("reject oversized query", func(t *testing.T) {
+		// MaxInputSize default is 10 * 1024 = 10240 bytes
+		// Create query larger than that
 		req := httptest.NewRequest(
 			"GET",
-			"/api/crew/stream?q="+strings.Repeat("a", 10001),
+			"/api/crew/stream?q="+strings.Repeat("a", 10241),
 			nil,
 		)
 		w := httptest.NewRecorder()
