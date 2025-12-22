@@ -11,8 +11,13 @@ tasks:
     description: Respond to the user's message
     agent: hello-agent
 
-# ✅ NEW Phase 1 Configuration Fields (Fix #4 & #5)
+# ✅ Phase 5 Configuration Fields
 settings:
+  # Configuration Mode:
+  # - permissive (default): Use safe defaults for missing parameters
+  # - strict: Require all parameters to be explicitly set
+  config_mode: permissive  # ← Development mode: minimal config needed
+
   # Parallel Agent Execution Timeout (Fix #4)
   # Maximum time allowed for parallel agent execution (in seconds)
   # Default: 60 seconds if not specified or zero
@@ -24,3 +29,6 @@ settings:
   # Default: 2000 characters if not specified or zero
   # Increase for detailed outputs, decrease to save context
   max_tool_output_chars: 2000
+
+  # Other parameters use safe defaults in Permissive Mode
+  # See docs/STRICT_MODE_CONFIGURATION.md for all 19 parameters
