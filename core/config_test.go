@@ -296,59 +296,71 @@ func TestValidateAgentConfigValidConfig(t *testing.T) {
 		},
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, PermissiveMode)
 	if err != nil {
 		t.Errorf("Valid agent config should pass validation, got error: %v", err)
 	}
 }
 
-// TestValidateAgentConfigMissingID validates ID is required
+// TestValidateAgentConfigMissingID validates ID is required in STRICT mode
 func TestValidateAgentConfigMissingID(t *testing.T) {
 	config := &AgentConfig{
 		ID:   "", // ← Missing!
 		Name: "Test Agent",
 		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:    "gpt-4o",
+			Provider: "openai",
+		},
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, StrictMode)
 	if err == nil {
-		t.Error("Should require 'id' field")
+		t.Error("Should require 'id' field in STRICT mode")
 	}
-	if err.Error() != "agent: required field 'id' is empty" {
+	if !contains(err.Error(), "missing required fields in STRICT MODE") {
 		t.Errorf("Wrong error message: %v", err)
 	}
 }
 
-// TestValidateAgentConfigMissingName validates Name is required
+// TestValidateAgentConfigMissingName validates Name is required in STRICT mode
 func TestValidateAgentConfigMissingName(t *testing.T) {
 	config := &AgentConfig{
 		ID:   "agent1",
 		Name: "", // ← Missing!
 		Role: "test_role",
+		Primary: &ModelConfigYAML{
+			Model:    "gpt-4o",
+			Provider: "openai",
+		},
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, StrictMode)
 	if err == nil {
-		t.Error("Should require 'name' field")
+		t.Error("Should require 'name' field in STRICT mode")
 	}
-	if err.Error() != "agent 'agent1': required field 'name' is empty" {
+	if !contains(err.Error(), "missing required fields in STRICT MODE") {
 		t.Errorf("Wrong error message: %v", err)
 	}
 }
 
-// TestValidateAgentConfigMissingRole validates Role is required
+// TestValidateAgentConfigMissingRole validates Role is required in STRICT mode
 func TestValidateAgentConfigMissingRole(t *testing.T) {
 	config := &AgentConfig{
 		ID:   "agent1",
 		Name: "Test Agent",
 		Role: "", // ← Missing!
+		Primary: &ModelConfigYAML{
+			Model:    "gpt-4o",
+			Provider: "openai",
+		},
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, StrictMode)
 	if err == nil {
-		t.Error("Should require 'role' field")
+		t.Error("Should require 'role' field in STRICT mode")
 	}
-	if err.Error() != "agent 'agent1': required field 'role' is empty" {
+	if !contains(err.Error(), "missing required fields in STRICT MODE") {
 		t.Errorf("Wrong error message: %v", err)
 	}
 }
@@ -372,7 +384,7 @@ func TestValidateAgentConfigInvalidTemperature(t *testing.T) {
 			Temperature: tc.temp,
 		}
 
-		err := ValidateAgentConfig(config)
+		err := ValidateAgentConfig(config, PermissiveMode)
 		if err == nil {
 			t.Errorf("Should validate temperature range for %s value %.1f", tc.desc, tc.temp)
 		}
@@ -410,7 +422,7 @@ func TestValidateAgentConfigTemperatureBoundaries(t *testing.T) {
 			},
 		}
 
-		err := ValidateAgentConfig(config)
+		err := ValidateAgentConfig(config, PermissiveMode)
 		if tc.valid && err != nil {
 			t.Errorf("Temperature %.1f should be valid but got error: %v", tc.temp, err)
 		}
@@ -446,7 +458,7 @@ func TestValidateAgentConfigWithPrimaryModel(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, PermissiveMode)
 	if err != nil {
 		t.Errorf("Valid agent with primary model should pass validation, got error: %v", err)
 	}
@@ -471,7 +483,7 @@ func TestValidateAgentConfigWithPrimaryAndBackup(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, PermissiveMode)
 	if err != nil {
 		t.Errorf("Valid agent with primary and backup should pass validation, got error: %v", err)
 	}
@@ -487,7 +499,7 @@ func TestValidateAgentConfigMissingPrimaryModel(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, PermissiveMode)
 	if err == nil {
 		t.Error("Should require primary model configuration")
 	}
@@ -496,7 +508,7 @@ func TestValidateAgentConfigMissingPrimaryModel(t *testing.T) {
 	}
 }
 
-// TestValidateAgentConfigEmptyPrimaryModel validates primary.model is required
+// TestValidateAgentConfigEmptyPrimaryModel validates primary.model is required in STRICT mode
 func TestValidateAgentConfigEmptyPrimaryModel(t *testing.T) {
 	config := &AgentConfig{
 		ID:   "agent1",
@@ -510,16 +522,16 @@ func TestValidateAgentConfigEmptyPrimaryModel(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, StrictMode)
 	if err == nil {
-		t.Error("Should require primary.model")
+		t.Error("Should require primary.model in STRICT mode")
 	}
-	if err.Error() != "agent 'agent1': primary.model is required" {
+	if !contains(err.Error(), "primary model configuration incomplete in STRICT MODE") {
 		t.Errorf("Wrong error message: %v", err)
 	}
 }
 
-// TestValidateAgentConfigEmptyPrimaryProvider validates primary.provider is required
+// TestValidateAgentConfigEmptyPrimaryProvider validates primary.provider is required in STRICT mode
 func TestValidateAgentConfigEmptyPrimaryProvider(t *testing.T) {
 	config := &AgentConfig{
 		ID:   "agent1",
@@ -533,11 +545,11 @@ func TestValidateAgentConfigEmptyPrimaryProvider(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, StrictMode)
 	if err == nil {
-		t.Error("Should require primary.provider")
+		t.Error("Should require primary.provider in STRICT mode")
 	}
-	if err.Error() != "agent 'agent1': primary.provider is required" {
+	if !contains(err.Error(), "primary model configuration incomplete in STRICT MODE") {
 		t.Errorf("Wrong error message: %v", err)
 	}
 }
@@ -561,7 +573,7 @@ func TestValidateAgentConfigEmptyBackupModel(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, PermissiveMode)
 	if err == nil {
 		t.Error("Should require backup.model if backup is specified")
 	}
@@ -589,7 +601,7 @@ func TestValidateAgentConfigEmptyBackupProvider(t *testing.T) {
 		Temperature: 0.7,
 	}
 
-	err := ValidateAgentConfig(config)
+	err := ValidateAgentConfig(config, PermissiveMode)
 	if err == nil {
 		t.Error("Should require backup.provider if backup is specified")
 	}
