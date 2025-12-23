@@ -45,7 +45,8 @@ var parameterDescriptions = map[string]string{
 	"MinAgentIDLength": "Prevents empty or whitespace-only agent identifiers (characters). Default: 1",
 	"MaxAgentIDLength": "Prevents unbounded identifier growth - practical limit for agent names (characters). Default: 128",
 	"MaxRequestBodySize": "Prevents memory exhaustion from oversized HTTP requests (bytes, ~100KB = 102400). Default: 102400",
-	"MaxToolOutputChars": "Truncates very large tool outputs to prevent LLM context overflow (characters). Default: 2000",
+	"MaxToolOutputChars": "Truncates per-tool output to prevent LLM context overflow (characters). Default: 2000",
+	"MaxTotalToolOutputChars": "Maximum TOTAL characters for all tools combined - summarizes excess tools (characters). Default: 4000",
 	"StreamBufferSize": "Number of chunks to buffer during streaming responses - balance responsiveness vs memory (chunks). Default: 100",
 	"MaxStoredRequests": "Maximum number of requests to keep in memory for tracking/debugging (requests). Default: 1000",
 	"TimeoutWarningThreshold": "Warn when this percentage of timeout remains (0.0-1.0, e.g., 0.20 = warn at 80% used). Default: 0.20",
@@ -73,7 +74,7 @@ var parameterDescriptions = map[string]string{
 	"MaxCallsPerMinute": "Rate limit: maximum calls per minute. Default: 60",
 	"MaxCallsPerHour": "Rate limit: maximum calls per hour. Default: 1000",
 	"MaxCallsPerDay": "Rate limit: maximum calls per 24 hours. Default: 10000",
-	"EnforceQuotas": "Enforce quota limits (true=block, false=warn). Default: true",
+	"BlockOnQuotaExceed": "Block requests when quota exceeded (true=BLOCK, false=WARN only). Default: true",
 }
 
 // Error implements the error interface
@@ -187,10 +188,16 @@ type HardcodedDefaults struct {
 	MaxRequestBodySize int
 
 	// ===== OUTPUT LIMITS =====
-	// MaxToolOutputChars: Maximum characters in tool output before truncation
+	// MaxToolOutputChars: Maximum characters per tool output before truncation
 	// Previously hardcoded in: types.go:88 (2000 characters)
 	// Default: 2,000 characters (balance context vs detail)
 	MaxToolOutputChars int
+
+	// MaxTotalToolOutputChars: Maximum TOTAL characters for all tool outputs combined
+	// ✅ FIX for MEDIUM Issue: Tool results not summarized - prevents unbounded token usage
+	// When total exceeds this, later tools get summarized to save context
+	// Default: 4,000 characters (~1,000 tokens)
+	MaxTotalToolOutputChars int
 
 	// StreamBufferSize: Size of streaming buffer for chunk handling
 	// Previously hardcoded in: http.go:75 (100 chunks)
@@ -301,10 +308,10 @@ type HardcodedDefaults struct {
 	// Default: 10000 calls per day
 	MaxCallsPerDay int
 
-	// EnforceQuotas: Enforce quota limits (true=block, false=warn)
+	// BlockOnQuotaExceed: Block requests when quota exceeded (true=block, false=warn only)
 	// Previously hardcoded in: types.go (true mentioned in comment)
-	// Default: true (enforce quotas)
-	EnforceQuotas bool
+	// Default: true (block on exceed - production-safe)
+	BlockOnQuotaExceed bool
 }
 
 // DefaultHardcodedDefaults returns the global default configuration values
@@ -333,8 +340,9 @@ func DefaultHardcodedDefaults() *HardcodedDefaults {
 		MaxRequestBodySize: 100 * 1024, // 100KB
 
 		// Output Limits
-		MaxToolOutputChars: 2000,        // ✅ FIX #5: Default output limit
-		StreamBufferSize:   100,
+		MaxToolOutputChars:      2000,   // ✅ FIX #5: Default per-tool output limit
+		MaxTotalToolOutputChars: 4000,   // ✅ FIX: Total limit for all tools combined (~1K tokens)
+		StreamBufferSize:        100,
 
 		// Request Storage
 		MaxStoredRequests: 1000,
@@ -366,10 +374,10 @@ func DefaultHardcodedDefaults() *HardcodedDefaults {
 		MaxConsecutiveErrors: 5,   // 5 consecutive block
 
 		// Rate Limiting (WEEK 2)
-		MaxCallsPerMinute: 60,     // 60 calls/minute
-		MaxCallsPerHour:   1000,   // 1000 calls/hour
-		MaxCallsPerDay:    10000,  // 10000 calls/day
-		EnforceQuotas:     true,   // Enforce by default
+		MaxCallsPerMinute:  60,    // 60 calls/minute
+		MaxCallsPerHour:    1000,  // 1000 calls/hour
+		MaxCallsPerDay:     10000, // 10000 calls/day
+		BlockOnQuotaExceed: true,  // ✅ Default: BLOCK mode (production-safe)
 	}
 }
 
@@ -438,6 +446,7 @@ func (d *HardcodedDefaults) validatePhase4SizeLimits(errors *[]string) {
 	d.validateInt("MaxAgentIDLength", &d.MaxAgentIDLength, 128, errors)
 	d.validateInt("MaxRequestBodySize", &d.MaxRequestBodySize, 100*1024, errors)
 	d.validateInt("MaxToolOutputChars", &d.MaxToolOutputChars, 2000, errors)
+	d.validateInt("MaxTotalToolOutputChars", &d.MaxTotalToolOutputChars, 4000, errors)
 	d.validateInt("StreamBufferSize", &d.StreamBufferSize, 100, errors)
 	d.validateInt("MaxStoredRequests", &d.MaxStoredRequests, 1000, errors)
 	d.validateFloatRange("TimeoutWarningThreshold", &d.TimeoutWarningThreshold, 0.20, 0.0, 1.0, errors)

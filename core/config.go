@@ -63,7 +63,8 @@ type CrewConfig struct {
 
 		// ✅ Phase 1: Configurable timeouts and output limits
 		ParallelTimeoutSeconds      int `yaml:"parallel_timeout_seconds"`       // FIX #4 hardcoded value
-		MaxToolOutputChars          int `yaml:"max_tool_output_chars"`          // FIX #5 hardcoded value
+		MaxToolOutputChars          int `yaml:"max_tool_output_chars"`          // FIX #5 per-tool output limit
+		MaxTotalToolOutputChars     int `yaml:"max_total_tool_output_chars"`    // ✅ FIX: Total limit for all tools combined
 
 		// ✅ Phase 4: Extended configuration for all remaining hardcoded values
 		ToolExecutionTimeoutSeconds int `yaml:"tool_execution_timeout_seconds"` // Timeout per tool execution (was 5s)
@@ -114,10 +115,10 @@ type CrewConfig struct {
 		MaxConsecutiveErrors int `yaml:"max_consecutive_errors"`       // Max consecutive errors
 
 		// ✅ WEEK 2: Rate Limiting & Quotas
-		MaxCallsPerMinute int  `yaml:"max_calls_per_minute"`           // Rate limit: calls per minute
-		MaxCallsPerHour   int  `yaml:"max_calls_per_hour"`             // Rate limit: calls per hour
-		MaxCallsPerDay    int  `yaml:"max_calls_per_day"`              // Rate limit: calls per 24 hours
-		EnforceQuotas     bool `yaml:"enforce_quotas"`                 // Enforce quotas (true=block, false=warn)
+		MaxCallsPerMinute  int  `yaml:"max_calls_per_minute"`           // Rate limit: calls per minute
+		MaxCallsPerHour    int  `yaml:"max_calls_per_hour"`             // Rate limit: calls per hour
+		MaxCallsPerDay     int  `yaml:"max_calls_per_day"`              // Rate limit: calls per 24 hours
+		BlockOnQuotaExceed bool `yaml:"block_on_quota_exceed"`          // true=BLOCK request when quota exceeded, false=WARN only (default: true)
 	} `yaml:"settings"`
 
 	Routing *RoutingConfig `yaml:"routing"`
@@ -133,27 +134,27 @@ type ModelConfigYAML struct {
 // CostLimitsConfig defines cost control quota limits
 // [QUOTA|COST] Token usage and API cost boundaries
 type CostLimitsConfig struct {
-	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // [QUOTA|COST|PER-CALL|INT] Max tokens per API call
-	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // [QUOTA|COST|PER-DAY|INT] Max tokens per 24 hours
-	MaxCostPerDayUSD   float64 `yaml:"max_cost_per_day_usd"`  // [QUOTA|COST|PER-DAY|FLOAT] Max USD cost per day
-	AlertThreshold     float64 `yaml:"alert_threshold"`       // [THRESHOLD|COST|GLOBAL|FLOAT] Warn at % of limit
-	Enforce            bool    `yaml:"enforce"`               // [FLAG|COST|ENFORCEMENT|BOOL] BLOCK vs WARN on limit
+	MaxTokensPerCall    int     `yaml:"max_tokens_per_call"`    // [QUOTA|COST|PER-CALL|INT] Max tokens per API call
+	MaxTokensPerDay     int     `yaml:"max_tokens_per_day"`     // [QUOTA|COST|PER-DAY|INT] Max tokens per 24 hours
+	MaxCostPerDayUSD    float64 `yaml:"max_cost_per_day_usd"`   // [QUOTA|COST|PER-DAY|FLOAT] Max USD cost per day
+	AlertThreshold      float64 `yaml:"alert_threshold"`        // [THRESHOLD|COST|GLOBAL|FLOAT] Warn at % of limit
+	BlockOnCostExceed   bool    `yaml:"block_on_cost_exceed"`   // [FLAG|COST|ENFORCEMENT|BOOL] true=BLOCK request, false=WARN only (default: true)
 }
 
 // MemoryLimitsConfig defines memory quota limits
 // [QUOTA|MEMORY] Memory usage boundaries and constraints
 type MemoryLimitsConfig struct {
-	MaxPerCallMB       int  `yaml:"max_per_call_mb"`       // [QUOTA|MEMORY|PER-CALL|INT] Max MB per execution
-	MaxPerDayMB        int  `yaml:"max_per_day_mb"`        // [QUOTA|MEMORY|PER-DAY|INT] Max MB per 24 hours
-	Enforce            bool `yaml:"enforce"`               // [FLAG|MEMORY|ENFORCEMENT|BOOL] BLOCK vs WARN on limit
+	MaxPerCallMB          int  `yaml:"max_per_call_mb"`          // [QUOTA|MEMORY|PER-CALL|INT] Max MB per execution
+	MaxPerDayMB           int  `yaml:"max_per_day_mb"`           // [QUOTA|MEMORY|PER-DAY|INT] Max MB per 24 hours
+	BlockOnMemoryExceed   bool `yaml:"block_on_memory_exceed"`   // [FLAG|MEMORY|ENFORCEMENT|BOOL] true=BLOCK request, false=WARN only (default: true)
 }
 
 // ErrorLimitsConfig defines error rate quota limits
 // [QUOTA|ERROR] Error rate and reliability boundaries
 type ErrorLimitsConfig struct {
-	MaxConsecutive     int  `yaml:"max_consecutive"`       // [QUOTA|ERROR|PER-CALL|INT] Max consecutive failures
-	MaxPerDay          int  `yaml:"max_per_day"`           // [QUOTA|ERROR|PER-DAY|INT] Max errors per 24 hours
-	Enforce            bool `yaml:"enforce"`               // [FLAG|ERROR|ENFORCEMENT|BOOL] BLOCK vs WARN on limit
+	MaxConsecutive       int  `yaml:"max_consecutive"`        // [QUOTA|ERROR|PER-CALL|INT] Max consecutive failures
+	MaxPerDay            int  `yaml:"max_per_day"`            // [QUOTA|ERROR|PER-DAY|INT] Max errors per 24 hours
+	BlockOnErrorExceed   bool `yaml:"block_on_error_exceed"`  // [FLAG|ERROR|ENFORCEMENT|BOOL] true=BLOCK request, false=WARN only (default: true)
 }
 
 // LoggingConfig defines observability and monitoring settings
@@ -305,40 +306,40 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 	// If new nested configs don't exist but old flat fields are set, populate nested configs
 	if config.CostLimits == nil && config.MaxTokensPerCall > 0 {
 		config.CostLimits = &CostLimitsConfig{
-			MaxTokensPerCall:   config.MaxTokensPerCall,
-			MaxTokensPerDay:    config.MaxTokensPerDay,
-			MaxCostPerDayUSD:   config.MaxCostPerDay,
-			AlertThreshold:     config.CostAlertThreshold,
-			Enforce:            config.EnforceCostLimits,
+			MaxTokensPerCall:    config.MaxTokensPerCall,
+			MaxTokensPerDay:     config.MaxTokensPerDay,
+			MaxCostPerDayUSD:    config.MaxCostPerDay,
+			AlertThreshold:      config.CostAlertThreshold,
+			BlockOnCostExceed:   config.EnforceCostLimits,
 		}
 	}
 
 	// Set defaults for cost control if still not configured
 	if config.CostLimits == nil {
 		config.CostLimits = &CostLimitsConfig{
-			MaxTokensPerCall: 1000,    // Default: 1K tokens per call
-			MaxTokensPerDay:  50000,   // Default: 50K tokens per day
-			MaxCostPerDayUSD: 10.0,    // Default: $10 per day
-			AlertThreshold:   0.80,    // Default: warn at 80% usage
-			Enforce:          false,   // Default: warn-only mode
+			MaxTokensPerCall:  1000,   // Default: 1K tokens per call
+			MaxTokensPerDay:   50000,  // Default: 50K tokens per day
+			MaxCostPerDayUSD:  10.0,   // Default: $10 per day
+			AlertThreshold:    0.80,   // Default: warn at 80% usage
+			BlockOnCostExceed: true,   // ✅ Default: BLOCK mode (production-safe)
 		}
 	}
 
 	// Set defaults for memory control if not configured
 	if config.MemoryLimits == nil {
 		config.MemoryLimits = &MemoryLimitsConfig{
-			MaxPerCallMB: 100,    // Default: 100 MB per call
-			MaxPerDayMB:  1000,   // Default: 1000 MB per day
-			Enforce:      false,  // Default: warn-only mode
+			MaxPerCallMB:        100,   // Default: 100 MB per call
+			MaxPerDayMB:         1000,  // Default: 1000 MB per day
+			BlockOnMemoryExceed: true,  // ✅ Default: BLOCK mode (production-safe)
 		}
 	}
 
 	// Set defaults for error control if not configured
 	if config.ErrorLimits == nil {
 		config.ErrorLimits = &ErrorLimitsConfig{
-			MaxConsecutive: 3,   // Default: max 3 consecutive errors
-			MaxPerDay:      10,  // Default: max 10 errors per day
-			Enforce:        false, // Default: warn-only mode
+			MaxConsecutive:     3,    // Default: max 3 consecutive errors
+			MaxPerDay:          10,   // Default: max 10 errors per day
+			BlockOnErrorExceed: true, // ✅ Default: BLOCK mode (production-safe)
 		}
 	}
 
@@ -427,15 +428,22 @@ func ValidateCrewConfig(config *CrewConfig) error {
 
 	// Validate routing references
 	if config.Routing != nil {
-		// Validate signals reference existing agents
+		// Build parallel groups map for validation
+		parallelGroupMap := make(map[string]bool)
+		for groupName := range config.Routing.ParallelGroups {
+			parallelGroupMap[groupName] = true
+		}
+
+		// Validate signals reference existing agents or parallel groups
 		for agentID, signals := range config.Routing.Signals {
 			if !agentMap[agentID] {
 				return fmt.Errorf("routing.signals references non-existent agent '%s'", agentID)
 			}
 			for _, signal := range signals {
 				// Allow empty target for terminal signals
-				if signal.Target != "" && !agentMap[signal.Target] {
-					return fmt.Errorf("routing signal from agent '%s' targets non-existent agent '%s'", agentID, signal.Target)
+				// Allow target to be agent ID or parallel group name
+				if signal.Target != "" && !agentMap[signal.Target] && !parallelGroupMap[signal.Target] {
+					return fmt.Errorf("routing signal from agent '%s' targets non-existent agent/group '%s'", agentID, signal.Target)
 				}
 			}
 		}
@@ -582,7 +590,7 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 			MaxErrorsPerDay:    50,     // Default: 50 errors/day
 
 			// Enforcement mode
-			EnforceQuotas:      config.EnforceCostLimits,
+			BlockOnQuotaExceed: config.EnforceCostLimits,
 		},
 
 		// Cost metrics initialized
@@ -707,6 +715,9 @@ func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
 	if config.Settings.MaxToolOutputChars > 0 {
 		defaults.MaxToolOutputChars = config.Settings.MaxToolOutputChars
 	}
+	if config.Settings.MaxTotalToolOutputChars > 0 {
+		defaults.MaxTotalToolOutputChars = config.Settings.MaxTotalToolOutputChars
+	}
 
 	// Phase 4 timeout configurations
 	if config.Settings.ToolExecutionTimeoutSeconds > 0 {
@@ -826,11 +837,10 @@ func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
 	if config.Settings.MaxCallsPerDay > 0 {
 		defaults.MaxCallsPerDay = config.Settings.MaxCallsPerDay
 	}
-	// EnforceQuotas is a boolean, so we check the YAML value directly (no need for > 0 check)
-	// In YAML it will be true or false, and we respect that choice
-	// For STRICT MODE, the default is already set, so we only override if explicitly in YAML
-	if config.Settings.EnforceQuotas {
-		defaults.EnforceQuotas = true
+	// BlockOnQuotaExceed: true=BLOCK requests when quota exceeded, false=WARN only
+	// Default is true (production-safe), only override if explicitly set in YAML
+	if config.Settings.BlockOnQuotaExceed {
+		defaults.BlockOnQuotaExceed = true
 	}
 
 	// Validate all converted values

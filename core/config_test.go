@@ -197,7 +197,8 @@ func TestValidateCrewConfigRoutingSignalTargetInvalid(t *testing.T) {
 	if err == nil {
 		t.Error("Should validate routing signal targets exist")
 	}
-	if err.Error() != "routing signal from agent 'orchestrator' targets non-existent agent 'non_existent_target'" {
+	// Updated: error message now mentions "agent/group" since parallel groups are supported
+	if err.Error() != "routing signal from agent 'orchestrator' targets non-existent agent/group 'non_existent_target'" {
 		t.Errorf("Wrong error message: %v", err)
 	}
 }

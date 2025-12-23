@@ -64,6 +64,13 @@ type SystemMetrics struct {
 	CacheMisses         int64
 	CacheHitRate        float64
 	AgentMetrics        map[string]*AgentMetrics // Per-agent stats
+
+	// ✅ Crew-level LLM Cost Tracking
+	TotalTokens         int     // Total tokens used across all agents
+	TotalCost           float64 // Total cost in USD across all agents
+	SessionTokens       int     // Tokens in current session (reset on ClearHistory)
+	SessionCost         float64 // Cost in current session
+	LLMCallCount        int     // Total LLM API calls made
 }
 
 // MetricsCollector is the main component for collecting and aggregating metrics
@@ -230,6 +237,70 @@ func (mc *MetricsCollector) RecordAgentExecution(agentID, agentName string, dura
 	} else {
 		agent.ErrorCount++
 	}
+}
+
+// RecordLLMCall records an LLM API call with token usage and cost
+// ✅ Crew-level cost tracking - called after each ExecuteAgent
+func (mc *MetricsCollector) RecordLLMCall(agentID string, tokens int, cost float64) {
+	if !mc.enabled {
+		return
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	mc.systemMetrics.LastUpdated = time.Now()
+	mc.systemMetrics.TotalTokens += tokens
+	mc.systemMetrics.TotalCost += cost
+	mc.systemMetrics.SessionTokens += tokens
+	mc.systemMetrics.SessionCost += cost
+	mc.systemMetrics.LLMCallCount++
+}
+
+// ResetSessionCost resets session-level cost tracking (called on ClearHistory)
+func (mc *MetricsCollector) ResetSessionCost() {
+	if !mc.enabled {
+		return
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	mc.systemMetrics.SessionTokens = 0
+	mc.systemMetrics.SessionCost = 0
+}
+
+// GetSessionCost returns current session cost metrics
+func (mc *MetricsCollector) GetSessionCost() (tokens int, cost float64) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	return mc.systemMetrics.SessionTokens, mc.systemMetrics.SessionCost
+}
+
+// GetTotalCost returns total cost metrics across all sessions
+func (mc *MetricsCollector) GetTotalCost() (tokens int, cost float64, calls int) {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	return mc.systemMetrics.TotalTokens, mc.systemMetrics.TotalCost, mc.systemMetrics.LLMCallCount
+}
+
+// LogCrewCostSummary logs the current crew cost summary
+func (mc *MetricsCollector) LogCrewCostSummary() {
+	if !mc.enabled {
+		return
+	}
+
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	fmt.Printf("[CREW COST] Session: %d tokens ($%.6f) | Total: %d tokens ($%.6f) | LLM Calls: %d\n",
+		mc.systemMetrics.SessionTokens,
+		mc.systemMetrics.SessionCost,
+		mc.systemMetrics.TotalTokens,
+		mc.systemMetrics.TotalCost,
+		mc.systemMetrics.LLMCallCount)
 }
 
 // RecordCacheHit records a cache hit

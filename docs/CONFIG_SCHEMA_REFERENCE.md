@@ -114,8 +114,13 @@
                     "oneOf": [
                       {
                         "type": "string",
-                        "description": "Target agent ID",
+                        "description": "Target agent ID or parallel group name",
                         "pattern": "^[a-z0-9-_]{3,50}$"
+                      },
+                      {
+                        "type": "string",
+                        "description": "Empty string for termination signal",
+                        "const": ""
                       },
                       {
                         "type": "null",
@@ -149,6 +154,42 @@
                   "type": "null"
                 }
               ]
+            }
+          }
+        },
+        "parallel_groups": {
+          "type": "object",
+          "description": "Groups of agents that execute in parallel",
+          "patternProperties": {
+            "^[a-z0-9-_]{3,50}$": {
+              "type": "object",
+              "required": ["agents"],
+              "properties": {
+                "agents": {
+                  "type": "array",
+                  "description": "List of agent IDs to run in parallel",
+                  "minItems": 2,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-_]{3,50}$"
+                  },
+                  "example": ["student", "reporter"]
+                },
+                "wait_for_all": {
+                  "type": "boolean",
+                  "description": "Wait for all agents to complete (true) or just the first (false)",
+                  "default": false,
+                  "example": false
+                },
+                "timeout_seconds": {
+                  "type": "integer",
+                  "description": "Timeout for parallel group execution",
+                  "minimum": 1,
+                  "maximum": 600,
+                  "default": 30,
+                  "example": 30
+                }
+              }
             }
           }
         },
@@ -398,9 +439,16 @@ Examples:
 
 4. **Routing Validation**
    ```
-   All signal targets must be in agents array (or null)
+   All signal targets must be in agents array OR parallel_groups (or null/"")
    All default targets must be in agents array (or null)
    agent_behaviors keys must be in agents array
+   ```
+
+5. **Parallel Groups Validation**
+   ```
+   All agents in parallel_groups must exist in agents array
+   Each parallel group must have at least 2 agents
+   timeout_seconds: 1 ≤ value ≤ 600
    ```
 
 ### agent.yaml Validation Rules
@@ -515,6 +563,64 @@ routing:
     finalizer:
       is_terminal: true
       description: "Finalizer is the endpoint"
+```
+
+### Parallel Groups crew.yaml
+
+```yaml
+version: "1.0"
+name: parallel-crew
+description: Crew with parallel agent execution
+
+entry_point: teacher
+
+agents:
+  - teacher
+  - student
+  - reporter
+
+settings:
+  max_handoffs: 30
+  max_rounds: 30
+
+routing:
+  signals:
+    teacher:
+      - signal: "[QUESTION]"
+        target: parallel_question    # Routes to parallel group
+        description: "Ask question to student and notify reporter"
+      - signal: "[END]"
+        target: reporter
+        description: "Exam complete"
+    student:
+      - signal: "[ANSWER]"
+        target: parallel_answer      # Routes to parallel group
+        description: "Answer sent to teacher and reporter"
+    reporter:
+      - signal: "[OK]"
+        target: ""                   # Termination signal (empty string)
+        description: "Acknowledged"
+      - signal: "[DONE]"
+        target: ""
+        description: "Workflow terminates"
+
+  parallel_groups:
+    parallel_question:
+      agents: [student, reporter]    # Both execute simultaneously
+      wait_for_all: false            # Continue when first completes
+      timeout_seconds: 30
+    parallel_answer:
+      agents: [teacher, reporter]
+      wait_for_all: false
+      timeout_seconds: 30
+
+  agent_behaviors:
+    teacher:
+      wait_for_signal: false
+    student:
+      wait_for_signal: false
+    reporter:
+      wait_for_signal: false
 ```
 
 ### Complete Valid agent.yaml

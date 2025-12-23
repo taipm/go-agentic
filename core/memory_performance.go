@@ -98,7 +98,7 @@ func (a *Agent) CheckMemoryQuota() error {
 
 	// Check per-call memory limit
 	if a.Metadata.Memory.CurrentMemoryMB > a.Metadata.Quotas.MaxMemoryPerCall {
-		if a.Metadata.Quotas.EnforceQuotas {
+		if a.Metadata.Quotas.BlockOnQuotaExceed {
 			return fmt.Errorf(
 				"agent '%s': memory quota exceeded - used %d MB, max %d MB per call",
 				a.ID, a.Metadata.Memory.CurrentMemoryMB, a.Metadata.Quotas.MaxMemoryPerCall)
@@ -125,7 +125,7 @@ func (a *Agent) CheckErrorQuota() error {
 
 	// Check consecutive errors
 	if a.Metadata.Performance.ConsecutiveErrors >= a.Metadata.Performance.MaxConsecutiveErrors {
-		if a.Metadata.Quotas.EnforceQuotas {
+		if a.Metadata.Quotas.BlockOnQuotaExceed {
 			return fmt.Errorf(
 				"agent '%s': maximum consecutive errors exceeded - %d errors, max %d allowed",
 				a.ID, a.Metadata.Performance.ConsecutiveErrors, a.Metadata.Performance.MaxConsecutiveErrors)
@@ -136,7 +136,7 @@ func (a *Agent) CheckErrorQuota() error {
 
 	// Check daily error limit
 	if a.Metadata.Performance.ErrorCountToday >= a.Metadata.Performance.MaxErrorsPerDay {
-		if a.Metadata.Quotas.EnforceQuotas {
+		if a.Metadata.Quotas.BlockOnQuotaExceed {
 			return fmt.Errorf(
 				"agent '%s': daily error limit exceeded - %d errors, max %d allowed",
 				a.ID, a.Metadata.Performance.ErrorCountToday, a.Metadata.Performance.MaxErrorsPerDay)

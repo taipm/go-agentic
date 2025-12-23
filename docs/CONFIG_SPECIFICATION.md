@@ -165,6 +165,33 @@ routing:
       agent-id: target-agent-id-hoặc-null
   ```
 
+##### routing.parallel_groups
+
+- **Định nghĩa**: Nhóm agent được kích hoạt đồng thời từ một signal
+- **Cấu trúc**:
+  ```yaml
+  routing:
+    parallel_groups:
+      group-name:
+        agents: [agent1, agent2]       # Danh sách agents chạy song song
+        wait_for_all: boolean          # true=chờ tất cả, false=chỉ cần 1
+        timeout_seconds: integer       # Timeout cho nhóm
+  ```
+- **Ví dụ**:
+  ```yaml
+  routing:
+    signals:
+      teacher:
+        - signal: "[QUESTION]"
+          target: parallel_question    # Target là tên parallel group
+
+    parallel_groups:
+      parallel_question:
+        agents: [student, reporter]
+        wait_for_all: false
+        timeout_seconds: 30
+  ```
+
 ##### routing.agent_behaviors
 - **Định nghĩa**: Hành động riêng của từng agent
 - **Cấu trúc**:
@@ -255,6 +282,84 @@ routing:
     executor:
       is_terminal: true
       description: "Executor is terminal, returns immediately"
+```
+
+#### Parallel Execution Crew (Quiz Exam)
+
+```yaml
+version: "1.0"
+name: quiz-exam-crew
+description: Multi-agent oral exam with parallel execution
+
+entry_point: teacher
+
+agents:
+  - teacher
+  - student
+  - reporter
+
+settings:
+  max_rounds: 30
+  max_handoffs: 30
+
+routing:
+  signals:
+    teacher:
+      - signal: "[QUESTION]"
+        target: parallel_question  # Routes to Student + Reporter
+      - signal: "[END]"
+        target: reporter           # Final report save
+    student:
+      - signal: "[ANSWER]"
+        target: parallel_answer    # Routes to Teacher + Reporter
+    reporter:
+      - signal: "[OK]"
+        target: ""                 # Acknowledge, no routing
+      - signal: "[DONE]"
+        target: ""                 # Terminate workflow
+
+  parallel_groups:
+    parallel_question:
+      agents: [student, reporter]
+      wait_for_all: false
+      timeout_seconds: 30
+    parallel_answer:
+      agents: [teacher, reporter]
+      wait_for_all: false
+      timeout_seconds: 30
+
+  agent_behaviors:
+    teacher:
+      wait_for_signal: false
+    student:
+      wait_for_signal: false
+    reporter:
+      wait_for_signal: false
+```
+
+**Workflow Diagram:**
+
+```text
+┌──────────────┐                      ┌──────────────┐
+│   Teacher    │ ────[QUESTION]────▶  │   Student    │
+│              │                      │              │
+│  Tools:      │                      │  (No tools)  │
+│  - GetStatus │                      │              │
+│  - Record    │ ◀────[ANSWER]─────   │              │
+└──────────────┘                      └──────────────┘
+       │                                     │
+       │ [QUESTION]                          │ [ANSWER]
+       ▼                                     ▼
+┌──────────────┐                      ┌──────────────┐
+│   Reporter   │ ◀───────────────────│   Reporter   │
+│              │                      │   (parallel) │
+│  Tools:      │                      │              │
+│  - GetStatus │                      │              │
+│  - WriteRpt  │                      │              │
+└──────────────┘                      └──────────────┘
+       │
+       │ [END] → Reporter → [DONE] → Terminate
+       ▼
 ```
 
 ---

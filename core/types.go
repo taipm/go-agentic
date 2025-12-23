@@ -100,8 +100,8 @@ type AgentQuotaLimits struct {
 	MaxErrorsPerHour   int     // Error rate: errors/hour
 	MaxErrorsPerDay    int     // Error rate: errors/day
 
-	// Enforcement
-	EnforceQuotas      bool    // true=block, false=warn (default: true for critical agents)
+	// Enforcement - Clear naming: Block requests when quota exceeded
+	BlockOnQuotaExceed bool    // true=BLOCK request when exceeded, false=WARN only (default: true)
 }
 
 // AgentMetadata is the unified metadata hub for agent monitoring
@@ -145,6 +145,11 @@ type Agent struct {
 
 	// ✅ WEEK 2: Unified Agent Metadata (Consolidates cost, memory, performance, and quotas)
 	Metadata *AgentMetadata `json:"-" yaml:"-"` // Unified metadata hub for all agent monitoring
+
+	// ✅ FIX for HIGH Issue #2: System prompt caching to prevent repeated token cost
+	// Cache the built system prompt to avoid rebuilding on every LLM call
+	cachedSystemPrompt string       // Cached built system prompt
+	systemPromptMutex  sync.RWMutex // Protect concurrent access to cache
 
 	// ✅ LEGACY: Cost Control Configuration (Week 1) - For backward compatibility
 	// These fields are now stored in Metadata.Quotas and Metadata.Cost
@@ -203,7 +208,8 @@ type Crew struct {
 	MaxRounds               int
 	MaxHandoffs             int
 	ParallelAgentTimeout    time.Duration // ✅ FIX #4: Timeout for parallel agent execution (default: 60s)
-	MaxToolOutputChars      int           // ✅ FIX #5: Max characters in tool output (default: 2000)
+	MaxToolOutputChars      int           // ✅ FIX #5: Max characters per tool output (default: 2000)
+	MaxTotalToolOutputChars int           // ✅ FIX: Max TOTAL characters for all tools combined (default: 4000)
 	Routing                 *RoutingConfig // Routing configuration from crew.yaml
 }
 

@@ -31,12 +31,13 @@ settings:
   client_cache_ttl_minutes: 60              # How long to cache LLM clients (minutes)
   graceful_shutdown_check_millis: 100       # Check shutdown signal interval (ms)
 
-  # ===== SIZE LIMITS (all 8 required in Strict Mode) =====
+  # ===== SIZE LIMITS (all 9 required in Strict Mode) =====
   max_input_size_kb: 10                     # Prevent DoS: max user input (KB)
   min_agent_id_length: 1                    # Prevent empty agent IDs (characters)
   max_agent_id_length: 128                  # Prevent unbounded ID growth (characters)
   max_request_body_size_kb: 100             # Prevent memory exhaustion: max HTTP body (KB)
   max_tool_output_chars: 2000               # Truncate large tool outputs (characters)
+  max_total_tool_output_chars: 4000         # Max TOTAL characters for all tools combined
   stream_buffer_size: 100                   # Buffer capacity for streaming chunks
   max_stored_requests: 1000                 # Keep max N requests in memory for debugging
 

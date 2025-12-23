@@ -45,7 +45,7 @@ func main() {
 	fmt.Printf("    - MaxTokensPerDay: %d\n", agent.Metadata.Quotas.MaxTokensPerDay)
 	fmt.Printf("    - MaxCostPerDay: $%.2f\n", agent.Metadata.Quotas.MaxCostPerDay)
 	fmt.Printf("    - CostAlertPercent: %.0f%%\n", agent.Metadata.Quotas.CostAlertPercent*100)
-	fmt.Printf("    - EnforceQuotas: %v\n", agent.Metadata.Quotas.EnforceQuotas)
+	fmt.Printf("    - BlockOnQuotaExceed: %v\n", agent.Metadata.Quotas.BlockOnQuotaExceed)
 
 	fmt.Printf("\n  Current Metrics:\n")
 	fmt.Printf("    - CallCount: %d\n", agent.Metadata.Cost.CallCount)

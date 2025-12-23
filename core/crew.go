@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // copyHistory creates a deep copy of message history to ensure thread safety
@@ -54,7 +52,14 @@ func validateFieldType(tool *Tool, fieldName string, fieldValue interface{}, pro
 	// Validate based on expected type
 	switch expectedType {
 	case "string":
-		if _, ok := fieldValue.(string); !ok {
+		// Allow numeric types to be coerced to string (common with text-parsed tool calls from Ollama)
+		switch fieldValue.(type) {
+		case string:
+			// Already a string, valid
+		case float64, int, int64, int32:
+			// Numeric types can be coerced to string - validation passes
+			// Handler should do the actual conversion
+		default:
 			return fmt.Errorf("tool '%s': parameter '%s' should be string, got %T", tool.Name, fieldName, fieldValue)
 		}
 	case "number", "integer":
@@ -521,10 +526,98 @@ func (ce *CrewExecutor) GetHistory() []Message {
 	return historyCopy
 }
 
+// estimateHistoryTokens estimates total tokens in conversation history
+// Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
+// ✅ FIX for HIGH Issue #1: Cost leak from unbounded history
+func (ce *CrewExecutor) estimateHistoryTokens() int {
+	total := 0
+	for _, msg := range ce.history {
+		// Role overhead (~4 tokens) + content tokens
+		total += 4 + (len(msg.Content)+3)/4
+	}
+	return total
+}
+
+// trimHistoryIfNeeded trims conversation history to fit within context window
+// Uses ce.defaults.MaxContextWindow and ce.defaults.ContextTrimPercent
+// ✅ FIX for HIGH Issue #1: Prevents unbounded history growth causing cost leakage
+// Strategy:
+// - Always keep first message (initial context)
+// - Always keep recent messages (most relevant)
+// - Remove oldest messages in middle when over limit
+func (ce *CrewExecutor) trimHistoryIfNeeded() {
+	if ce.defaults == nil || len(ce.history) <= 2 {
+		return
+	}
+
+	currentTokens := ce.estimateHistoryTokens()
+	maxTokens := ce.defaults.MaxContextWindow
+
+	// Check if within limit
+	if currentTokens <= maxTokens {
+		return
+	}
+
+	// Calculate target after trimming (remove ContextTrimPercent of max)
+	trimPercent := ce.defaults.ContextTrimPercent / 100.0 // Convert from 20.0 to 0.20
+	targetTokens := int(float64(maxTokens) * (1.0 - trimPercent))
+
+	// Calculate how many messages to keep from end
+	// Keep removing from middle until under target
+	keepFromEnd := len(ce.history) - 1
+	tokensFromEnd := 0
+
+	for i := len(ce.history) - 1; i > 0 && tokensFromEnd < targetTokens; i-- {
+		msgTokens := 4 + (len(ce.history[i].Content)+3)/4
+		tokensFromEnd += msgTokens
+		keepFromEnd = len(ce.history) - i
+	}
+
+	// Ensure we keep at least 2 messages from end
+	if keepFromEnd < 2 {
+		keepFromEnd = 2
+	}
+
+	// Build trimmed history: first message + summary + last N messages
+	if len(ce.history) > keepFromEnd+1 {
+		trimmedCount := len(ce.history) - keepFromEnd - 1
+
+		newHistory := make([]Message, 0, keepFromEnd+2)
+
+		// Keep first message
+		newHistory = append(newHistory, ce.history[0])
+
+		// Add summary for trimmed content
+		newHistory = append(newHistory, Message{
+			Role:    "system",
+			Content: fmt.Sprintf("[%d earlier messages trimmed to fit context window]", trimmedCount),
+		})
+
+		// Keep last N messages
+		startIdx := len(ce.history) - keepFromEnd
+		newHistory = append(newHistory, ce.history[startIdx:]...)
+
+		newTokens := 0
+		for _, msg := range newHistory {
+			newTokens += 4 + (len(msg.Content)+3)/4
+		}
+
+		log.Printf("[CONTEXT TRIM] %d→%d messages, ~%d→%d tokens (saved ~%d tokens)",
+			len(ce.history), len(newHistory), currentTokens, newTokens, currentTokens-newTokens)
+
+		ce.history = newHistory
+	}
+}
+
 // ClearHistory clears the conversation history
 // Useful for starting fresh conversations
 func (ce *CrewExecutor) ClearHistory() {
 	ce.history = []Message{}
+
+	// ✅ Reset session cost tracking when starting fresh
+	if ce.Metrics != nil {
+		ce.Metrics.ResetSessionCost()
+	}
 }
 
 // ExecuteStream runs the crew with streaming events
@@ -565,6 +658,9 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		// Send agent start event
 		streamChan <- NewStreamEvent("agent_start", currentAgent.Name, fmt.Sprintf("🔄 Starting %s...", currentAgent.Name))
 
+		// ✅ FIX for HIGH Issue #1: Trim history before LLM call to prevent cost leakage
+		ce.trimHistoryIfNeeded()
+
 		// ✅ FIX for Issue #14: Start tracking agent execution time
 		agentStartTime := time.Now()
 
@@ -585,6 +681,11 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		// ✅ FIX for Issue #14: Record successful agent execution
 		if ce.Metrics != nil {
 			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, true)
+
+			// ✅ Crew-level cost tracking: aggregate agent's last LLM call cost
+			tokens, cost := currentAgent.GetLastCallCost()
+			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
+			ce.Metrics.LogCrewCostSummary()
 		}
 
 		// Send agent response event
@@ -633,8 +734,17 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			continue
 		}
 
+		// ✅ FIX: Check for TERMINATION signals FIRST (target="")
+		// If agent emits a termination signal like [KẾT THÚC THI], workflow should end
+		terminationResult := ce.checkTerminationSignal(currentAgent, response.Content)
+		if terminationResult != nil && terminationResult.ShouldTerminate {
+			streamChan <- NewStreamEvent("terminate", currentAgent.Name,
+				fmt.Sprintf("[TERMINATE] Workflow ended by signal: %s", terminationResult.Signal))
+			return nil
+		}
+
 		// Check for routing signals from current agent (config-driven)
-		// This is checked FIRST because if agent emits a routing signal,
+		// This is checked AFTER termination because if agent emits a routing signal,
 		// it means it wants to hand off to another agent, not pause
 		nextAgent := ce.findNextAgentBySignal(currentAgent, response.Content)
 		if nextAgent != nil {
@@ -742,6 +852,9 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 	handoffCount := 0
 
 	for {
+		// ✅ FIX for HIGH Issue #1: Trim history before LLM call to prevent cost leakage
+		ce.trimHistoryIfNeeded()
+
 		// Execute current agent
 		log.Printf("[AGENT START] %s (%s)", currentAgent.Name, currentAgent.ID)
 		response, err := ExecuteAgent(ctx, currentAgent, input, ce.history, ce.apiKey)
@@ -750,6 +863,13 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 			return nil, fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
 		}
 		log.Printf("[AGENT END] %s (%s) - Success", currentAgent.Name, currentAgent.ID)
+
+		// ✅ Crew-level cost tracking: aggregate agent's last LLM call cost
+		if ce.Metrics != nil {
+			tokens, cost := currentAgent.GetLastCallCost()
+			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
+			ce.Metrics.LogCrewCostSummary()
+		}
 
 		if ce.Verbose {
 			fmt.Printf("\n[%s]: %s\n", currentAgent.Name, response.Content)
@@ -783,8 +903,21 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 			continue
 		}
 
+		// ✅ FIX: Check for TERMINATION signals FIRST (target="")
+		// If agent emits a termination signal like [KẾT THÚC THI], workflow should end
+		terminationResult := ce.checkTerminationSignal(currentAgent, response.Content)
+		if terminationResult != nil && terminationResult.ShouldTerminate {
+			log.Printf("[TERMINATE] Workflow ended by signal: %s", terminationResult.Signal)
+			return &CrewResponse{
+				AgentID:    currentAgent.ID,
+				AgentName:  currentAgent.Name,
+				Content:    response.Content,
+				IsTerminal: true,
+			}, nil
+		}
+
 		// Check for routing signals from current agent (config-driven)
-		// This is checked FIRST because if agent emits a routing signal,
+		// This is checked AFTER termination because if agent emits a routing signal,
 		// it means it wants to hand off to another agent, not pause
 		nextAgent := ce.findNextAgentBySignal(currentAgent, response.Content)
 		if nextAgent != nil {
@@ -888,620 +1021,4 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 		currentAgent = nextAgent
 		input = response.Content
 	}
-}
-
-// calculateToolTimeout determines the appropriate timeout for the next tool
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) calculateToolTimeout(tracker *TimeoutTracker, toolName string) time.Duration {
-	if tracker != nil && ce.ToolTimeouts != nil {
-		perToolTimeout := ce.ToolTimeouts.GetToolTimeout(toolName)
-		return tracker.CalculateToolTimeout(ce.ToolTimeouts.DefaultToolTimeout, perToolTimeout)
-	}
-	if ce.ToolTimeouts != nil {
-		return ce.ToolTimeouts.GetToolTimeout(toolName)
-	}
-	return 5 * time.Second
-}
-
-// logToolStart logs tool execution start with timeout details
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) logToolStart(tool *Tool, agent *Agent, timeout time.Duration, tracker *TimeoutTracker) {
-	if tracker != nil {
-		remaining := tracker.GetRemainingTime()
-		log.Printf("[TOOL START] %s <- %s (timeout: %v, remaining: %v)", tool.Name, agent.ID, timeout, remaining)
-	} else {
-		log.Printf("[TOOL START] %s <- %s (timeout: %v)", tool.Name, agent.ID, timeout)
-	}
-}
-
-// recordToolMetrics records execution metrics and detects timeouts
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) recordToolMetrics(tool *Tool, duration time.Duration, err error, startTime, endTime time.Time) {
-	timedOut := err != nil && errors.Is(err, context.DeadlineExceeded)
-	if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
-		status := ce.getToolExecutionStatus(timedOut, err)
-		ce.ToolTimeouts.ExecutionMetrics = append(ce.ToolTimeouts.ExecutionMetrics, ExecutionMetrics{
-			ToolName:  tool.Name,
-			Duration:  duration,
-			Status:    status,
-			TimedOut:  timedOut,
-			StartTime: startTime,
-			EndTime:   endTime,
-		})
-	}
-	if ce.Metrics != nil {
-		success := err == nil
-		ce.Metrics.RecordToolExecution(tool.Name, duration, success)
-	}
-}
-
-// getToolExecutionStatus determines the status based on error type
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) getToolExecutionStatus(timedOut bool, err error) string {
-	if timedOut {
-		return "timeout"
-	}
-	if err != nil {
-		return "error"
-	}
-	return "success"
-}
-
-// handleToolNotFound logs and records tool not found error
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) handleToolNotFound(call ToolCall) ToolResult {
-	log.Printf("[TOOL ERROR] %s - Tool not found", call.ToolName)
-	return ToolResult{
-		ToolName: call.ToolName,
-		Status:   "error",
-		Output:   fmt.Sprintf("Tool %s not found", call.ToolName),
-	}
-}
-
-// handleSequenceTimeout logs and returns timeout result
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) handleSequenceTimeout(tool *Tool, agent *Agent) ToolResult {
-	log.Printf("[TOOL TIMEOUT] %s <- %s - Sequence timeout exceeded", tool.Name, agent.ID)
-	return ToolResult{
-		ToolName: tool.Name,
-		Status:   "error",
-		Output:   "Tool execution timeout: sequence timeout exceeded",
-	}
-}
-
-// handleToolExecutionError logs and returns tool execution error
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) handleToolExecutionError(tool *Tool, err error, duration time.Duration, timedOut bool) ToolResult {
-	if timedOut {
-		log.Printf("[TOOL TIMEOUT] %s - %v (%v)", tool.Name, err, duration)
-	} else {
-		log.Printf("[TOOL ERROR] %s - %v", tool.Name, err)
-	}
-	return ToolResult{
-		ToolName: tool.Name,
-		Status:   "error",
-		Output:   err.Error(),
-	}
-}
-
-// handleToolExecutionSuccess logs and returns tool execution success
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) handleToolExecutionSuccess(tool *Tool, duration time.Duration, output string) ToolResult {
-	log.Printf("[TOOL SUCCESS] %s -> %d chars (%v)", tool.Name, len(output), duration)
-	return ToolResult{
-		ToolName: tool.Name,
-		Status:   "success",
-		Output:   output,
-	}
-}
-
-// setupSequenceContext creates and configures the sequence execution context
-// ✅ FIX #4: Helper function to reduce cognitive complexity
-func (ce *CrewExecutor) setupSequenceContext(ctx context.Context) (context.Context, context.CancelFunc, *TimeoutTracker) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	var sequenceCtx context.Context
-	var sequenceCancel context.CancelFunc
-	var timeoutTracker *TimeoutTracker
-
-	if ce.ToolTimeouts != nil && ce.ToolTimeouts.SequenceTimeout > 0 {
-		timeoutTracker = NewTimeoutTracker(ce.ToolTimeouts.SequenceTimeout, ce.ToolTimeouts.OverheadBudget)
-		sequenceCtx, sequenceCancel = context.WithTimeout(ctx, ce.ToolTimeouts.SequenceTimeout)
-	} else {
-		// No sequence timeout configured, use context as-is
-		sequenceCtx = ctx
-		sequenceCancel = func() {} // no-op cancel for defer safety
-	}
-
-	return sequenceCtx, sequenceCancel, timeoutTracker
-}
-
-// executeCalls executes tool calls from an agent with per-tool and sequence timeouts
-// ✅ FIX for Issue #11 (Sequential Tool Timeout): Add timeout protection for hanging tools
-// ✅ FIX #4: Enhanced timeout management with remaining time calculation and overhead tracking
-func (ce *CrewExecutor) executeCalls(ctx context.Context, calls []ToolCall, agent *Agent) []ToolResult {
-	var results []ToolResult
-
-	toolMap := make(map[string]*Tool)
-	for _, tool := range agent.Tools {
-		toolMap[tool.Name] = tool
-	}
-
-	sequenceCtx, sequenceCancel, timeoutTracker := ce.setupSequenceContext(ctx)
-	defer sequenceCancel()
-
-	// Reset metrics for this execution
-	if ce.ToolTimeouts != nil && ce.ToolTimeouts.CollectMetrics {
-		ce.ToolTimeouts.ExecutionMetrics = []ExecutionMetrics{}
-	}
-
-	for _, call := range calls {
-		tool, ok := toolMap[call.ToolName]
-		if !ok {
-			results = append(results, ce.handleToolNotFound(call))
-			continue
-		}
-
-		// ✅ FIX for Issue #11: Check sequence deadline before executing tool
-		select {
-		case <-sequenceCtx.Done():
-			results = append(results, ce.handleSequenceTimeout(tool, agent))
-			return results
-		default:
-		}
-
-		// ✅ FIX #4: Calculate timeout with remaining sequence time
-		toolTimeout := ce.calculateToolTimeout(timeoutTracker, tool.Name)
-		ce.logToolStart(tool, agent, toolTimeout, timeoutTracker)
-
-		toolCtx, toolCancel := context.WithTimeout(sequenceCtx, toolTimeout)
-		startTime := time.Now()
-		output, err := safeExecuteTool(toolCtx, tool, call.Arguments)
-		endTime := time.Now()
-		duration := endTime.Sub(startTime)
-		toolCancel()
-
-		// ✅ FIX #4: Record tool execution in timeout tracker
-		if timeoutTracker != nil {
-			timeoutTracker.RecordToolExecution(duration)
-		}
-
-		// ✅ FIX #4: Record metrics
-		ce.recordToolMetrics(tool, duration, err, startTime, endTime)
-
-		// ✅ FIX #4: Check if approaching timeout
-		if timeoutTracker != nil && timeoutTracker.IsTimeoutWarning() {
-			remaining := timeoutTracker.GetRemainingTime()
-			log.Printf("[TIMEOUT WARNING] Sequence timeout approaching - only %v remaining", remaining)
-		}
-
-		// Handle tool execution result
-		timedOut := err != nil && errors.Is(err, context.DeadlineExceeded)
-		if err != nil {
-			results = append(results, ce.handleToolExecutionError(tool, err, duration, timedOut))
-		} else {
-			results = append(results, ce.handleToolExecutionSuccess(tool, duration, output))
-		}
-
-		// Note: Not hiding embedding vectors anymore - agents need to see vectors to extract and use them
-		// Verbose output is handled by the caller, not here
-	}
-
-	return results
-}
-
-// findAgentByID finds an agent by its ID
-func (ce *CrewExecutor) findAgentByID(id string) *Agent {
-	for _, agent := range ce.crew.Agents {
-		if agent.ID == id {
-			return agent
-		}
-	}
-	return nil
-}
-
-// signalMatchesContent checks if a signal appears in response content (handles variations)
-// ✅ FIX for signal matching: Handles "[ KẾT THÚC ]" matching "[KẾT THÚC]"
-func signalMatchesContent(signal, content string) bool {
-	// Exact match
-	if strings.Contains(content, signal) {
-		return true
-	}
-
-	// Normalized match (trim whitespace)
-	normalizedSignal := strings.TrimSpace(signal)
-	if strings.Contains(content, normalizedSignal) {
-		return true
-	}
-
-	// Handle bracket variations like "[ SIGNAL ]" vs "[SIGNAL]"
-	if strings.HasPrefix(signal, "[") && strings.HasSuffix(signal, "]") {
-		innerSignal := strings.TrimPrefix(strings.TrimSuffix(signal, "]"), "[")
-		innerSignal = strings.TrimSpace(innerSignal)
-		// Check if inner signal appears in brackets (with any spacing)
-		patterns := []string{
-			"[" + innerSignal + "]",
-			"[ " + innerSignal + " ]",
-			"[  " + innerSignal + "  ]",
-		}
-		for _, pattern := range patterns {
-			if strings.Contains(content, pattern) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// findNextAgentBySignal finds the next agent based on routing signals (config-driven)
-func (ce *CrewExecutor) findNextAgentBySignal(current *Agent, responseContent string) *Agent {
-	if ce.crew.Routing == nil {
-		return nil
-	}
-
-	// Get signals defined for current agent in config
-	signals, exists := ce.crew.Routing.Signals[current.ID]
-	if !exists || len(signals) == 0 {
-		return nil
-	}
-
-	// Check which signal is present in the response
-	for _, sig := range signals {
-		if sig.Target == "" {
-			continue // Skip signals without target
-		}
-
-		// Check if signal matches response content
-		if signalMatchesContent(sig.Signal, responseContent) {
-			// Found matching signal, find the target agent
-			nextAgent := ce.findAgentByID(sig.Target)
-			if nextAgent != nil {
-				log.Printf("[ROUTING] %s -> %s (signal: %s)", current.ID, nextAgent.ID, sig.Signal)
-			}
-			return nextAgent
-		}
-	}
-
-	return nil
-}
-
-// getAgentBehavior retrieves behavior config for an agent
-func (ce *CrewExecutor) getAgentBehavior(agentID string) *AgentBehavior {
-	if ce.crew.Routing == nil || ce.crew.Routing.AgentBehaviors == nil {
-		return nil
-	}
-	behavior, exists := ce.crew.Routing.AgentBehaviors[agentID]
-	if !exists {
-		return nil
-	}
-	return &behavior
-}
-
-// findNextAgent finds the next appropriate agent for handoff
-func (ce *CrewExecutor) findNextAgent(current *Agent) *Agent {
-	// First, try to use handoff_targets from current agent config
-	if len(current.HandoffTargets) > 0 {
-		// Create a map of agents by ID for quick lookup
-		agentMap := make(map[string]*Agent)
-		for _, agent := range ce.crew.Agents {
-			agentMap[agent.ID] = agent
-		}
-
-		// Try to find the first available handoff target
-		for _, targetID := range current.HandoffTargets {
-			if agent, exists := agentMap[targetID]; exists && agent.ID != current.ID {
-				log.Printf("[ROUTING] %s -> %s (handoff_targets)", current.ID, agent.ID)
-				return agent
-			}
-		}
-	}
-
-	// Fallback: Find any other agent (not terminal-only strategy)
-	for _, agent := range ce.crew.Agents {
-		if agent.ID != current.ID {
-			log.Printf("[ROUTING] %s -> %s (fallback)", current.ID, agent.ID)
-			return agent
-		}
-	}
-
-	log.Printf("[ROUTING] No next agent found for %s", current.ID)
-	return nil
-}
-
-// DefaultParallelAgentTimeout is the default timeout for each parallel agent execution
-// ✅ FIX #4: Now uses Crew.ParallelAgentTimeout field for configurability
-const DefaultParallelAgentTimeout = 60 * time.Second
-
-// ExecuteParallelStream executes multiple agents in parallel and collects their results
-// Used for parallel execution of agents within a parallel group
-func (ce *CrewExecutor) ExecuteParallelStream(
-	ctx context.Context,
-	input string,
-	agents []*Agent,
-	streamChan chan *StreamEvent,
-) (map[string]*AgentResponse, error) {
-
-	// Create a WaitGroup for synchronization
-	var wg sync.WaitGroup
-	resultMap := make(map[string]*AgentResponse)
-	resultChan := make(chan *AgentResponse, len(agents))
-	errorChan := make(chan error, len(agents))
-	mu := sync.Mutex{}
-
-	// ✅ Phase 5: Determine timeout - use defaults from HardcodedDefaults
-	parallelTimeout := ce.defaults.ParallelAgentTimeout
-	if parallelTimeout <= 0 {
-		parallelTimeout = 60 * time.Second // Fallback
-	}
-
-	// Launch all agents in parallel using goroutines
-	for _, agent := range agents {
-		wg.Add(1)
-		go func(ag *Agent) {
-			defer wg.Done()
-
-			// Create timeout context for this agent (✅ FIX #4: Now configurable)
-			agentCtx, cancel := context.WithTimeout(ctx, parallelTimeout)
-			defer cancel()
-
-			// Send agent start event
-			streamChan <- NewStreamEvent("agent_start", ag.Name,
-				fmt.Sprintf("🔄 [Parallel] %s starting...", ag.Name))
-
-			// Execute the agent with timeout
-			response, err := ExecuteAgent(agentCtx, ag, input, ce.history, ce.apiKey)
-			if err != nil {
-				streamChan <- NewStreamEvent("error", ag.Name,
-					fmt.Sprintf("❌ Agent failed: %v", err))
-				errorChan <- fmt.Errorf("agent %s failed: %w", ag.ID, err)
-				return
-			}
-
-			// Send agent response event
-			streamChan <- NewStreamEvent("agent_response", ag.Name, response.Content)
-
-			// Execute tool calls if any
-			if len(response.ToolCalls) > 0 {
-				for _, toolCall := range response.ToolCalls {
-					streamChan <- NewStreamEvent("tool_start", ag.Name,
-						fmt.Sprintf("🔧 [Tool] %s → Executing...", toolCall.ToolName))
-				}
-
-				toolResults := ce.executeCalls(ctx, response.ToolCalls, ag)
-
-				for _, result := range toolResults {
-					status := "✅"
-					if result.Status == "error" {
-						status = "❌"
-					}
-					streamChan <- NewStreamEvent("tool_result", ag.Name,
-						fmt.Sprintf("%s [Tool] %s → %s", status, result.ToolName, result.Output))
-				}
-			}
-
-			resultChan <- response
-		}(agent)
-	}
-
-	// Wait for all agents to complete
-	wg.Wait()
-	close(resultChan)
-	close(errorChan)
-
-	// Collect results
-	for result := range resultChan {
-		mu.Lock()
-		resultMap[result.AgentID] = result
-		mu.Unlock()
-	}
-
-	// Check for errors
-	var errors []error
-	for err := range errorChan {
-		errors = append(errors, err)
-	}
-
-	// Return partial results if some agents succeeded
-	if len(resultMap) > 0 {
-		if len(errors) > 0 {
-			streamChan <- NewStreamEvent("warning", "system",
-				fmt.Sprintf("⚠️ %d agents failed, continuing with %d results",
-					len(errors), len(resultMap)))
-		}
-		return resultMap, nil
-	}
-
-	// All agents failed
-	if len(errors) > 0 {
-		return nil, fmt.Errorf("parallel execution failed: %v", errors[0])
-	}
-
-	return resultMap, nil
-}
-
-// ExecuteParallel executes multiple agents in parallel for Non-Stream mode
-// Uses errgroup for automatic context propagation and goroutine cleanup
-// If any goroutine errors, all others are cancelled automatically
-func (ce *CrewExecutor) ExecuteParallel(
-	ctx context.Context,
-	input string,
-	agents []*Agent,
-) (map[string]*AgentResponse, error) {
-
-	// ✅ FIX for Issue #3 (Goroutine Leak): Use errgroup for automatic context propagation
-	// Create errgroup with context cancellation support
-	// If any goroutine errors, all others are cancelled automatically
-	g, gctx := errgroup.WithContext(ctx)
-
-	// ✅ Phase 5: Determine timeout - use defaults from HardcodedDefaults
-	// ✅ FIX #4: Now uses configurable Crew.ParallelAgentTimeout
-	parallelTimeout := ce.defaults.ParallelAgentTimeout
-	if parallelTimeout <= 0 {
-		parallelTimeout = 60 * time.Second // Fallback
-	}
-
-	// Thread-safe result map
-	resultMap := make(map[string]*AgentResponse)
-	resultMutex := sync.Mutex{}
-
-	// Launch all agents in parallel
-	for _, agent := range agents {
-		ag := agent  // Capture for closure (important!)
-
-		g.Go(func() error {
-			if ce.Verbose {
-				fmt.Printf("\n🔄 [Parallel] %s starting...\n", ag.Name)
-			}
-
-			// Create timeout context for this agent
-			// gctx automatically propagates cancellation from parent or if another goroutine errors
-			agentCtx, cancel := context.WithTimeout(gctx, parallelTimeout)
-			defer cancel()
-
-			// Execute the agent with timeout
-			// If agentCtx is cancelled, ExecuteAgent should return immediately
-			response, err := ExecuteAgent(agentCtx, ag, input, ce.history, ce.apiKey)
-			if err != nil {
-				if ce.Verbose {
-					fmt.Printf("❌ [Parallel] %s failed: %v\n", ag.Name, err)
-				}
-				// Return error - this will cancel all other goroutines automatically
-				return fmt.Errorf("agent %s failed: %w", ag.ID, err)
-			}
-
-			if ce.Verbose {
-				fmt.Printf("\n[%s]: %s\n", ag.Name, response.Content)
-			}
-
-			// Execute tool calls if any
-			if len(response.ToolCalls) > 0 {
-				// Pass agentCtx to executeCalls for proper cancellation support
-				toolResults := ce.executeCalls(agentCtx, response.ToolCalls, ag)
-
-				if ce.Verbose {
-					resultText := ce.formatToolResults(toolResults)
-					fmt.Println(resultText)
-				}
-			}
-
-			// Store result thread-safely
-			resultMutex.Lock()
-			resultMap[response.AgentID] = response
-			resultMutex.Unlock()
-
-			return nil  // ✅ Goroutine completes, cleaned up automatically
-		})
-	}
-
-	// Wait for all goroutines to complete
-	// Automatically cancels remaining goroutines if any error occurs
-	// Guaranteed cleanup: no goroutines left behind
-	err := g.Wait()
-
-	// Return results even if some agents failed (graceful degradation)
-	if len(resultMap) > 0 {
-		if err != nil && ce.Verbose {
-			// Some agents failed, but we have partial results
-			fmt.Printf("⚠️ Parallel execution had errors, but returning %d results\n",
-				len(resultMap))
-		}
-		return resultMap, nil
-	}
-
-	// All agents failed
-	if err != nil {
-		return nil, fmt.Errorf("parallel execution failed: %w", err)
-	}
-
-	// Should not reach here (if all agents fail, err != nil from g.Wait())
-	return nil, fmt.Errorf("parallel execution produced no results")
-}
-
-// findParallelGroup finds a parallel group configuration for the given agent
-// Returns the parallel group if the agent's signal matches a parallel group target
-func (ce *CrewExecutor) findParallelGroup(agentID string, signalContent string) *ParallelGroupConfig {
-	if ce.crew.Routing == nil || ce.crew.Routing.ParallelGroups == nil {
-		return nil
-	}
-
-	// Check if this agent emits a signal that targets a parallel group
-	if signals, exists := ce.crew.Routing.Signals[agentID]; exists {
-		for _, signal := range signals {
-			// Check if the agent's response contains the signal
-			if strings.Contains(signalContent, signal.Signal) {
-				// Check if this signal targets a parallel group
-				if parallelGroup, exists := ce.crew.Routing.ParallelGroups[signal.Target]; exists {
-					return &parallelGroup
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// aggregateParallelResults combines results from multiple parallel agents into a single input
-func (ce *CrewExecutor) aggregateParallelResults(results map[string]*AgentResponse) string {
-	var sb strings.Builder
-
-	sb.WriteString("\n[📊 PARALLEL EXECUTION RESULTS]\n\n")
-
-	for agentID, result := range results {
-		sb.WriteString(fmt.Sprintf("[%s]\n", agentID))
-		sb.WriteString(fmt.Sprintf("%s\n\n", result.Content))
-	}
-
-	sb.WriteString("[END PARALLEL RESULTS]\n")
-
-	return sb.String()
-}
-
-// ToolResult represents the result of executing a tool
-type ToolResult struct {
-	ToolName string
-	Status   string
-	Output   string
-}
-
-// formatToolResults formats tool results for agent feedback
-// ✅ DEPRECATED: Use ce.formatToolResults() method instead (for configurability)
-func formatToolResults(results []ToolResult) string {
-	return defaultFormatToolResults(results, 2000) // Default: 2000 chars
-}
-
-// formatToolResults is a method on CrewExecutor to use configurable MaxToolOutputChars
-// ✅ FIX #5: Uses crew.MaxToolOutputChars field instead of hardcoded constant
-func (ce *CrewExecutor) formatToolResults(results []ToolResult) string {
-	return defaultFormatToolResults(results, ce.crew.MaxToolOutputChars)
-}
-
-// defaultFormatToolResults is the actual implementation shared by both functions
-func defaultFormatToolResults(results []ToolResult, maxOutputChars int) string {
-	// Default to 2000 if not configured
-	if maxOutputChars <= 0 {
-		maxOutputChars = 2000
-	}
-
-	var sb strings.Builder
-
-	sb.WriteString("\n[📊 TOOL EXECUTION RESULTS]\n\n")
-
-	for _, result := range results {
-		sb.WriteString(fmt.Sprintf("%s:\n", result.ToolName))
-		sb.WriteString(fmt.Sprintf("  Status: %s\n", result.Status))
-
-		output := result.Output
-		if len(output) > maxOutputChars {
-			// Truncate output and indicate it was truncated
-			output = output[:maxOutputChars] + fmt.Sprintf("\n\n[⚠️ OUTPUT TRUNCATED - Original size: %d characters]", len(result.Output))
-		}
-		sb.WriteString(fmt.Sprintf("  Output: %s\n\n", output))
-	}
-
-	sb.WriteString("[END RESULTS]\n")
-
-	return sb.String()
 }

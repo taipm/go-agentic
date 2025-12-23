@@ -26,7 +26,7 @@ primary:                                     # [CONFIG|MODEL] Primary LLM provid
 
 # Backup model
 backup:                                        # [CONFIG|MODEL] Fallback LLM provider
-  model: qwen3:1.7b
+  model: qwen2.5-coder:7b
   provider: ollama
   provider_url: http://localhost:11434
 

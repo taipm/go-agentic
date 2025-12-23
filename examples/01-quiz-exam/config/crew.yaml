@@ -1,0 +1,107 @@
+version: "1.0"
+name: quiz-exam-crew
+description: |
+  Thi vấn đáp 2 agents (đơn giản):
+  - Giáo viên (Teacher): Đặt câu hỏi và chấm điểm
+  - Học sinh (Student): Trả lời câu hỏi
+  - Report tự động lưu sau mỗi RecordAnswer
+  - Một vòng thi = 10 câu hỏi
+  - Trên 5 điểm = ĐẠT
+entry_point: teacher
+
+agents:
+  - teacher
+  - student
+  - reporter
+
+routing:
+  # Parallel routing: Teacher/Student -> [multiple targets]
+  signals:
+    teacher:
+      - signal: "[QUESTION]"
+        target: parallel_question  # -> Student + Reporter
+      - signal: "[END]"
+        target: reporter  # Final save
+    student:
+      - signal: "[ANSWER]"
+        target: parallel_answer  # -> Teacher + Reporter
+    reporter:
+      - signal: "[OK]"
+        target: ""  # Just acknowledge, don't route
+      - signal: "[DONE]"
+        target: ""  # Terminate workflow
+
+  # Parallel groups
+  parallel_groups:
+    parallel_question:
+      agents: [student, reporter]
+      wait_for_all: false
+      timeout_seconds: 30
+    parallel_answer:
+      agents: [teacher, reporter]
+      wait_for_all: false
+      timeout_seconds: 30
+
+  agent_behaviors:
+    teacher:
+      wait_for_signal: false
+    student:
+      wait_for_signal: false
+    reporter:
+      wait_for_signal: false
+
+settings:
+  max_rounds: 30      # 10 câu x 2 agents + buffer
+  max_handoffs: 30
+  config_mode: strict
+
+  # Timeout parameters
+  parallel_timeout_seconds: 60
+  tool_execution_timeout_seconds: 5
+  tool_result_timeout_seconds: 30
+  min_tool_timeout_millis: 100
+  stream_chunk_timeout_millis: 500
+  sse_keep_alive_seconds: 30
+  request_store_cleanup_minutes: 5
+  retry_backoff_min_millis: 100
+  retry_backoff_max_seconds: 5
+  client_cache_ttl_minutes: 60
+  graceful_shutdown_check_millis: 100
+
+  # Size limits
+  max_input_size_kb: 10
+  min_agent_id_length: 1
+  max_agent_id_length: 128
+  max_request_body_size_kb: 100
+  max_tool_output_chars: 2000
+  max_total_tool_output_chars: 4000
+  stream_buffer_size: 100
+  max_stored_requests: 1000
+
+  # Threshold
+  timeout_warning_threshold_pct: 20
+
+  # Cost control
+  max_tokens_per_call: 4000
+  max_tokens_per_day: 100000
+  max_cost_per_day: 50.0
+  cost_alert_threshold: 0.80
+
+  # Memory management
+  max_memory_mb: 512
+  max_daily_memory_gb: 10
+  memory_alert_percent: 80.0
+  max_context_window: 32000
+  context_trim_percent: 20.0
+  slow_call_threshold_seconds: 30
+
+  # Performance & reliability
+  max_errors_per_hour: 10
+  max_errors_per_day: 50
+  max_consecutive_errors: 5
+
+  # Rate limiting & quotas
+  max_calls_per_minute: 60
+  max_calls_per_hour: 1000
+  max_calls_per_day: 10000
+  enforce_quotas: true

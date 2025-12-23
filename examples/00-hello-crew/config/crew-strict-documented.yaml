@@ -101,7 +101,7 @@ settings:
   graceful_shutdown_check_millis: 100
 
   # ╔════════════════════════════════════════════════════════════════════════╗
-  # ║                 SIZE LIMITS (8 total - all required)                  ║
+  # ║                 SIZE LIMITS (9 total - all required)                  ║
   # ║   These prevent DoS attacks and unbounded memory growth               ║
   # ╚════════════════════════════════════════════════════════════════════════╝
 
@@ -139,6 +139,13 @@ settings:
   # ├─ Use case: Prevent LLM context overflow from huge outputs
   # └─ Trade-off: 2000 chars ≈ 500 words (enough detail, keeps context small)
   max_tool_output_chars: 2000
+
+  # Maximum Total Tool Output Characters (4000 characters)
+  # ├─ When: Multiple tools called in same turn
+  # ├─ Effect: Total combined output capped at 4000 chars
+  # ├─ Use case: Prevent LLM context overflow from many tool calls
+  # └─ Trade-off: 4000 chars ≈ 1000 words total (keeps context manageable)
+  max_total_tool_output_chars: 4000
 
   # Streaming Buffer Size (100 chunks)
   # ├─ When: Buffering streaming response chunks

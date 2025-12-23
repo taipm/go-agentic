@@ -230,7 +230,7 @@ func FormatMetadataReport(agent *Agent) string {
 		agent.Metadata.Quotas.MaxErrorsPerHour,
 		agent.Metadata.Quotas.MaxErrorsPerDay,
 		agent.Metadata.Performance.MaxConsecutiveErrors,
-		agent.Metadata.Quotas.EnforceQuotas,
+		agent.Metadata.Quotas.BlockOnQuotaExceed,
 		agent.Metadata.Performance.SuccessRate,
 		agent.Metadata.Performance.SuccessfulCalls,
 		agent.Metadata.Performance.FailedCalls,

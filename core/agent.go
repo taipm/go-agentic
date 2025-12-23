@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	providers "github.com/taipm/go-agentic/core/providers"
@@ -347,7 +348,21 @@ func convertToolCallsFromProvider(providerCalls []providers.ToolCall) []ToolCall
 }
 
 // buildSystemPrompt creates the system prompt for the agent
+// ✅ FIX for HIGH Issue #2: Now uses caching to prevent repeated token cost
+// The system prompt is built once and cached for subsequent calls
 func buildSystemPrompt(agent *Agent) string {
+	// Check cache first (thread-safe read)
+	agent.systemPromptMutex.RLock()
+	if agent.cachedSystemPrompt != "" {
+		cached := agent.cachedSystemPrompt
+		agent.systemPromptMutex.RUnlock()
+		return cached
+	}
+	agent.systemPromptMutex.RUnlock()
+
+	// Build the prompt (cache miss)
+	var builtPrompt string
+
 	// If agent has a custom system prompt, use it (with template variable replacement)
 	if agent.SystemPrompt != "" {
 		prompt := agent.SystemPrompt
@@ -356,41 +371,57 @@ func buildSystemPrompt(agent *Agent) string {
 		prompt = strings.ReplaceAll(prompt, "{{role}}", agent.Role)
 		prompt = strings.ReplaceAll(prompt, "{{description}}", agent.Name+" - "+agent.Role)
 		prompt = strings.ReplaceAll(prompt, "{{backstory}}", agent.Backstory)
-		return prompt
-	}
+		builtPrompt = prompt
+	} else {
+		// Otherwise, build a generic prompt
+		var prompt strings.Builder
 
-	// Otherwise, build a generic prompt
-	var prompt strings.Builder
+		prompt.WriteString(fmt.Sprintf("You are %s.\n", agent.Name))
+		prompt.WriteString(fmt.Sprintf("Role: %s\n", agent.Role))
+		prompt.WriteString(fmt.Sprintf("Backstory: %s\n\n", agent.Backstory))
 
-	prompt.WriteString(fmt.Sprintf("You are %s.\n", agent.Name))
-	prompt.WriteString(fmt.Sprintf("Role: %s\n", agent.Role))
-	prompt.WriteString(fmt.Sprintf("Backstory: %s\n\n", agent.Backstory))
+		if len(agent.Tools) > 0 {
+			prompt.WriteString("You have access to the following tools:\n\n")
+			for i, tool := range agent.Tools {
+				prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
+			}
 
-	if len(agent.Tools) > 0 {
-		prompt.WriteString("You have access to the following tools:\n\n")
-		for i, tool := range agent.Tools {
-			prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
+			prompt.WriteString("\nWhen you need to use a tool, write it exactly like this (on its own line):\n")
+			prompt.WriteString("ToolName(param1, param2)\n\n")
+			prompt.WriteString("Examples of tool calls:\n")
+			prompt.WriteString("  GetCPUUsage()\n")
+			prompt.WriteString("  PingHost(192.168.1.100)\n")
+			prompt.WriteString("  CheckServiceStatus(nginx)\n\n")
 		}
 
-		prompt.WriteString("\nWhen you need to use a tool, write it exactly like this (on its own line):\n")
-		prompt.WriteString("ToolName(param1, param2)\n\n")
-		prompt.WriteString("Examples of tool calls:\n")
-		prompt.WriteString("  GetCPUUsage()\n")
-		prompt.WriteString("  PingHost(192.168.1.100)\n")
-		prompt.WriteString("  CheckServiceStatus(nginx)\n\n")
+		prompt.WriteString("Instructions:\n")
+		prompt.WriteString("1. Analyze the input and determine what tools you need\n")
+		prompt.WriteString("2. Use tools to gather information\n")
+		prompt.WriteString("3. Analyze tool results and provide recommendations\n")
+		prompt.WriteString("4. If you need more information, use additional tools\n")
+
+		if agent.IsTerminal {
+			prompt.WriteString("5. You are the FINAL agent in the workflow - after you respond, the conversation ends\n")
+		}
+
+		builtPrompt = prompt.String()
 	}
 
-	prompt.WriteString("Instructions:\n")
-	prompt.WriteString("1. Analyze the input and determine what tools you need\n")
-	prompt.WriteString("2. Use tools to gather information\n")
-	prompt.WriteString("3. Analyze tool results and provide recommendations\n")
-	prompt.WriteString("4. If you need more information, use additional tools\n")
+	// Cache the built prompt (thread-safe write)
+	agent.systemPromptMutex.Lock()
+	agent.cachedSystemPrompt = builtPrompt
+	agent.systemPromptMutex.Unlock()
 
-	if agent.IsTerminal {
-		prompt.WriteString("5. You are the FINAL agent in the workflow - after you respond, the conversation ends\n")
-	}
+	return builtPrompt
+}
 
-	return prompt.String()
+// InvalidateSystemPromptCache clears the cached system prompt
+// Call this if agent configuration changes (tools, role, etc.)
+// ✅ FIX for HIGH Issue #2: Allow cache invalidation when needed
+func (a *Agent) InvalidateSystemPromptCache() {
+	a.systemPromptMutex.Lock()
+	a.cachedSystemPrompt = ""
+	a.systemPromptMutex.Unlock()
 }
 
 
@@ -640,6 +671,11 @@ func (a *Agent) CheckCostLimits(estimatedTokens int) error {
 	return nil // Cost checks passed
 }
 
+// lastCallTokens and lastCallCost track the most recent LLM call for crew-level aggregation
+var lastCallMutex sync.RWMutex
+var lastCallTokensMap = make(map[string]int)     // agentID -> tokens from last call
+var lastCallCostMap = make(map[string]float64)   // agentID -> cost from last call
+
 // UpdateCostMetrics updates the metrics after successful execution
 func (a *Agent) UpdateCostMetrics(actualTokens int, actualCost float64) {
 	a.CostMetrics.Mutex.Lock()
@@ -648,6 +684,12 @@ func (a *Agent) UpdateCostMetrics(actualTokens int, actualCost float64) {
 	a.CostMetrics.CallCount++
 	a.CostMetrics.TotalTokens += actualTokens
 	a.CostMetrics.DailyCost += actualCost
+
+	// ✅ Track last call for crew-level aggregation
+	lastCallMutex.Lock()
+	lastCallTokensMap[a.ID] = actualTokens
+	lastCallCostMap[a.ID] = actualCost
+	lastCallMutex.Unlock()
 
 	// ✅ WEEK 2: Also update unified metadata metrics (for new monitoring system)
 	if a.Metadata != nil {
@@ -658,4 +700,13 @@ func (a *Agent) UpdateCostMetrics(actualTokens int, actualCost float64) {
 		a.Metadata.LastAccessTime = time.Now()
 		a.Metadata.Mutex.Unlock()
 	}
+}
+
+// GetLastCallCost returns the token and cost from the most recent LLM call for this agent
+// ✅ Used by CrewExecutor to aggregate crew-level costs
+func (a *Agent) GetLastCallCost() (tokens int, cost float64) {
+	lastCallMutex.RLock()
+	defer lastCallMutex.RUnlock()
+
+	return lastCallTokensMap[a.ID], lastCallCostMap[a.ID]
 }
