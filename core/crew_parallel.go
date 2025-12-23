@@ -3,6 +3,7 @@ package crewai
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -64,15 +65,29 @@ func (ce *CrewExecutor) ExecuteParallelStream(
 			agentDuration := time.Since(agentStartTime)
 
 			if err != nil {
-				// ✅ Record failed parallel agent execution
-				if ce.Metrics != nil {
-					ce.Metrics.RecordAgentExecution(ag.ID, ag.Name, agentDuration, false)
-				}
-				streamChan <- NewStreamEvent("error", ag.Name,
-					fmt.Sprintf("❌ Agent failed: %v", err))
-				errorChan <- fmt.Errorf("agent %s failed: %w", ag.ID, err)
+			// ✅ ISSUE #2: Update performance metrics FIRST with error
+			if ag.Metadata != nil {
+			ag.UpdatePerformanceMetrics(false, err.Error())
+			}
+
+			// ✅ ISSUE #2: Check error quota (use different variable to avoid shadowing)
+			if quotaErr := ag.CheckErrorQuota(); quotaErr != nil {
+			 log.Printf("[QUOTA] Agent %s exceeded error quota: %v", ag.ID, quotaErr)
+			  streamChan <- NewStreamEvent("error", ag.Name,
+					fmt.Sprintf("Error quota exceeded: %v", quotaErr))
+				errorChan <- quotaErr
 				return
 			}
+
+			// Original error handling
+			if ce.Metrics != nil {
+				ce.Metrics.RecordAgentExecution(ag.ID, ag.Name, agentDuration, false)
+			}
+			streamChan <- NewStreamEvent("error", ag.Name,
+				fmt.Sprintf("❌ Agent failed: %v", err))
+			errorChan <- fmt.Errorf("agent %s failed: %w", ag.ID, err)
+			return
+		}
 
 			// ✅ Record successful parallel agent execution and cost
 			if ce.Metrics != nil {
@@ -81,6 +96,25 @@ func (ce *CrewExecutor) ExecuteParallelStream(
 				// ✅ Crew-level cost tracking for parallel agents
 				tokens, cost := ag.GetLastCallCost()
 				ce.Metrics.RecordLLMCall(ag.ID, tokens, cost)
+
+				// ✅ ISSUE #1: Check memory quota AFTER execution, BEFORE metrics update
+				// Note: Memory is estimated based on token count. Actual usage may differ.
+				// Formula: 1 token ≈ 4 bytes (conservative estimate)
+				memoryUsedMB := (tokens * 4) / 1024 / 1024
+
+				if err := ag.CheckMemoryQuota(); err != nil {
+					log.Printf("[QUOTA] Agent %s exceeded memory quota: %v", ag.ID, err)
+					streamChan <- NewStreamEvent("error", ag.Name,
+						fmt.Sprintf("Memory quota exceeded: %v", err))
+					errorChan <- err
+					return
+				}
+
+				// ✅ ISSUE #3: Update memory & performance metrics
+				if ag.Metadata != nil {
+					ag.UpdateMemoryMetrics(memoryUsedMB, agentDuration.Milliseconds())
+					ag.UpdatePerformanceMetrics(true, "")
+				}
 			}
 
 			// Send agent response event

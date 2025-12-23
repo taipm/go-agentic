@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -55,80 +56,81 @@ type CrewConfig struct {
 		// ✅ Phase 5.1: Configuration Mode (Permissive vs Strict)
 		ConfigMode                  string `yaml:"config_mode"`  // "permissive" (default) or "strict"
 
-		MaxHandoffs                 int    `yaml:"max_handoffs"`
-		MaxRounds                   int    `yaml:"max_rounds"`
-		TimeoutSeconds              int    `yaml:"timeout_seconds"`
+		MaxHandoffs                 int    `yaml:"max_handoffs" required:"strict"`
+		MaxRounds                   int    `yaml:"max_rounds" required:"strict"`
+		TimeoutSeconds              int    `yaml:"timeout_seconds" required:"strict"`
 		Language                    string `yaml:"language"`
 		Organization                string `yaml:"organization"`
 
 		// ✅ Phase 1: Configurable timeouts and output limits
-		ParallelTimeoutSeconds      int `yaml:"parallel_timeout_seconds"`       // FIX #4 hardcoded value
-		MaxToolOutputChars          int `yaml:"max_tool_output_chars"`          // FIX #5 per-tool output limit
-		MaxTotalToolOutputChars     int `yaml:"max_total_tool_output_chars"`    // ✅ FIX: Total limit for all tools combined
+		ParallelTimeoutSeconds      int `yaml:"parallel_timeout_seconds" required:"strict"`       // FIX #4 hardcoded value
+		MaxToolOutputChars          int `yaml:"max_tool_output_chars" required:"strict"`          // FIX #5 per-tool output limit
+		MaxTotalToolOutputChars     int `yaml:"max_total_tool_output_chars" required:"strict"`    // ✅ FIX: Total limit for all tools combined
 
 		// ✅ Phase 4: Extended configuration for all remaining hardcoded values
-		ToolExecutionTimeoutSeconds int `yaml:"tool_execution_timeout_seconds"` // Timeout per tool execution (was 5s)
-		ToolResultTimeoutSeconds    int `yaml:"tool_result_timeout_seconds"`    // Timeout for tool result processing (was 30s)
-		MinToolTimeoutMillis        int `yaml:"min_tool_timeout_millis"`        // Min tool timeout (was 100ms)
-		StreamChunkTimeoutMillis    int `yaml:"stream_chunk_timeout_millis"`    // Stream chunk timeout (was 500ms)
-		SSEKeepAliveSeconds         int `yaml:"sse_keep_alive_seconds"`         // SSE keep-alive (was 30s)
-		RequestStoreCleanupMinutes  int `yaml:"request_store_cleanup_minutes"`  // Cleanup interval (was 5m)
+		ToolExecutionTimeoutSeconds int `yaml:"tool_execution_timeout_seconds" required:"strict"` // Timeout per tool execution (was 5s)
+		ToolResultTimeoutSeconds    int `yaml:"tool_result_timeout_seconds" required:"strict"`    // Timeout for tool result processing (was 30s)
+		MinToolTimeoutMillis        int `yaml:"min_tool_timeout_millis" required:"strict"`        // Min tool timeout (was 100ms)
+		StreamChunkTimeoutMillis    int `yaml:"stream_chunk_timeout_millis" required:"strict"`    // Stream chunk timeout (was 500ms)
+		SSEKeepAliveSeconds         int `yaml:"sse_keep_alive_seconds" required:"strict"`         // SSE keep-alive (was 30s)
+		RequestStoreCleanupMinutes  int `yaml:"request_store_cleanup_minutes" required:"strict"`  // Cleanup interval (was 5m)
 
 		// Retry and backoff
-		RetryBackoffMinMillis       int `yaml:"retry_backoff_min_millis"`       // Initial backoff (was 100ms)
-		RetryBackoffMaxSeconds      int `yaml:"retry_backoff_max_seconds"`      // Max backoff (was 5s)
+		RetryBackoffMinMillis       int `yaml:"retry_backoff_min_millis" required:"strict"`       // Initial backoff (was 100ms)
+		RetryBackoffMaxSeconds      int `yaml:"retry_backoff_max_seconds" required:"strict"`      // Max backoff (was 5s)
 
 		// Input validation limits
-		MaxInputSizeKB              int `yaml:"max_input_size_kb"`              // Max input size (was 10KB)
-		MinAgentIDLength            int `yaml:"min_agent_id_length"`            // Min agent ID length (was 1)
-		MaxAgentIDLength            int `yaml:"max_agent_id_length"`            // Max agent ID length (was 128)
-		MaxRequestBodySizeKB        int `yaml:"max_request_body_size_kb"`       // Max request body (was 100KB)
+		MaxInputSizeKB              int `yaml:"max_input_size_kb" required:"strict"`              // Max input size (was 10KB)
+		MinAgentIDLength            int `yaml:"min_agent_id_length" required:"strict"`            // Min agent ID length (was 1)
+		MaxAgentIDLength            int `yaml:"max_agent_id_length" required:"strict"`            // Max agent ID length (was 128)
+		MaxRequestBodySizeKB        int `yaml:"max_request_body_size_kb" required:"strict"`       // Max request body (was 100KB)
 
 		// Output and storage
-		StreamBufferSize            int `yaml:"stream_buffer_size"`             // Stream buffer size (was 100)
-		MaxStoredRequests           int `yaml:"max_stored_requests"`            // Max stored requests (was 1000)
+		StreamBufferSize            int `yaml:"stream_buffer_size" required:"strict"`             // Stream buffer size (was 100)
+		MaxStoredRequests           int `yaml:"max_stored_requests" required:"strict"`            // Max stored requests (was 1000)
 
 		// Client cache
-		ClientCacheTTLMinutes       int `yaml:"client_cache_ttl_minutes"`       // Client cache TTL (was 60 minutes)
+		ClientCacheTTLMinutes       int `yaml:"client_cache_ttl_minutes" required:"strict"`       // Client cache TTL (was 60 minutes)
 
 		// Graceful shutdown
-		GracefulShutdownCheckMillis int `yaml:"graceful_shutdown_check_millis"` // Shutdown check interval (was 100ms)
-		TimeoutWarningThresholdPct  int `yaml:"timeout_warning_threshold_pct"`  // Timeout warning % (was 20%)
+		GracefulShutdownCheckMillis int `yaml:"graceful_shutdown_check_millis" required:"strict"` // Shutdown check interval (was 100ms)
+		TimeoutWarningThresholdPct  int `yaml:"timeout_warning_threshold_pct" required:"strict"`  // Timeout warning % (was 20%)
 
 		// ✅ WEEK 1: Cost Control Parameters
-		MaxTokensPerCall    int     `yaml:"max_tokens_per_call"`       // Max tokens per request
-		MaxTokensPerDay     int     `yaml:"max_tokens_per_day"`        // Max tokens per 24h
-		MaxCostPerDay       float64 `yaml:"max_cost_per_day"`          // Max cost per day in USD
-		CostAlertThreshold  float64 `yaml:"cost_alert_threshold"`      // Alert at % of budget (0.0-1.0)
+		MaxTokensPerCall    int     `yaml:"max_tokens_per_call" required:"strict"`       // Max tokens per request
+		MaxTokensPerDay     int     `yaml:"max_tokens_per_day" required:"strict"`        // Max tokens per 24h
+		MaxCostPerDay       float64 `yaml:"max_cost_per_day" required:"strict"`          // Max cost per day in USD
+		CostAlertThreshold  float64 `yaml:"cost_alert_threshold" required:"strict"`      // Alert at % of budget (0.0-1.0)
 
 		// ✅ WEEK 2: Memory Management Parameters
-		MaxMemoryMB        int     `yaml:"max_memory_mb"`              // Max memory per request in MB
-		MaxDailyMemoryGB   int     `yaml:"max_daily_memory_gb"`        // Max total memory per 24h in GB
-		MemoryAlertPercent float64 `yaml:"memory_alert_percent"`       // Alert when exceeds this % (0.0-100.0)
-		MaxContextWindow   int     `yaml:"max_context_window"`         // Max context window size in tokens
-		ContextTrimPercent float64 `yaml:"context_trim_percent"`       // Trim % when full (0.0-100.0)
-		SlowCallThresholdSec int   `yaml:"slow_call_threshold_seconds"`// Alert if exceeds this duration
+		MaxMemoryMB        int     `yaml:"max_memory_mb" required:"strict"`              // Max memory per request in MB
+		MaxDailyMemoryGB   int     `yaml:"max_daily_memory_gb" required:"strict"`        // Max total memory per 24h in GB
+		MemoryAlertPercent float64 `yaml:"memory_alert_percent" required:"strict"`       // Alert when exceeds this % (0.0-100.0)
+		MaxContextWindow   int     `yaml:"max_context_window" required:"strict"`         // Max context window size in tokens
+		ContextTrimPercent float64 `yaml:"context_trim_percent" required:"strict"`       // Trim % when full (0.0-100.0)
+		SlowCallThresholdSec int   `yaml:"slow_call_threshold_seconds" required:"strict"`// Alert if exceeds this duration
 
 		// ✅ WEEK 2: Performance & Reliability Parameters
-		MaxErrorsPerHour     int `yaml:"max_errors_per_hour"`          // Max errors per hour
-		MaxErrorsPerDay      int `yaml:"max_errors_per_day"`           // Max errors per day
-		MaxConsecutiveErrors int `yaml:"max_consecutive_errors"`       // Max consecutive errors
+		MaxErrorsPerHour     int `yaml:"max_errors_per_hour" required:"strict"`          // Max errors per hour
+		MaxErrorsPerDay      int `yaml:"max_errors_per_day" required:"strict"`           // Max errors per day
+		MaxConsecutiveErrors int `yaml:"max_consecutive_errors" required:"strict"`       // Max consecutive errors
 
 		// ✅ WEEK 2: Rate Limiting & Quotas
-		MaxCallsPerMinute  int  `yaml:"max_calls_per_minute"`           // Rate limit: calls per minute
-		MaxCallsPerHour    int  `yaml:"max_calls_per_hour"`             // Rate limit: calls per hour
-		MaxCallsPerDay     int  `yaml:"max_calls_per_day"`              // Rate limit: calls per 24 hours
-		BlockOnQuotaExceed bool `yaml:"block_on_quota_exceed"`          // true=BLOCK request when quota exceeded, false=WARN only (default: true)
+		MaxCallsPerMinute  int  `yaml:"max_calls_per_minute" required:"strict"`           // Rate limit: calls per minute
+		MaxCallsPerHour    int  `yaml:"max_calls_per_hour" required:"strict"`             // Rate limit: calls per hour
+		MaxCallsPerDay     int  `yaml:"max_calls_per_day" required:"strict"`              // Rate limit: calls per 24 hours
+		BlockOnQuotaExceed bool `yaml:"block_on_quota_exceed" required:"strict"`          // true=BLOCK request when quota exceeded, false=WARN only (default: true)
 	} `yaml:"settings"`
 
 	Routing *RoutingConfig `yaml:"routing"`
 }
 
 // ModelConfigYAML represents YAML configuration for a model (for parsing)
+// ✅ FIX for Issue #5 Phase 2: Add required field tags for STRICT MODE validation
 type ModelConfigYAML struct {
-	Model       string `yaml:"model"`
-	Provider    string `yaml:"provider"`
-	ProviderURL string `yaml:"provider_url"`
+	Model       string `yaml:"model" required:"strict"`              // [CONFIG|MODEL|REQUIRED] LLM model name
+	Provider    string `yaml:"provider" required:"strict"`           // [CONFIG|MODEL|REQUIRED] LLM provider name
+	ProviderURL string `yaml:"provider_url"`                         // [CONFIG|MODEL] Optional provider URL
 }
 
 // CostLimitsConfig defines cost control quota limits
@@ -167,11 +169,12 @@ type LoggingConfig struct {
 }
 
 // AgentConfig represents an agent configuration
+// ✅ FIX for Issue #5 Phase 2: Add required field tags for STRICT MODE validation
 type AgentConfig struct {
-	ID             string           `yaml:"id"`
-	Name           string           `yaml:"name"`
+	ID             string           `yaml:"id" required:"strict"`
+	Name           string           `yaml:"name" required:"strict"`
 	Description    string           `yaml:"description"`
-	Role           string           `yaml:"role"`
+	Role           string           `yaml:"role" required:"strict"`
 	Backstory      string           `yaml:"backstory"`
 	Model          string           `yaml:"model"`         // Deprecated: Use Primary instead
 	Temperature    float64          `yaml:"temperature"`
@@ -181,7 +184,7 @@ type AgentConfig struct {
 	SystemPrompt   string           `yaml:"system_prompt"`
 	Provider       string           `yaml:"provider"`      // Deprecated: Use Primary.Provider instead
 	ProviderURL    string           `yaml:"provider_url"`  // Deprecated: Use Primary.ProviderURL instead
-	Primary        *ModelConfigYAML `yaml:"primary"`       // [CONFIG|MODEL] Primary LLM provider
+	Primary        *ModelConfigYAML `yaml:"primary" required:"strict"`       // [CONFIG|MODEL|REQUIRED] Primary LLM provider
 	Backup         *ModelConfigYAML `yaml:"backup"`        // [CONFIG|MODEL] Fallback LLM provider
 
 	// Nested quota and monitoring configurations
@@ -268,7 +271,8 @@ func LoadAndValidateCrewConfig(crewConfigPath string, agentConfigs map[string]*A
 }
 
 // LoadAgentConfig loads an agent configuration from a YAML file
-func LoadAgentConfig(path string) (*AgentConfig, error) {
+// ✅ FIX for Issue #5: Add configMode parameter for STRICT/PERMISSIVE mode validation
+func LoadAgentConfig(path string, configMode ConfigMode) (*AgentConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read agent config: %w", err)
@@ -289,13 +293,9 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 			ProviderURL: config.ProviderURL,
 		}
 
-		// Set defaults for backward compatibility
-		if config.Primary.Model == "" {
-			config.Primary.Model = "gpt-4o"
-		}
-		if config.Primary.Provider == "" {
-			config.Primary.Provider = "openai"
-		}
+		// ✅ FIX for Issue #5: Don't set defaults here - validation layer will handle
+		// based on config mode (STRICT vs PERMISSIVE)
+		// This prevents STRICT MODE from being bypassed
 	}
 
 	if config.Temperature == 0 {
@@ -355,7 +355,8 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 
 	// Validate agent configuration at load time
 	// This catches invalid agent configs immediately with clear error messages
-	if err := ValidateAgentConfig(&config); err != nil {
+	// ✅ FIX for Issue #5: Pass configMode to validation for STRICT/PERMISSIVE logic
+	if err := ValidateAgentConfig(&config, configMode); err != nil {
 		return nil, fmt.Errorf("invalid agent configuration: %w", err)
 	}
 
@@ -363,7 +364,8 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 }
 
 // LoadAgentConfigs loads all agent configurations from a directory
-func LoadAgentConfigs(dir string) (map[string]*AgentConfig, error) {
+// ✅ FIX for Issue #5: Add configMode parameter for STRICT/PERMISSIVE validation
+func LoadAgentConfigs(dir string, configMode ConfigMode) (map[string]*AgentConfig, error) {
 	configs := make(map[string]*AgentConfig)
 
 	entries, err := os.ReadDir(dir)
@@ -374,7 +376,8 @@ func LoadAgentConfigs(dir string) (map[string]*AgentConfig, error) {
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
 			filePath := filepath.Join(dir, entry.Name())
-			config, err := LoadAgentConfig(filePath)
+			// ✅ FIX for Issue #5: Pass configMode to LoadAgentConfig
+			config, err := LoadAgentConfig(filePath, configMode)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load agent config %s: %w", entry.Name(), err)
 			}
@@ -477,20 +480,86 @@ func ValidateCrewConfig(config *CrewConfig) error {
 	return nil
 }
 
+// ValidateRequiredFields performs generic field-level validation based on struct tags
+// ✅ FIX for Issue #5 Phase 2: Generic required field validation using reflection
+// Supports tags like: `required:"strict"` to enforce strict mode validation
+// Returns a list of missing required fields and their descriptions
+func ValidateRequiredFields(config interface{}, configMode ConfigMode, entityID string) ([]string, error) {
+	var missingFields []string
+
+	// Only check required fields in STRICT MODE
+	if configMode != StrictMode {
+		return missingFields, nil
+	}
+
+	// Use reflection to inspect struct fields and their tags
+	t := reflect.TypeOf(config)
+	v := reflect.ValueOf(config)
+
+	// Handle pointer types
+	if t.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return []string{fmt.Sprintf("config object is nil")}, nil
+		}
+		t = t.Elem()
+		v = v.Elem()
+	}
+
+	// Iterate through all fields in the struct
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldVal := v.Field(i)
+
+		// Check if field has required:"strict" tag
+		requiredTag := field.Tag.Get("required")
+		if requiredTag != "strict" {
+			continue
+		}
+
+		// Check if field is empty/nil
+		isEmpty := false
+		switch fieldVal.Kind() {
+		case reflect.String:
+			isEmpty = fieldVal.String() == ""
+		case reflect.Ptr, reflect.Interface:
+			isEmpty = fieldVal.IsNil()
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			isEmpty = fieldVal.Int() == 0
+		case reflect.Float32, reflect.Float64:
+			isEmpty = fieldVal.Float() == 0
+		case reflect.Bool:
+			isEmpty = !fieldVal.Bool()
+		case reflect.Slice, reflect.Array:
+			isEmpty = fieldVal.Len() == 0
+		case reflect.Map:
+			isEmpty = fieldVal.Len() == 0
+		}
+
+		// If field is required but empty, add to missing fields
+		if isEmpty {
+			yamlTag := field.Tag.Get("yaml")
+			missingFields = append(missingFields, yamlTag)
+		}
+	}
+
+	return missingFields, nil
+}
+
 // ValidateAgentConfig validates agent configuration structure and constraints
 // ✅ FIX for Issue #6: Validate agent config at load time
 // ✅ Support for primary/backup LLM model configuration
-func ValidateAgentConfig(config *AgentConfig) error {
-	// ✅ FIX for Issue #23: Enhanced required field validation
-	// Validate required fields strictly
-	if config.ID == "" {
-		return fmt.Errorf("agent: required field 'id' is empty")
-	}
-	if config.Name == "" {
-		return fmt.Errorf("agent '%s': required field 'name' is empty", config.ID)
-	}
-	if config.Role == "" {
-		return fmt.Errorf("agent '%s': required field 'role' is empty", config.ID)
+// ✅ FIX for Issue #5: Add configMode parameter for STRICT/PERMISSIVE mode validation
+// ✅ FIX for Issue #5 Phase 2: Use tag-based validation for required fields
+func ValidateAgentConfig(config *AgentConfig, configMode ConfigMode) error {
+	// ✅ FIX for Issue #23 + Issue #5 Phase 2: Enhanced required field validation using tags
+	// Check required fields based on struct tags and config mode
+	missingFields, _ := ValidateRequiredFields(config, configMode, config.ID)
+	if len(missingFields) > 0 {
+		return fmt.Errorf(
+			"agent '%s': missing required fields in STRICT MODE: %v\n"+
+				"    Explicit configuration is mandatory.\n"+
+				"    Check your agent config file for: %v",
+			config.ID, missingFields, missingFields)
 	}
 
 	// Validate field constraints
@@ -516,11 +585,29 @@ func ValidateAgentConfig(config *AgentConfig) error {
 	if config.Primary == nil {
 		return fmt.Errorf("agent '%s': primary model configuration is missing", config.ID)
 	}
-	if config.Primary.Model == "" {
-		return fmt.Errorf("agent '%s': primary.model is required", config.ID)
+
+	// ✅ FIX for Issue #5 Phase 2: Validate Primary fields using tag-based validation
+	primaryMissingFields, _ := ValidateRequiredFields(config.Primary, configMode, config.ID)
+	if len(primaryMissingFields) > 0 {
+		return fmt.Errorf(
+			"agent '%s': primary model configuration incomplete in STRICT MODE: missing %v\n"+
+				"    Fix: Add all required fields to your agent config file, e.g.:\n"+
+				"         primary:\n"+
+				"           model: gpt-4o\n"+
+				"           provider: openai",
+			config.ID, primaryMissingFields)
 	}
-	if config.Primary.Provider == "" {
-		return fmt.Errorf("agent '%s': primary.provider is required", config.ID)
+
+	// ✅ FIX for Issue #5: PERMISSIVE MODE auto-set defaults if not in STRICT MODE
+	if configMode != StrictMode {
+		if config.Primary.Model == "" {
+			config.Primary.Model = "gpt-4o"
+			log.Printf("[CONFIG] agent '%s': primary.model not configured, using default 'gpt-4o' in PERMISSIVE mode", config.ID)
+		}
+		if config.Primary.Provider == "" {
+			config.Primary.Provider = "openai"
+			log.Printf("[CONFIG] agent '%s': primary.provider not configured, using default 'openai' in PERMISSIVE mode", config.ID)
+		}
 	}
 
 	// Validate backup model configuration if present

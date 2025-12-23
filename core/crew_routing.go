@@ -210,7 +210,7 @@ func (ce *CrewExecutor) findParallelGroup(agentID string, signalContent string) 
 	if signals, exists := ce.crew.Routing.Signals[agentID]; exists {
 		for _, signal := range signals {
 			// Check if the agent's response contains the signal
-			if strings.Contains(signalContent, signal.Signal) {
+			if signalMatchesContent(signal.Signal, signalContent) {
 				// Check if this signal targets a parallel group
 				if parallelGroup, exists := ce.crew.Routing.ParallelGroups[signal.Target]; exists {
 					return &parallelGroup

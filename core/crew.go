@@ -440,7 +440,12 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 
 	// Load agent configurations
 	agentDir := fmt.Sprintf("%s/agents", configDir)
-	agentConfigs, err := LoadAgentConfigs(agentDir)
+	// ✅ FIX for Issue #5: Extract configMode from crew config and pass to agent loading
+	configMode := PermissiveMode // Default to permissive for backward compatibility
+	if crewConfig.Settings.ConfigMode != "" {
+		configMode = ConfigMode(crewConfig.Settings.ConfigMode)
+	}
+	agentConfigs, err := LoadAgentConfigs(agentDir, configMode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load agent configs: %w", err)
 	}
@@ -670,13 +675,27 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		agentDuration := agentEndTime.Sub(agentStartTime)
 
 		if err != nil {
-			streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
-			// ✅ FIX for Issue #14: Record failed agent execution
-			if ce.Metrics != nil {
-				ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
-			}
-			return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
+		// ✅ ISSUE #2: Update performance metrics FIRST with error
+		if currentAgent.Metadata != nil {
+		 currentAgent.UpdatePerformanceMetrics(false, err.Error())
 		}
+
+		// ✅ ISSUE #2: Check error quota (use different variable to avoid shadowing)
+		 if quotaErr := currentAgent.CheckErrorQuota(); quotaErr != nil {
+			log.Printf("[QUOTA] Agent %s exceeded error quota: %v", currentAgent.ID, quotaErr)
+			streamChan <- NewStreamEvent("error", currentAgent.Name,
+				fmt.Sprintf("Error quota exceeded: %v", quotaErr))
+			return quotaErr
+		}
+
+		// Original error handling (now using original 'err' variable correctly)
+		streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
+		// ✅ FIX for Issue #14: Record failed agent execution
+		if ce.Metrics != nil {
+			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
+		}
+		return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
+	}
 
 		// ✅ FIX for Issue #14: Record successful agent execution
 		if ce.Metrics != nil {
@@ -686,6 +705,25 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			tokens, cost := currentAgent.GetLastCallCost()
 			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
 			ce.Metrics.LogCrewCostSummary()
+
+			// ✅ ISSUE #1: Check memory quota AFTER execution, BEFORE metrics update
+			// Note: Memory is estimated based on token count. Actual usage may differ.
+			// Formula: 1 token ≈ 4 bytes (conservative estimate)
+			memoryUsedMB := (tokens * 4) / 1024 / 1024
+
+			if err := currentAgent.CheckMemoryQuota(); err != nil {
+				log.Printf("[QUOTA] Agent %s exceeded memory quota: %v", currentAgent.ID, err)
+				streamChan <- NewStreamEvent("error", currentAgent.Name,
+					fmt.Sprintf("Memory quota exceeded: %v", err))
+				return err
+			}
+
+			// ✅ ISSUE #3: Update memory & performance metrics (only after quota check passes)
+			callDurationMs := agentDuration.Milliseconds()
+			if currentAgent.Metadata != nil {
+				currentAgent.UpdateMemoryMetrics(memoryUsedMB, callDurationMs)
+				currentAgent.UpdatePerformanceMetrics(true, "")
+			}
 		}
 
 		// Send agent response event

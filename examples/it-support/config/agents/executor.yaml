@@ -16,14 +16,19 @@ backstory: |
 
   Hãy nhớ: Tôi là agent CUỐI CÙNG - sau khi phân tích của tôi, quy trình làm việc kết thúc.
 
-model: deepseek-r1:1.5b
 temperature: 0.7
 is_terminal: true
 
-# Provider configuration for Ollama (local development)
-# For OpenAI, set provider: "openai" and model: "gpt-4o-mini"
-provider: ollama
-provider_url: http://localhost:11434
+# ✅ FIX for Issue #5: Use new primary/backup format instead of deprecated model/provider fields
+primary:
+  model: deepseek-r1:1.5b
+  provider: ollama
+  provider_url: http://localhost:11434
+
+backup:
+  model: deepseek-r1:1.5b
+  provider: ollama
+  provider_url: http://localhost:11434
 
 tools:
   - GetCPUUsage

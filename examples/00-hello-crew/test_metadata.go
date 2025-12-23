@@ -16,7 +16,8 @@ func main() {
 	}
 
 	// Load agent config directly to access it
-	agentConfig, err := agenticcore.LoadAgentConfig("config/agents/hello-agent.yaml")
+	// ✅ FIX for Issue #5: Pass configMode (default to PERMISSIVE for backward compatibility)
+	agentConfig, err := agenticcore.LoadAgentConfig("config/agents/hello-agent.yaml", agenticcore.PermissiveMode)
 	if err != nil {
 		fmt.Printf("Error loading agent config: %v\n", err)
 		os.Exit(1)

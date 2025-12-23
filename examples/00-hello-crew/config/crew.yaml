@@ -67,4 +67,4 @@ settings:
   max_calls_per_minute: 60                  # Rate limit: maximum calls per minute
   max_calls_per_hour: 1000                  # Rate limit: maximum calls per hour
   max_calls_per_day: 10000                  # Rate limit: maximum calls per 24 hours
-  enforce_quotas: true                      # Enforce quota limits (true=block, false=warn)
+  block_on_quota_exceed: true               # Enforce quota limits (true=block, false=warn)

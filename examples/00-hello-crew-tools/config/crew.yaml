@@ -64,4 +64,4 @@ settings:
   max_calls_per_minute: 60
   max_calls_per_hour: 1000
   max_calls_per_day: 10000
-  enforce_quotas: true
+  block_on_quota_exceed: true
