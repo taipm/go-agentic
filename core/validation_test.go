@@ -1,6 +1,7 @@
 package crewai
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -356,5 +357,219 @@ func TestModelValidation(t *testing.T) {
 				t.Fatalf("Model validation should warn, not error: %v", e)
 			}
 		}
+	}
+}
+
+// ===== Phase 2: ValidationErrorFormatter - JSON Output Tests =====
+
+// TestToJSONValidConfiguration tests JSON output for valid config
+func TestToJSONValidConfiguration(t *testing.T) {
+	config := makeConfig("orchestrator", []string{"orchestrator", "executor"})
+
+	agents := map[string]*AgentConfig{
+		"orchestrator": makeAgent("orchestrator", "Orchestrator", "gpt-4o", 0.7, false),
+		"executor":     makeAgent("executor", "Executor", "gpt-4o", 0.3, true),
+	}
+
+	validator := NewConfigValidator(config, agents)
+	validator.ValidateAll()
+
+	// Get JSON output
+	jsonData, err := validator.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON() failed: %v", err)
+	}
+
+	// Parse JSON to verify structure
+	var resp ErrorResponse
+	if err := json.Unmarshal(jsonData, &resp); err != nil {
+		t.Fatalf("Invalid JSON output: %v", err)
+	}
+
+	// Verify valid config produces success=true
+	if !resp.Success {
+		t.Fatal("Valid config should have success=true")
+	}
+
+	// Verify no errors
+	if len(resp.Errors) != 0 {
+		t.Fatalf("Valid config should have no errors, got %d", len(resp.Errors))
+	}
+
+	// Verify summary is correct
+	if resp.Summary.TotalErrors != 0 {
+		t.Fatalf("Valid config should have 0 errors in summary, got %d", resp.Summary.TotalErrors)
+	}
+	if !resp.Summary.IsValid {
+		t.Fatal("Summary.IsValid should be true for valid config")
+	}
+}
+
+// TestToJSONInvalidConfiguration tests JSON output for invalid config
+func TestToJSONInvalidConfiguration(t *testing.T) {
+	config := makeConfig("", []string{}) // Missing entry_point and agents
+	config.Settings.MaxHandoffs = -1      // Invalid value
+
+	agents := map[string]*AgentConfig{}
+
+	validator := NewConfigValidator(config, agents)
+	validator.ValidateAll()
+
+	// Get JSON output
+	jsonData, err := validator.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON() failed: %v", err)
+	}
+
+	// Parse JSON to verify structure
+	var resp ErrorResponse
+	if err := json.Unmarshal(jsonData, &resp); err != nil {
+		t.Fatalf("Invalid JSON output: %v", err)
+	}
+
+	// Verify invalid config produces success=false
+	if resp.Success {
+		t.Fatal("Invalid config should have success=false")
+	}
+
+	// Verify errors are populated
+	if len(resp.Errors) == 0 {
+		t.Fatal("Invalid config should have errors")
+	}
+
+	// Verify summary shows errors
+	if resp.Summary.TotalErrors == 0 {
+		t.Fatal("Summary should show errors")
+	}
+	if resp.Summary.IsValid {
+		t.Fatal("Summary.IsValid should be false for invalid config")
+	}
+
+	// Verify error details
+	for _, errDetail := range resp.Errors {
+		if errDetail.File == "" {
+			t.Fatal("Error should have File")
+		}
+		if errDetail.Severity != "error" && errDetail.Severity != "warning" {
+			t.Fatalf("Error Severity should be 'error' or 'warning', got %s", errDetail.Severity)
+		}
+	}
+}
+
+// TestToJSONStructure verifies complete JSON structure
+func TestToJSONStructure(t *testing.T) {
+	config := makeConfig("bad_entry", []string{"orchestrator"})
+
+	agents := map[string]*AgentConfig{
+		"orchestrator": makeAgent("orchestrator", "Orchestrator", "gpt-4o", 0.7, false),
+	}
+
+	validator := NewConfigValidator(config, agents)
+	validator.ValidateAll()
+
+	jsonData, _ := validator.ToJSON()
+
+	var resp ErrorResponse
+	json.Unmarshal(jsonData, &resp)
+
+	// Verify top-level fields exist
+	if resp.Errors == nil {
+		t.Fatal("ErrorResponse.Errors should not be nil")
+	}
+	if resp.Warnings == nil {
+		t.Fatal("ErrorResponse.Warnings should not be nil")
+	}
+	if (ErrorSummary{}) == resp.Summary {
+		t.Fatal("ErrorResponse.Summary should be populated")
+	}
+
+	// Verify each error has required fields
+	for _, err := range resp.Errors {
+		if err.File == "" {
+			t.Fatal("ErrorDetail.File is required")
+		}
+		if err.Message == "" {
+			t.Fatal("ErrorDetail.Message is required")
+		}
+		if err.Severity == "" {
+			t.Fatal("ErrorDetail.Severity is required")
+		}
+	}
+
+	// Verify summary counts match actual counts
+	if resp.Summary.TotalErrors != len(resp.Errors) {
+		t.Fatalf("Summary.TotalErrors (%d) doesn't match errors count (%d)",
+			resp.Summary.TotalErrors, len(resp.Errors))
+	}
+	if resp.Summary.TotalWarnings != len(resp.Warnings) {
+		t.Fatalf("Summary.TotalWarnings (%d) doesn't match warnings count (%d)",
+			resp.Summary.TotalWarnings, len(resp.Warnings))
+	}
+}
+
+// TestToJSONWithWarnings verifies JSON includes warnings
+func TestToJSONWithWarnings(t *testing.T) {
+	config := makeConfig("orchestrator", []string{"orchestrator", "clarifier", "executor"})
+	config.Routing = &RoutingConfig{
+		Signals: map[string][]RoutingSignal{
+			"orchestrator": {
+				{Signal: "[ROUTE_CLARIFIER]", Target: "clarifier"},
+			},
+			// executor is not reachable - should produce warning
+		},
+	}
+
+	agents := map[string]*AgentConfig{
+		"orchestrator": makeAgent("orchestrator", "Orchestrator", "gpt-4o", 0.7, false),
+		"clarifier":    makeAgent("clarifier", "Clarifier", "gpt-4o", 0.5, false),
+		"executor":     makeAgent("executor", "Executor", "gpt-4o", 0.3, true),
+	}
+
+	validator := NewConfigValidator(config, agents)
+	validator.ValidateAll()
+
+	jsonData, _ := validator.ToJSON()
+
+	var resp ErrorResponse
+	json.Unmarshal(jsonData, &resp)
+
+	// Should have warnings
+	if len(resp.Warnings) == 0 {
+		t.Fatal("Should have warnings for unreachable agent")
+	}
+
+	// Verify warning structure
+	for _, warn := range resp.Warnings {
+		if warn.Severity != "warning" {
+			t.Fatalf("Warning should have Severity='warning', got %s", warn.Severity)
+		}
+	}
+
+	// Success should still be true if no errors
+	if !resp.Success && len(resp.Errors) == 0 {
+		t.Fatal("Success should be true when no errors (warnings are OK)")
+	}
+}
+
+// TestToJSONFormatting verifies JSON is pretty-printed
+func TestToJSONFormatting(t *testing.T) {
+	config := makeConfig("bad", []string{"orchestrator"})
+
+	agents := map[string]*AgentConfig{
+		"orchestrator": makeAgent("orchestrator", "Orchestrator", "gpt-4o", 0.7, false),
+	}
+
+	validator := NewConfigValidator(config, agents)
+	validator.ValidateAll()
+
+	jsonData, _ := validator.ToJSON()
+
+	// Check that JSON is pretty-printed (has indentation)
+	jsonStr := string(jsonData)
+	if !strings.Contains(jsonStr, "\n") {
+		t.Fatal("JSON should be pretty-printed with newlines")
+	}
+	if !strings.Contains(jsonStr, "  ") {
+		t.Fatal("JSON should be indented with spaces")
 	}
 }

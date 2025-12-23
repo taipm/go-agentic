@@ -1,6 +1,7 @@
 package crewai
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -438,4 +439,101 @@ func (cv *ConfigValidator) IsValid() bool {
 	cv.mu.RLock()
 	defer cv.mu.RUnlock()
 	return len(cv.errors) == 0
+}
+
+// ✅ PHASE 2: ValidationErrorFormatter - JSON output support
+// ErrorDetail represents a single validation error in JSON format
+type ErrorDetail struct {
+	File     string `json:"file"`
+	Field    string `json:"field"`
+	Message  string `json:"message"`
+	Severity string `json:"severity"`
+	Fix      string `json:"fix"`
+	Line     int    `json:"line,omitempty"`
+}
+
+// ErrorSummary provides count and validity status
+type ErrorSummary struct {
+	TotalErrors   int  `json:"total_errors"`
+	TotalWarnings int  `json:"total_warnings"`
+	IsValid       bool `json:"is_valid"`
+}
+
+// ErrorResponse is the complete JSON structure for validation results
+type ErrorResponse struct {
+	Success  bool           `json:"success"`
+	Errors   []ErrorDetail  `json:"errors"`
+	Warnings []ErrorDetail  `json:"warnings"`
+	Summary  ErrorSummary   `json:"summary"`
+}
+
+// ToJSON converts validation results to JSON format
+// Returns pretty-printed JSON that can be:
+// - Consumed by APIs and clients (parse JSON directly)
+// - Sent to logging systems (structured logging)
+// - Inspected by developers (readable format)
+//
+// Example output:
+// {
+//   "success": false,
+//   "errors": [
+//     {
+//       "file": "crew.yaml",
+//       "field": "entry_point",
+//       "message": "entry_point is required",
+//       "severity": "error",
+//       "fix": "entry_point: orchestrator"
+//     }
+//   ],
+//   "warnings": [],
+//   "summary": {
+//     "total_errors": 1,
+//     "total_warnings": 0,
+//     "is_valid": false
+//   }
+// }
+func (cv *ConfigValidator) ToJSON() ([]byte, error) {
+	cv.mu.RLock()
+	defer cv.mu.RUnlock()
+
+	// Convert validation errors to JSON format
+	errors := make([]ErrorDetail, len(cv.errors))
+	for i, err := range cv.errors {
+		errors[i] = ErrorDetail{
+			File:     err.File,
+			Field:    err.Field,
+			Message:  err.Message,
+			Severity: err.Severity,
+			Fix:      err.Fix,
+			Line:     err.Line,
+		}
+	}
+
+	// Convert validation warnings to JSON format
+	warnings := make([]ErrorDetail, len(cv.warnings))
+	for i, warn := range cv.warnings {
+		warnings[i] = ErrorDetail{
+			File:     warn.File,
+			Field:    warn.Field,
+			Message:  warn.Message,
+			Severity: warn.Severity,
+			Fix:      warn.Fix,
+			Line:     warn.Line,
+		}
+	}
+
+	// Build response with summary
+	resp := ErrorResponse{
+		Success:  len(cv.errors) == 0,
+		Errors:   errors,
+		Warnings: warnings,
+		Summary: ErrorSummary{
+			TotalErrors:   len(cv.errors),
+			TotalWarnings: len(cv.warnings),
+			IsValid:       len(cv.errors) == 0,
+		},
+	}
+
+	// Return pretty-printed JSON
+	return json.MarshalIndent(resp, "", "  ")
 }
