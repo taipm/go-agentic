@@ -26,9 +26,9 @@ func copyHistory(original []Message) []Message {
 func extractRequiredFields(params map[string]interface{}) []string {
 	var requiredFields []string
 	if required, ok := params["required"].([]interface{}); ok {
-		for _, r := range required {
-			if rStr, ok := r.(string); ok {
-				requiredFields = append(requiredFields, rStr)
+		for _, fieldName := range required {
+			if fieldStr, ok := fieldName.(string); ok {
+				requiredFields = append(requiredFields, fieldStr)
 			}
 		}
 	}
@@ -280,29 +280,29 @@ type ExecutionMetrics struct {
 // TimeoutTracker tracks sequence execution time and manages per-tool budgets
 // Prevents tools from exceeding allocated time in a sequence
 type TimeoutTracker struct {
-	sequenceStartTime time.Time     // When sequence started
-	sequenceDeadline  time.Time     // When sequence must complete
-	overheadBudget    time.Duration // Estimated overhead per tool (e.g., 500ms for LLM calls)
-	usedTime          time.Duration // Time already consumed in sequence
-	mu                sync.Mutex    // Protect concurrent access
+	startTime      time.Time     // When sequence started
+	deadline       time.Time     // When sequence must complete
+	overheadBudget time.Duration // Estimated overhead per tool (e.g., 500ms for LLM calls)
+	usedTime       time.Duration // Time already consumed in sequence
+	mu             sync.Mutex    // Protect concurrent access
 }
 
 // NewTimeoutTracker creates a timeout tracker for a sequence
 func NewTimeoutTracker(sequenceTimeout time.Duration, overheadBudget time.Duration) *TimeoutTracker {
 	now := time.Now()
 	return &TimeoutTracker{
-		sequenceStartTime: now,
-		sequenceDeadline:  now.Add(sequenceTimeout),
-		overheadBudget:    overheadBudget,
-		usedTime:          0,
+		startTime:      now,
+		deadline:       now.Add(sequenceTimeout),
+		overheadBudget: overheadBudget,
+		usedTime:       0,
 	}
 }
 
 // GetRemainingTime returns how much time is left in the sequence
-func (tt *TimeoutTracker) GetRemainingTime() time.Duration {
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
-	remaining := time.Until(tt.sequenceDeadline)
+func (t *TimeoutTracker) GetRemainingTime() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	remaining := time.Until(t.deadline)
 	if remaining < 0 {
 		return 0
 	}
@@ -311,9 +311,9 @@ func (tt *TimeoutTracker) GetRemainingTime() time.Duration {
 
 // CalculateToolTimeout calculates the appropriate timeout for the next tool
 // accounting for: per-tool timeout, remaining sequence time, and overhead budget
-func (tt *TimeoutTracker) CalculateToolTimeout(defaultTimeout, perToolTimeout time.Duration) time.Duration {
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
+func (t *TimeoutTracker) CalculateToolTimeout(defaultTimeout, perToolTimeout time.Duration) time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	// Start with per-tool timeout, fallback to default
 	toolTimeout := perToolTimeout
@@ -322,14 +322,14 @@ func (tt *TimeoutTracker) CalculateToolTimeout(defaultTimeout, perToolTimeout ti
 	}
 
 	// Get remaining sequence time and subtract overhead budget
-	remaining := time.Until(tt.sequenceDeadline)
-	if remaining <= tt.overheadBudget {
+	remaining := time.Until(t.deadline)
+	if remaining <= t.overheadBudget {
 		// Not enough time even for overhead
 		return 100 * time.Millisecond // Minimal timeout to signal urgency
 	}
 
 	// Available time is remaining minus overhead
-	availableTime := remaining - tt.overheadBudget
+	availableTime := remaining - t.overheadBudget
 
 	// Use the minimum: per-tool timeout or available time
 	if toolTimeout > availableTime {
@@ -339,18 +339,18 @@ func (tt *TimeoutTracker) CalculateToolTimeout(defaultTimeout, perToolTimeout ti
 }
 
 // RecordToolExecution records that a tool has finished and updates used time
-func (tt *TimeoutTracker) RecordToolExecution(duration time.Duration) {
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
-	tt.usedTime += duration
+func (t *TimeoutTracker) RecordToolExecution(duration time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.usedTime += duration
 }
 
 // IsTimeoutWarning returns true if we're within 20% of sequence deadline
-func (tt *TimeoutTracker) IsTimeoutWarning() bool {
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
-	remaining := time.Until(tt.sequenceDeadline)
-	totalDuration := tt.sequenceDeadline.Sub(tt.sequenceStartTime)
+func (t *TimeoutTracker) IsTimeoutWarning() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	remaining := time.Until(t.deadline)
+	totalDuration := t.deadline.Sub(t.startTime)
 	warnThreshold := totalDuration / 5 // 20%
 	return remaining < warnThreshold && remaining > 0
 }
