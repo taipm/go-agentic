@@ -10,6 +10,56 @@ import (
 	"time"
 )
 
+// ===== Token Calculation Constants =====
+const (
+	// TokenBaseValue: Base tokens allocated per message
+	// Used in token estimation for context window management
+	TokenBaseValue = 4
+
+	// TokenPaddingValue: Padding added to content length for token calculation
+	// Used in formula: baseTokens + (contentLength + padding) / divisor
+	TokenPaddingValue = 3
+
+	// TokenDivisor: Divisor for token calculation
+	// Normalizes content length to approximate token count
+	TokenDivisor = 4
+
+	// MinHistoryLength: Minimum messages to keep before trimming context
+	// Preserves at least this many recent messages even during aggressive trimming
+	MinHistoryLength = 2
+
+	// PercentDivisor: Divisor to convert percentage values (e.g., 20 -> 0.20)
+	// Used when reading percentage configuration like ContextTrimPercent
+	PercentDivisor = 100.0
+)
+
+// ===== Message & Event Constants =====
+const (
+	// Message Role Constants - define the source of a message
+	RoleUser      = "user"      // Messages from the user/human
+	RoleAssistant = "assistant" // Messages from the AI agent
+	RoleSystem    = "system"    // System-level messages (e.g., errors, events)
+
+	// Event Type Constants - define the type of stream event
+	EventTypeError      = "error"       // Event indicates an error occurred
+	EventTypeToolResult = "tool_result" // Event contains results from tool execution
+)
+
+// ===== Timing & Retry Constants =====
+const (
+	// BaseRetryDelay: Initial delay for exponential backoff retry strategy
+	// Subsequent attempts double this duration: 100ms, 200ms, 400ms, etc.
+	BaseRetryDelay = 100 * time.Millisecond
+
+	// MinTimeoutValue: Minimum timeout for urgent operations
+	// Used when remaining time in sequence is critically low
+	MinTimeoutValue = 100 * time.Millisecond
+
+	// WarnThresholdRatio: Ratio for timeout warning threshold (20% = 1/5)
+	// Used to warn when approaching sequence deadline
+	WarnThresholdRatio = 5
+)
+
 // copyHistory creates a deep copy of message history to ensure thread safety
 // Each execution gets its own isolated history snapshot, preventing race conditions
 // when concurrent requests execute and pause/resume
@@ -171,10 +221,10 @@ func isRetryable(errType ErrorType) bool {
 }
 
 // calculateBackoffDuration returns exponential backoff with jitter
-// Starts at 100ms, doubles each attempt, capped at 5 seconds
+// Starts at BaseRetryDelay, doubles each attempt, capped at 5 seconds
 func calculateBackoffDuration(attempt int) time.Duration {
-	// Start with 100ms, double each attempt: 100ms, 200ms, 400ms, 800ms...
-	baseDelay := time.Duration(100<<uint(attempt)) * time.Millisecond
+	// Start with BaseRetryDelay, double each attempt
+	baseDelay := BaseRetryDelay * (1 << uint(attempt))
 
 	// Cap at 5 seconds
 	if baseDelay > 5*time.Second {
@@ -325,7 +375,7 @@ func (t *TimeoutTracker) CalculateToolTimeout(defaultTimeout, perToolTimeout tim
 	remaining := time.Until(t.deadline)
 	if remaining <= t.overheadBudget {
 		// Not enough time even for overhead
-		return 100 * time.Millisecond // Minimal timeout to signal urgency
+		return MinTimeoutValue // Minimal timeout to signal urgency
 	}
 
 	// Available time is remaining minus overhead
@@ -351,7 +401,7 @@ func (t *TimeoutTracker) IsTimeoutWarning() bool {
 	defer t.mu.Unlock()
 	remaining := time.Until(t.deadline)
 	totalDuration := t.deadline.Sub(t.startTime)
-	warnThreshold := totalDuration / 5 // 20%
+	warnThreshold := totalDuration / time.Duration(WarnThresholdRatio) // 20%
 	return remaining < warnThreshold && remaining > 0
 }
 
@@ -403,6 +453,12 @@ type CrewExecutor struct {
 // Note: crew.Routing MUST be set for signal-based routing to work
 // Best Practice: Use entry_point from crew.yaml instead of relying on IsTerminal
 func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
+	// Validate input: crew cannot be nil
+	if crew == nil {
+		log.Println("WARNING: CrewExecutor created with nil crew - will need to set entry agent manually")
+		return nil
+	}
+
 	// Find entry agent - first agent is default if no routing configured
 	var entryAgent *Agent
 	if len(crew.Agents) > 0 {
@@ -543,15 +599,15 @@ func (ce *CrewExecutor) GetHistory() []Message {
 }
 
 // estimateHistoryTokens estimates total tokens in conversation history
-// Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
+// Uses approximation: 1 token ≈ TokenDivisor characters (OpenAI convention)
 func (ce *CrewExecutor) estimateHistoryTokens() int {
 	ce.historyMu.RLock()
 	defer ce.historyMu.RUnlock()
 
 	total := 0
 	for _, msg := range ce.history {
-		// Role overhead (~4 tokens) + content tokens
-		total += 4 + (len(msg.Content)+3)/4
+		// Role overhead + content tokens
+		total += TokenBaseValue + (len(msg.Content)+TokenPaddingValue)/TokenDivisor
 	}
 	return total
 }
@@ -563,14 +619,14 @@ func (ce *CrewExecutor) trimHistoryIfNeeded() {
 	ce.historyMu.Lock()
 	defer ce.historyMu.Unlock()
 
-	if ce.defaults == nil || len(ce.history) <= 2 {
+	if ce.defaults == nil || len(ce.history) <= MinHistoryLength {
 		return
 	}
 
 	// Calculate tokens directly (don't call estimateHistoryTokens which would deadlock)
 	currentTokens := 0
 	for _, msg := range ce.history {
-		currentTokens += 4 + (len(msg.Content)+3)/4
+		currentTokens += TokenBaseValue + (len(msg.Content)+TokenPaddingValue)/TokenDivisor
 	}
 	maxTokens := ce.defaults.MaxContextWindow
 
@@ -580,7 +636,7 @@ func (ce *CrewExecutor) trimHistoryIfNeeded() {
 	}
 
 	// Calculate target after trimming (remove ContextTrimPercent of max)
-	trimPercent := ce.defaults.ContextTrimPercent / 100.0 // Convert from 20.0 to 0.20
+	trimPercent := ce.defaults.ContextTrimPercent / PercentDivisor
 	targetTokens := int(float64(maxTokens) * (1.0 - trimPercent))
 
 	// Calculate how many messages to keep from end
@@ -589,14 +645,14 @@ func (ce *CrewExecutor) trimHistoryIfNeeded() {
 	tokensFromEnd := 0
 
 	for i := len(ce.history) - 1; i > 0 && tokensFromEnd < targetTokens; i-- {
-		msgTokens := 4 + (len(ce.history[i].Content)+3)/4
+		msgTokens := TokenBaseValue + (len(ce.history[i].Content)+TokenPaddingValue)/TokenDivisor
 		tokensFromEnd += msgTokens
 		keepFromEnd = len(ce.history) - i
 	}
 
-	// Ensure we keep at least 2 messages from end
-	if keepFromEnd < 2 {
-		keepFromEnd = 2
+	// Ensure we keep at least MinHistoryLength messages from end
+	if keepFromEnd < MinHistoryLength {
+		keepFromEnd = MinHistoryLength
 	}
 
 	// Build trimmed history: first message + summary + last N messages
@@ -647,7 +703,7 @@ func (ce *CrewExecutor) ClearHistory() {
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
 	// Add user input to history
 	ce.appendMessage(Message{
-		Role:    "user",
+		Role:    RoleUser,
 		Content: input,
 	})
 
@@ -701,13 +757,13 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			// Check error quota (use different variable to avoid shadowing)
 			if quotaErr := currentAgent.CheckErrorQuota(); quotaErr != nil {
 				log.Printf("[QUOTA] Agent %s exceeded error quota: %v", currentAgent.ID, quotaErr)
-				streamChan <- NewStreamEvent("error", currentAgent.Name,
+				streamChan <- NewStreamEvent(EventTypeError, currentAgent.Name,
 					fmt.Sprintf("Error quota exceeded: %v", quotaErr))
 				return quotaErr
 			}
 
 			// Report agent error
-			streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
+			streamChan <- NewStreamEvent(EventTypeError, currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
 			// Record failed agent execution
 			if ce.Metrics != nil {
 				ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
@@ -730,7 +786,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 			if err := currentAgent.CheckMemoryQuota(); err != nil {
 				log.Printf("[QUOTA] Agent %s exceeded memory quota: %v", currentAgent.ID, err)
-				streamChan <- NewStreamEvent("error", currentAgent.Name,
+				streamChan <- NewStreamEvent(EventTypeError, currentAgent.Name,
 					fmt.Sprintf("Memory quota exceeded: %v", err))
 				return err
 			}
@@ -748,7 +804,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 		// Add agent response to history
 		ce.appendMessage(Message{
-			Role:    "assistant",
+			Role:    RoleAssistant,
 			Content: response.Content,
 		})
 
@@ -770,7 +826,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				}
 
 				// Note: Show full output including embedding vectors - agents need to extract vectors
-				streamChan <- NewStreamEvent("tool_result", currentAgent.Name,
+				streamChan <- NewStreamEvent(EventTypeToolResult, currentAgent.Name,
 					fmt.Sprintf("%s [Tool] %s → %s", status, result.ToolName, result.Output))
 			}
 
@@ -779,7 +835,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 			// Add results to history
 			ce.appendMessage(Message{
-				Role:    "user",
+				Role:    RoleUser,
 				Content: resultText,
 			})
 
@@ -848,7 +904,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				// IMPORTANT: Pass 'input' (which has tool results + embedding vector), not 'response.Content' (which only has text)
 				parallelResults, err := ce.ExecuteParallelStream(ctx, input, parallelAgents, streamChan)
 				if err != nil {
-					streamChan <- NewStreamEvent("error", "system", fmt.Sprintf("Parallel execution failed: %v", err))
+					streamChan <- NewStreamEvent(EventTypeError, "system", fmt.Sprintf("Parallel execution failed: %v", err))
 					return err
 				}
 
@@ -857,7 +913,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 				// Add aggregated results to history
 				ce.appendMessage(Message{
-					Role:    "user",
+					Role:    RoleUser,
 					Content: aggregatedInput,
 				})
 
@@ -932,7 +988,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 
 		// Add agent response to history
 		ce.appendMessage(Message{
-			Role:    "assistant",
+			Role:    RoleAssistant,
 			Content: response.Content,
 		})
 
@@ -948,7 +1004,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 
 			// Add results to history
 			ce.appendMessage(Message{
-				Role:    "user",
+				Role:    RoleUser,
 				Content: resultText,
 			})
 
@@ -1035,7 +1091,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 
 				// Add aggregated results to history
 				ce.appendMessage(Message{
-					Role:    "user",
+					Role:    RoleUser,
 					Content: aggregatedInput,
 				})
 
