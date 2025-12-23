@@ -108,13 +108,13 @@ func validateToolArguments(tool *Tool, args map[string]interface{}) error {
 type ErrorType int
 
 const (
-	ErrorTypeUnknown ErrorType = iota
-	ErrorTypeTimeout          // Transient: exceeded deadline
-	ErrorTypePanic            // Non-transient: panic in tool
-	ErrorTypeValidation       // Non-transient: invalid arguments
-	ErrorTypeNetwork          // Transient: connection issues
-	ErrorTypeTemporary        // Transient: temporary failures
-	ErrorTypePermanent        // Non-transient: permanent failure
+	ErrorTypeUnknown    ErrorType = iota
+	ErrorTypeTimeout              // Transient: exceeded deadline
+	ErrorTypePanic                // Non-transient: panic in tool
+	ErrorTypeValidation           // Non-transient: invalid arguments
+	ErrorTypeNetwork              // Transient: connection issues
+	ErrorTypeTemporary            // Transient: temporary failures
+	ErrorTypePermanent            // Non-transient: permanent failure
 )
 
 // classifyError determines if an error is transient (retryable) or permanent
@@ -269,12 +269,12 @@ func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{
 
 // ExecutionMetrics tracks execution time and status for tools
 type ExecutionMetrics struct {
-	ToolName     string        // Name of the tool executed
-	Duration     time.Duration // Time taken to execute
-	Status       string        // "success", "timeout", "error"
-	TimedOut     bool          // True if tool execution exceeded timeout
-	StartTime    time.Time     // When tool execution started
-	EndTime      time.Time     // When tool execution completed
+	ToolName  string        // Name of the tool executed
+	Duration  time.Duration // Time taken to execute
+	Status    string        // "success", "timeout", "error"
+	TimedOut  bool          // True if tool execution exceeded timeout
+	StartTime time.Time     // When tool execution started
+	EndTime   time.Time     // When tool execution completed
 }
 
 // TimeoutTracker tracks sequence execution time and manages per-tool budgets
@@ -357,19 +357,19 @@ func (t *TimeoutTracker) IsTimeoutWarning() bool {
 
 // ToolTimeoutConfig defines timeout behavior for tools
 type ToolTimeoutConfig struct {
-	DefaultToolTimeout  time.Duration            // Default timeout per tool (e.g., 5s)
-	SequenceTimeout     time.Duration            // Max total time for all tools in sequence (e.g., 30s)
-	PerToolTimeout      map[string]time.Duration // Per-tool overrides for specific tools
-	OverheadBudget      time.Duration            // Estimated overhead per tool call (e.g., 500ms)
-	CollectMetrics      bool                     // If true, collect execution metrics
-	ExecutionMetrics    []ExecutionMetrics       // Collected metrics from last execution
+	DefaultToolTimeout time.Duration            // Default timeout per tool (e.g., 5s)
+	SequenceTimeout    time.Duration            // Max total time for all tools in sequence (e.g., 30s)
+	PerToolTimeout     map[string]time.Duration // Per-tool overrides for specific tools
+	OverheadBudget     time.Duration            // Estimated overhead per tool call (e.g., 500ms)
+	CollectMetrics     bool                     // If true, collect execution metrics
+	ExecutionMetrics   []ExecutionMetrics       // Collected metrics from last execution
 }
 
 // NewToolTimeoutConfig creates a timeout config with recommended defaults
 func NewToolTimeoutConfig() *ToolTimeoutConfig {
 	return &ToolTimeoutConfig{
-		DefaultToolTimeout: 5 * time.Second,    // 5s per tool
-		SequenceTimeout:    30 * time.Second,   // 30s total for all sequential tools
+		DefaultToolTimeout: 5 * time.Second,        // 5s per tool
+		SequenceTimeout:    30 * time.Second,       // 30s total for all sequential tools
 		OverheadBudget:     500 * time.Millisecond, // 500ms overhead for LLM calls and context switches
 		PerToolTimeout:     make(map[string]time.Duration),
 		CollectMetrics:     true,
@@ -387,15 +387,16 @@ func (tc *ToolTimeoutConfig) GetToolTimeout(toolName string) time.Duration {
 
 // CrewExecutor handles the execution of a crew
 type CrewExecutor struct {
-	crew           *Crew
-	apiKey         string
-	entryAgent     *Agent
-	history        []Message
-	Verbose        bool               // If true, print agent responses and tool results to stdout
-	ResumeAgentID  string             // If set, execution will start from this agent instead of entry agent
-	ToolTimeouts   *ToolTimeoutConfig // Timeout configuration
-	Metrics        *MetricsCollector  // Metrics collection for observability
-	defaults       *HardcodedDefaults // Runtime configuration defaults
+	crew          *Crew
+	apiKey        string
+	entryAgent    *Agent
+	historyMu     sync.RWMutex       // Mutex to protect history from concurrent access
+	history       []Message          // Protected by historyMu
+	Verbose       bool               // If true, print agent responses and tool results to stdout
+	ResumeAgentID string             // If set, execution will start from this agent instead of entry agent
+	ToolTimeouts  *ToolTimeoutConfig // Timeout configuration
+	Metrics       *MetricsCollector  // Metrics collection for observability
+	defaults      *HardcodedDefaults // Runtime configuration defaults
 }
 
 // NewCrewExecutor creates a new crew executor
@@ -513,18 +514,40 @@ func (ce *CrewExecutor) GetResumeAgentID() string {
 	return ce.ResumeAgentID
 }
 
-// GetHistory returns a copy of the conversation history
-// Allows inspection for debugging memory issues
-func (ce *CrewExecutor) GetHistory() []Message {
-	// Return a copy to prevent external modification
+// appendMessage safely appends a message to history with mutex protection
+func (ce *CrewExecutor) appendMessage(msg Message) {
+	ce.historyMu.Lock()
+	defer ce.historyMu.Unlock()
+	ce.history = append(ce.history, msg)
+}
+
+// getHistoryCopy returns a copy of history for safe reading
+// Caller can safely read the returned copy without affecting concurrent writers
+func (ce *CrewExecutor) getHistoryCopy() []Message {
+	ce.historyMu.RLock()
+	defer ce.historyMu.RUnlock()
+
+	if len(ce.history) == 0 {
+		return []Message{}
+	}
+
 	historyCopy := make([]Message, len(ce.history))
 	copy(historyCopy, ce.history)
 	return historyCopy
 }
 
+// GetHistory returns a copy of the conversation history
+// Allows inspection for debugging memory issues
+func (ce *CrewExecutor) GetHistory() []Message {
+	return ce.getHistoryCopy()
+}
+
 // estimateHistoryTokens estimates total tokens in conversation history
 // Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
 func (ce *CrewExecutor) estimateHistoryTokens() int {
+	ce.historyMu.RLock()
+	defer ce.historyMu.RUnlock()
+
 	total := 0
 	for _, msg := range ce.history {
 		// Role overhead (~4 tokens) + content tokens
@@ -537,11 +560,18 @@ func (ce *CrewExecutor) estimateHistoryTokens() int {
 // Uses ce.defaults.MaxContextWindow and ce.defaults.ContextTrimPercent
 // Strategy: Keep first + recent messages, remove oldest in middle when over limit
 func (ce *CrewExecutor) trimHistoryIfNeeded() {
+	ce.historyMu.Lock()
+	defer ce.historyMu.Unlock()
+
 	if ce.defaults == nil || len(ce.history) <= 2 {
 		return
 	}
 
-	currentTokens := ce.estimateHistoryTokens()
+	// Calculate tokens directly (don't call estimateHistoryTokens which would deadlock)
+	currentTokens := 0
+	for _, msg := range ce.history {
+		currentTokens += 4 + (len(msg.Content)+3)/4
+	}
 	maxTokens := ce.defaults.MaxContextWindow
 
 	// Check if within limit
@@ -603,7 +633,9 @@ func (ce *CrewExecutor) trimHistoryIfNeeded() {
 // ClearHistory clears the conversation history
 // Useful for starting fresh conversations
 func (ce *CrewExecutor) ClearHistory() {
+	ce.historyMu.Lock()
 	ce.history = []Message{}
+	ce.historyMu.Unlock()
 
 	// ✅ Reset session cost tracking when starting fresh
 	if ce.Metrics != nil {
@@ -614,7 +646,7 @@ func (ce *CrewExecutor) ClearHistory() {
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
 	// Add user input to history
-	ce.history = append(ce.history, Message{
+	ce.appendMessage(Message{
 		Role:    "user",
 		Content: input,
 	})
@@ -661,27 +693,27 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		agentDuration := agentEndTime.Sub(agentStartTime)
 
 		if err != nil {
-		// Update performance metrics with error
-		if currentAgent.Metadata != nil {
-		 currentAgent.UpdatePerformanceMetrics(false, err.Error())
-		}
+			// Update performance metrics with error
+			if currentAgent.Metadata != nil {
+				currentAgent.UpdatePerformanceMetrics(false, err.Error())
+			}
 
-		// Check error quota (use different variable to avoid shadowing)
-		 if quotaErr := currentAgent.CheckErrorQuota(); quotaErr != nil {
-			log.Printf("[QUOTA] Agent %s exceeded error quota: %v", currentAgent.ID, quotaErr)
-			streamChan <- NewStreamEvent("error", currentAgent.Name,
-				fmt.Sprintf("Error quota exceeded: %v", quotaErr))
-			return quotaErr
-		}
+			// Check error quota (use different variable to avoid shadowing)
+			if quotaErr := currentAgent.CheckErrorQuota(); quotaErr != nil {
+				log.Printf("[QUOTA] Agent %s exceeded error quota: %v", currentAgent.ID, quotaErr)
+				streamChan <- NewStreamEvent("error", currentAgent.Name,
+					fmt.Sprintf("Error quota exceeded: %v", quotaErr))
+				return quotaErr
+			}
 
-		// Report agent error
-		streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
-		// Record failed agent execution
-		if ce.Metrics != nil {
-			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
+			// Report agent error
+			streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
+			// Record failed agent execution
+			if ce.Metrics != nil {
+				ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
+			}
+			return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
 		}
-		return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
-	}
 
 		// Record successful agent execution
 		if ce.Metrics != nil {
@@ -715,7 +747,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		streamChan <- NewStreamEvent("agent_response", currentAgent.Name, response.Content)
 
 		// Add agent response to history
-		ce.history = append(ce.history, Message{
+		ce.appendMessage(Message{
 			Role:    "assistant",
 			Content: response.Content,
 		})
@@ -746,7 +778,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			resultText := ce.formatToolResults(toolResults)
 
 			// Add results to history
-			ce.history = append(ce.history, Message{
+			ce.appendMessage(Message{
 				Role:    "user",
 				Content: resultText,
 			})
@@ -824,7 +856,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				aggregatedInput := ce.aggregateParallelResults(parallelResults)
 
 				// Add aggregated results to history
-				ce.history = append(ce.history, Message{
+				ce.appendMessage(Message{
 					Role:    "user",
 					Content: aggregatedInput,
 				})
@@ -861,7 +893,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 // Execute runs the crew with the given input
 func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewResponse, error) {
 	// Add user input to history
-	ce.history = append(ce.history, Message{
+	ce.appendMessage(Message{
 		Role:    "user",
 		Content: input,
 	})
@@ -899,7 +931,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 		}
 
 		// Add agent response to history
-		ce.history = append(ce.history, Message{
+		ce.appendMessage(Message{
 			Role:    "assistant",
 			Content: response.Content,
 		})
@@ -915,7 +947,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 			}
 
 			// Add results to history
-			ce.history = append(ce.history, Message{
+			ce.appendMessage(Message{
 				Role:    "user",
 				Content: resultText,
 			})
@@ -1002,7 +1034,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 				aggregatedInput := ce.aggregateParallelResults(parallelResults)
 
 				// Add aggregated results to history
-				ce.history = append(ce.history, Message{
+				ce.appendMessage(Message{
 					Role:    "user",
 					Content: aggregatedInput,
 				})
