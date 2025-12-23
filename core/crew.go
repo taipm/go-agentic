@@ -17,9 +17,7 @@ func copyHistory(original []Message) []Message {
 	if len(original) == 0 {
 		return []Message{}
 	}
-	// Create new slice with same capacity
 	copied := make([]Message, len(original))
-	// Copy all messages
 	copy(copied, original)
 	return copied
 }
@@ -55,7 +53,6 @@ func validateFieldType(tool *Tool, fieldName string, fieldValue interface{}, pro
 		// Allow numeric types to be coerced to string (common with text-parsed tool calls from Ollama)
 		switch fieldValue.(type) {
 		case string:
-			// Already a string, valid
 		case float64, int, int64, int32:
 			// Numeric types can be coerced to string - validation passes
 			// Handler should do the actual conversion
@@ -65,7 +62,6 @@ func validateFieldType(tool *Tool, fieldName string, fieldValue interface{}, pro
 	case "number", "integer":
 		switch fieldValue.(type) {
 		case float64, int, int64:
-			// Valid number types
 		default:
 			return fmt.Errorf("tool '%s': parameter '%s' should be number, got %T", tool.Name, fieldName, fieldValue)
 		}
