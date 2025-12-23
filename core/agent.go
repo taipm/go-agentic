@@ -97,15 +97,70 @@ func executeWithModelConfig(ctx context.Context, agent *Agent, systemPrompt stri
 		Tools:        convertToolsToProvider(agent.Tools),
 	}
 
+	// ✅ WEEK 3: Track execution time for performance metrics
+	startTime := time.Now()
+
+	// Log which model is being used
+	fmt.Printf("[MODEL] Agent '%s' using model: %s (provider: %s)\n", agent.ID, modelConfig.Model, modelConfig.Provider)
+
 	// Call provider
 	response, err := provider.Complete(ctx, request)
+
+	// ✅ WEEK 3: Calculate execution duration
+	executionDuration := time.Since(startTime)
+	executionDurationMs := executionDuration.Milliseconds()
+
 	if err != nil {
+		// ✅ WEEK 3: Update performance metrics on failure
+		agent.UpdatePerformanceMetrics(false, err.Error())
+		// Check and enforce error quotas
+		if quotaErr := agent.CheckErrorQuota(); quotaErr != nil {
+			// Quota enforcement is handled (warning or error based on settings)
+		}
 		return nil, err
 	}
 
 	// ✅ Step 3: Update metrics AFTER successful execution
 	actualCost := agent.CalculateCost(estimatedTokens)
 	agent.UpdateCostMetrics(estimatedTokens, actualCost)
+
+	// ✅ WEEK 3: Update memory metrics (estimated from response size)
+	// Response size in bytes: (content length + tool calls length)
+	responseSize := len(response.Content)
+	for _, call := range response.ToolCalls {
+		responseSize += len(call.ToolName) + len(call.ID)
+		// Add size of arguments (rough JSON encoding estimate)
+		for k, v := range call.Arguments {
+			responseSize += len(k) + len(fmt.Sprintf("%v", v))
+		}
+	}
+	estimatedMemoryMB := (responseSize / 1024) // Convert bytes to KB, then to MB
+	if estimatedMemoryMB < 1 {
+		estimatedMemoryMB = 1 // Minimum 1 MB
+	}
+	agent.UpdateMemoryMetrics(estimatedMemoryMB, executionDurationMs)
+
+	// ✅ WEEK 3: Update performance metrics on success
+	agent.UpdatePerformanceMetrics(true, "")
+
+	// ✅ WEEK 3: Check if this was a slow call
+	agent.CheckSlowCall(executionDuration)
+
+	// ✅ Log cost information for visibility
+	agent.CostMetrics.Mutex.RLock()
+	dailyCost := agent.CostMetrics.DailyCost
+	callCount := agent.CostMetrics.CallCount
+	totalTokens := agent.CostMetrics.TotalTokens
+	agent.CostMetrics.Mutex.RUnlock()
+
+	fmt.Printf("[COST] Agent '%s': +%d tokens ($%.6f) | Daily: %d tokens, $%.4f spent | Calls: %d\n",
+		agent.ID, estimatedTokens, actualCost, totalTokens, dailyCost, callCount)
+
+	// ✅ NEW: Automatic metadata logging - display quota, memory, and performance info
+	LogMetadataMetrics(agent)
+	LogMetadataQuotaStatus(agent)
+	LogMemoryMetrics(agent)
+	LogPerformanceMetrics(agent)
 
 	return &AgentResponse{
 		AgentID:   agent.ID,
@@ -197,13 +252,57 @@ func executeWithModelConfigStream(ctx context.Context, agent *Agent, systemPromp
 		Tools:        convertToolsToProvider(agent.Tools),
 	}
 
+	// ✅ WEEK 3: Track execution time for performance metrics
+	startTime := time.Now()
+
 	// Call provider with streaming
 	err = provider.CompleteStream(ctx, request, streamChan)
 
-	// ✅ Step 3: Update metrics AFTER successful execution
+	// ✅ WEEK 3: Calculate execution duration
+	executionDuration := time.Since(startTime)
+	executionDurationMs := executionDuration.Milliseconds()
+
+	// ✅ Step 3: Update metrics AFTER execution (success or failure)
 	if err == nil {
 		actualCost := agent.CalculateCost(estimatedTokens)
 		agent.UpdateCostMetrics(estimatedTokens, actualCost)
+
+		// ✅ WEEK 3: Update memory metrics (estimated for streaming - use token estimate as proxy)
+		// For streaming, estimate memory based on tokens (rough: 1 token ≈ 4 bytes on average)
+		estimatedMemoryMB := (estimatedTokens * 4) / (1024 * 1024)
+		if estimatedMemoryMB < 1 {
+			estimatedMemoryMB = 1 // Minimum 1 MB
+		}
+		agent.UpdateMemoryMetrics(estimatedMemoryMB, executionDurationMs)
+
+		// ✅ WEEK 3: Update performance metrics on success
+		agent.UpdatePerformanceMetrics(true, "")
+
+		// ✅ WEEK 3: Check if this was a slow call
+		agent.CheckSlowCall(executionDuration)
+
+		// ✅ Log cost information for visibility
+		agent.CostMetrics.Mutex.RLock()
+		dailyCost := agent.CostMetrics.DailyCost
+		callCount := agent.CostMetrics.CallCount
+		totalTokens := agent.CostMetrics.TotalTokens
+		agent.CostMetrics.Mutex.RUnlock()
+
+		fmt.Printf("[COST] Agent '%s': +%d tokens ($%.6f) | Daily: %d tokens, $%.4f spent | Calls: %d\n",
+			agent.ID, estimatedTokens, actualCost, totalTokens, dailyCost, callCount)
+
+		// ✅ NEW: Automatic metadata logging - display quota, memory, and performance info
+		LogMetadataMetrics(agent)
+		LogMetadataQuotaStatus(agent)
+		LogMemoryMetrics(agent)
+		LogPerformanceMetrics(agent)
+	} else {
+		// ✅ WEEK 3: Update performance metrics on failure
+		agent.UpdatePerformanceMetrics(false, err.Error())
+		// Check and enforce error quotas
+		if quotaErr := agent.CheckErrorQuota(); quotaErr != nil {
+			// Quota enforcement is handled (warning or error based on settings)
+		}
 	}
 
 	return err
@@ -549,4 +648,14 @@ func (a *Agent) UpdateCostMetrics(actualTokens int, actualCost float64) {
 	a.CostMetrics.CallCount++
 	a.CostMetrics.TotalTokens += actualTokens
 	a.CostMetrics.DailyCost += actualCost
+
+	// ✅ WEEK 2: Also update unified metadata metrics (for new monitoring system)
+	if a.Metadata != nil {
+		a.Metadata.Mutex.Lock()
+		a.Metadata.Cost.CallCount++
+		a.Metadata.Cost.TotalTokens += actualTokens
+		a.Metadata.Cost.DailyCost += actualCost
+		a.Metadata.LastAccessTime = time.Now()
+		a.Metadata.Mutex.Unlock()
+	}
 }

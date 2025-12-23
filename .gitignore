@@ -12,7 +12,7 @@
 *~
 .DS_Store
 *.iml
-
+examples/00-hello-crew-tools/.env
 # Go
 bin/
 dist/

@@ -1,0 +1,26 @@
+# Binaries
+hello-crew-tools
+*.exe
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables (NEVER commit .env with real API keys!)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+vendor/
+
+# Build artifacts
+build/
+dist/

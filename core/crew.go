@@ -512,6 +512,21 @@ func (ce *CrewExecutor) GetResumeAgentID() string {
 	return ce.ResumeAgentID
 }
 
+// GetHistory returns a copy of the conversation history
+// ✅ WEEK 3: Allow inspection of conversation history for debugging memory issues
+func (ce *CrewExecutor) GetHistory() []Message {
+	// Return a copy to prevent external modification
+	historyCopy := make([]Message, len(ce.history))
+	copy(historyCopy, ce.history)
+	return historyCopy
+}
+
+// ClearHistory clears the conversation history
+// Useful for starting fresh conversations
+func (ce *CrewExecutor) ClearHistory() {
+	ce.history = []Message{}
+}
+
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
 	// Add user input to history

@@ -93,6 +93,31 @@ type CrewConfig struct {
 		// Graceful shutdown
 		GracefulShutdownCheckMillis int `yaml:"graceful_shutdown_check_millis"` // Shutdown check interval (was 100ms)
 		TimeoutWarningThresholdPct  int `yaml:"timeout_warning_threshold_pct"`  // Timeout warning % (was 20%)
+
+		// ✅ WEEK 1: Cost Control Parameters
+		MaxTokensPerCall    int     `yaml:"max_tokens_per_call"`       // Max tokens per request
+		MaxTokensPerDay     int     `yaml:"max_tokens_per_day"`        // Max tokens per 24h
+		MaxCostPerDay       float64 `yaml:"max_cost_per_day"`          // Max cost per day in USD
+		CostAlertThreshold  float64 `yaml:"cost_alert_threshold"`      // Alert at % of budget (0.0-1.0)
+
+		// ✅ WEEK 2: Memory Management Parameters
+		MaxMemoryMB        int     `yaml:"max_memory_mb"`              // Max memory per request in MB
+		MaxDailyMemoryGB   int     `yaml:"max_daily_memory_gb"`        // Max total memory per 24h in GB
+		MemoryAlertPercent float64 `yaml:"memory_alert_percent"`       // Alert when exceeds this % (0.0-100.0)
+		MaxContextWindow   int     `yaml:"max_context_window"`         // Max context window size in tokens
+		ContextTrimPercent float64 `yaml:"context_trim_percent"`       // Trim % when full (0.0-100.0)
+		SlowCallThresholdSec int   `yaml:"slow_call_threshold_seconds"`// Alert if exceeds this duration
+
+		// ✅ WEEK 2: Performance & Reliability Parameters
+		MaxErrorsPerHour     int `yaml:"max_errors_per_hour"`          // Max errors per hour
+		MaxErrorsPerDay      int `yaml:"max_errors_per_day"`           // Max errors per day
+		MaxConsecutiveErrors int `yaml:"max_consecutive_errors"`       // Max consecutive errors
+
+		// ✅ WEEK 2: Rate Limiting & Quotas
+		MaxCallsPerMinute int  `yaml:"max_calls_per_minute"`           // Rate limit: calls per minute
+		MaxCallsPerHour   int  `yaml:"max_calls_per_hour"`             // Rate limit: calls per hour
+		MaxCallsPerDay    int  `yaml:"max_calls_per_day"`              // Rate limit: calls per 24 hours
+		EnforceQuotas     bool `yaml:"enforce_quotas"`                 // Enforce quotas (true=block, false=warn)
 	} `yaml:"settings"`
 
 	Routing *RoutingConfig `yaml:"routing"`
@@ -103,6 +128,41 @@ type ModelConfigYAML struct {
 	Model       string `yaml:"model"`
 	Provider    string `yaml:"provider"`
 	ProviderURL string `yaml:"provider_url"`
+}
+
+// CostLimitsConfig defines cost control quota limits
+// [QUOTA|COST] Token usage and API cost boundaries
+type CostLimitsConfig struct {
+	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // [QUOTA|COST|PER-CALL|INT] Max tokens per API call
+	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // [QUOTA|COST|PER-DAY|INT] Max tokens per 24 hours
+	MaxCostPerDayUSD   float64 `yaml:"max_cost_per_day_usd"`  // [QUOTA|COST|PER-DAY|FLOAT] Max USD cost per day
+	AlertThreshold     float64 `yaml:"alert_threshold"`       // [THRESHOLD|COST|GLOBAL|FLOAT] Warn at % of limit
+	Enforce            bool    `yaml:"enforce"`               // [FLAG|COST|ENFORCEMENT|BOOL] BLOCK vs WARN on limit
+}
+
+// MemoryLimitsConfig defines memory quota limits
+// [QUOTA|MEMORY] Memory usage boundaries and constraints
+type MemoryLimitsConfig struct {
+	MaxPerCallMB       int  `yaml:"max_per_call_mb"`       // [QUOTA|MEMORY|PER-CALL|INT] Max MB per execution
+	MaxPerDayMB        int  `yaml:"max_per_day_mb"`        // [QUOTA|MEMORY|PER-DAY|INT] Max MB per 24 hours
+	Enforce            bool `yaml:"enforce"`               // [FLAG|MEMORY|ENFORCEMENT|BOOL] BLOCK vs WARN on limit
+}
+
+// ErrorLimitsConfig defines error rate quota limits
+// [QUOTA|ERROR] Error rate and reliability boundaries
+type ErrorLimitsConfig struct {
+	MaxConsecutive     int  `yaml:"max_consecutive"`       // [QUOTA|ERROR|PER-CALL|INT] Max consecutive failures
+	MaxPerDay          int  `yaml:"max_per_day"`           // [QUOTA|ERROR|PER-DAY|INT] Max errors per 24 hours
+	Enforce            bool `yaml:"enforce"`               // [FLAG|ERROR|ENFORCEMENT|BOOL] BLOCK vs WARN on limit
+}
+
+// LoggingConfig defines observability and monitoring settings
+// [CONFIG|LOGGING] Logging behavior and metrics collection
+type LoggingConfig struct {
+	EnableMemoryMetrics     bool   `yaml:"enable_memory_metrics"`      // [FLAG|LOGGING|BOOL] Log memory usage per call
+	EnablePerformanceMetrics bool  `yaml:"enable_performance_metrics"` // [FLAG|LOGGING|BOOL] Log response metrics
+	EnableQuotaWarnings     bool   `yaml:"enable_quota_warnings"`      // [FLAG|LOGGING|BOOL] Log quota threshold alerts
+	LogLevel                string `yaml:"log_level"`                  // [CONFIG|LOGGING|STRING] debug/info/warn/error
 }
 
 // AgentConfig represents an agent configuration
@@ -120,15 +180,22 @@ type AgentConfig struct {
 	SystemPrompt   string           `yaml:"system_prompt"`
 	Provider       string           `yaml:"provider"`      // Deprecated: Use Primary.Provider instead
 	ProviderURL    string           `yaml:"provider_url"`  // Deprecated: Use Primary.ProviderURL instead
-	Primary        *ModelConfigYAML `yaml:"primary"`       // Primary LLM model configuration
-	Backup         *ModelConfigYAML `yaml:"backup"`        // Backup LLM model configuration
+	Primary        *ModelConfigYAML `yaml:"primary"`       // [CONFIG|MODEL] Primary LLM provider
+	Backup         *ModelConfigYAML `yaml:"backup"`        // [CONFIG|MODEL] Fallback LLM provider
 
-	// ✅ WEEK 1: Agent-level cost control configuration
-	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // Max tokens per call (e.g., 1000)
-	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // Max tokens per day (e.g., 50000)
-	MaxCostPerDay      float64 `yaml:"max_cost_per_day"`      // Max cost per day in USD (e.g., 10.00)
-	CostAlertThreshold float64 `yaml:"cost_alert_threshold"`  // Alert when usage % exceeds this (e.g., 0.80)
-	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`   // true=block, false=warn only
+	// Nested quota and monitoring configurations
+	CostLimits   *CostLimitsConfig   `yaml:"cost_limits"`      // [QUOTA|COST] Token usage and cost limits
+	MemoryLimits *MemoryLimitsConfig `yaml:"memory_limits"`    // [QUOTA|MEMORY] Memory usage limits
+	ErrorLimits  *ErrorLimitsConfig  `yaml:"error_limits"`     // [QUOTA|ERROR] Error rate limits
+	Logging      *LoggingConfig      `yaml:"logging"`          // [CONFIG|LOGGING] Observability settings
+
+	// Backward compatibility: Keep old flat fields for existing configurations
+	// DEPRECATED: Use nested structs (CostLimits, MemoryLimits, ErrorLimits) instead
+	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // DEPRECATED - use CostLimits.MaxTokensPerCall
+	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // DEPRECATED - use CostLimits.MaxTokensPerDay
+	MaxCostPerDay      float64 `yaml:"max_cost_per_day"`      // DEPRECATED - use CostLimits.MaxCostPerDayUSD
+	CostAlertThreshold float64 `yaml:"cost_alert_threshold"`  // DEPRECATED - use CostLimits.AlertThreshold
+	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`   // DEPRECATED - use CostLimits.Enforce
 }
 
 // LoadCrewConfig loads the crew configuration from a YAML file
@@ -234,24 +301,58 @@ func LoadAgentConfig(path string) (*AgentConfig, error) {
 		config.Temperature = 0.7
 	}
 
-	// ✅ WEEK 1: Set defaults for cost control configuration
-	// These can be overridden in YAML; defaults allow agents to work without explicit config
-	if config.MaxTokensPerCall == 0 {
-		config.MaxTokensPerCall = 1000 // Default: 1K tokens per call
+	// Backward compatibility: Convert old flat format to new nested format
+	// If new nested configs don't exist but old flat fields are set, populate nested configs
+	if config.CostLimits == nil && config.MaxTokensPerCall > 0 {
+		config.CostLimits = &CostLimitsConfig{
+			MaxTokensPerCall:   config.MaxTokensPerCall,
+			MaxTokensPerDay:    config.MaxTokensPerDay,
+			MaxCostPerDayUSD:   config.MaxCostPerDay,
+			AlertThreshold:     config.CostAlertThreshold,
+			Enforce:            config.EnforceCostLimits,
+		}
 	}
-	if config.MaxTokensPerDay == 0 {
-		config.MaxTokensPerDay = 50000 // Default: 50K tokens per day
-	}
-	if config.MaxCostPerDay == 0 {
-		config.MaxCostPerDay = 10.0 // Default: $10 per day
-	}
-	if config.CostAlertThreshold == 0 {
-		config.CostAlertThreshold = 0.80 // Default: warn at 80% usage
-	}
-	// EnforceCostLimits defaults to false (warn-only mode) - configurable per agent
-	// Note: Explicit true in YAML will be respected; false is the safe default
 
-	// ✅ FIX for Issue #6: Validate agent configuration at load time
+	// Set defaults for cost control if still not configured
+	if config.CostLimits == nil {
+		config.CostLimits = &CostLimitsConfig{
+			MaxTokensPerCall: 1000,    // Default: 1K tokens per call
+			MaxTokensPerDay:  50000,   // Default: 50K tokens per day
+			MaxCostPerDayUSD: 10.0,    // Default: $10 per day
+			AlertThreshold:   0.80,    // Default: warn at 80% usage
+			Enforce:          false,   // Default: warn-only mode
+		}
+	}
+
+	// Set defaults for memory control if not configured
+	if config.MemoryLimits == nil {
+		config.MemoryLimits = &MemoryLimitsConfig{
+			MaxPerCallMB: 100,    // Default: 100 MB per call
+			MaxPerDayMB:  1000,   // Default: 1000 MB per day
+			Enforce:      false,  // Default: warn-only mode
+		}
+	}
+
+	// Set defaults for error control if not configured
+	if config.ErrorLimits == nil {
+		config.ErrorLimits = &ErrorLimitsConfig{
+			MaxConsecutive: 3,   // Default: max 3 consecutive errors
+			MaxPerDay:      10,  // Default: max 10 errors per day
+			Enforce:        false, // Default: warn-only mode
+		}
+	}
+
+	// Set defaults for logging if not configured
+	if config.Logging == nil {
+		config.Logging = &LoggingConfig{
+			EnableMemoryMetrics:      true,
+			EnablePerformanceMetrics: true,
+			EnableQuotaWarnings:      true,
+			LogLevel:                 "info",
+		}
+	}
+
+	// Validate agent configuration at load time
 	// This catches invalid agent configs immediately with clear error messages
 	if err := ValidateAgentConfig(&config); err != nil {
 		return nil, fmt.Errorf("invalid agent configuration: %w", err)
@@ -435,6 +536,7 @@ func ValidateAgentConfig(config *AgentConfig) error {
 }
 
 // CreateAgentFromConfig creates an Agent from an AgentConfig
+// ✅ WEEK 2: Initialize unified AgentMetadata with quotas and metrics
 func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agent {
 	// Convert YAML model config to runtime ModelConfig
 	primary := &ModelConfig{
@@ -450,6 +552,79 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 			Provider:    config.Backup.Provider,
 			ProviderURL: config.Backup.ProviderURL,
 		}
+	}
+
+	// ✅ WEEK 2: Create unified AgentMetadata with quotas
+	now := time.Now()
+	metadata := &AgentMetadata{
+		AgentID:        config.ID,
+		AgentName:      config.Name,
+		CreatedTime:    now,
+		LastAccessTime: now,
+
+		// Cost quotas from config
+		Quotas: AgentQuotaLimits{
+			MaxTokensPerCall:   config.MaxTokensPerCall,
+			MaxTokensPerDay:    config.MaxTokensPerDay,
+			MaxCostPerDay:      config.MaxCostPerDay,
+			CostAlertPercent:   config.CostAlertThreshold,
+
+			// Default memory quotas (can be extended in config in future)
+			MaxMemoryPerCall:   512,    // Default: 512 MB per call
+			MaxMemoryPerDay:    10240,  // Default: 10 GB per day
+			MaxContextWindow:   32000,  // Default: 32K tokens for gpt-4
+
+			// Default execution quotas
+			MaxCallsPerMinute:  60,     // Default: 60 calls/minute
+			MaxCallsPerHour:    1000,   // Default: 1000 calls/hour
+			MaxCallsPerDay:     10000,  // Default: 10000 calls/day
+			MaxErrorsPerHour:   10,     // Default: 10 errors/hour
+			MaxErrorsPerDay:    50,     // Default: 50 errors/day
+
+			// Enforcement mode
+			EnforceQuotas:      config.EnforceCostLimits,
+		},
+
+		// Cost metrics initialized
+		Cost: AgentCostMetrics{
+			CallCount:     0,
+			TotalTokens:   0,
+			DailyCost:     0,
+			LastResetTime: time.Time{}, // Will be initialized on first use
+		},
+
+		// Memory metrics initialized
+		Memory: AgentMemoryMetrics{
+			CurrentMemoryMB:    0,
+			PeakMemoryMB:       0,
+			AverageMemoryMB:    0,
+			MemoryTrendPercent: 0,
+			MaxMemoryMB:        512,      // Default: 512 MB per call
+			MaxDailyMemoryGB:   10,       // Default: 10 GB per day
+			MemoryAlertPercent: 0.80,     // Default: warn at 80%
+			CurrentContextSize: 0,
+			MaxContextWindow:   32000,    // Default: 32K tokens
+			ContextTrimPercent: 0.20,     // Default: trim 20% when full
+			AverageCallDuration: 0,
+			SlowCallThreshold:  30 * time.Second, // Default: 30 seconds
+		},
+
+		// Performance metrics initialized
+		Performance: AgentPerformanceMetrics{
+			SuccessfulCalls:      0,
+			FailedCalls:          0,
+			SuccessRate:          100.0,
+			AverageResponseTime:  0,
+			LastError:            "",
+			LastErrorTime:        time.Time{},
+			ConsecutiveErrors:    0,
+			ErrorCountToday:      0,
+			MaxErrorsPerHour:     10,
+			MaxErrorsPerDay:      50,
+			MaxConsecutiveErrors: 5,
+		},
+
+		EnforceCostLimits: config.EnforceCostLimits,
 	}
 
 	agent := &Agent{
@@ -468,7 +643,10 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 		HandoffTargets: config.HandoffTargets,
 		Tools:          []*Tool{},
 
-		// ✅ WEEK 1: Agent-level cost control configuration
+		// ✅ WEEK 2: Unified AgentMetadata
+		Metadata: metadata,
+
+		// ✅ WEEK 1: LEGACY - Cost control configuration (kept for backward compatibility)
 		MaxTokensPerCall:   config.MaxTokensPerCall,
 		MaxTokensPerDay:    config.MaxTokensPerDay,
 		MaxCostPerDay:      config.MaxCostPerDay,
@@ -591,6 +769,68 @@ func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
 	}
 	if config.Settings.TimeoutWarningThresholdPct > 0 && config.Settings.TimeoutWarningThresholdPct <= 100 {
 		defaults.TimeoutWarningThreshold = float64(config.Settings.TimeoutWarningThresholdPct) / 100.0
+	}
+
+	// ✅ WEEK 1: Cost Control configurations
+	if config.Settings.MaxTokensPerCall > 0 {
+		defaults.MaxTokensPerCall = config.Settings.MaxTokensPerCall
+	}
+	if config.Settings.MaxTokensPerDay > 0 {
+		defaults.MaxTokensPerDay = config.Settings.MaxTokensPerDay
+	}
+	if config.Settings.MaxCostPerDay > 0 {
+		defaults.MaxCostPerDay = config.Settings.MaxCostPerDay
+	}
+	if config.Settings.CostAlertThreshold > 0 {
+		defaults.CostAlertThreshold = config.Settings.CostAlertThreshold
+	}
+
+	// ✅ WEEK 2: Memory Management configurations
+	if config.Settings.MaxMemoryMB > 0 {
+		defaults.MaxMemoryMB = config.Settings.MaxMemoryMB
+	}
+	if config.Settings.MaxDailyMemoryGB > 0 {
+		defaults.MaxDailyMemoryGB = config.Settings.MaxDailyMemoryGB
+	}
+	if config.Settings.MemoryAlertPercent > 0 {
+		defaults.MemoryAlertPercent = config.Settings.MemoryAlertPercent
+	}
+	if config.Settings.MaxContextWindow > 0 {
+		defaults.MaxContextWindow = config.Settings.MaxContextWindow
+	}
+	if config.Settings.ContextTrimPercent > 0 {
+		defaults.ContextTrimPercent = config.Settings.ContextTrimPercent
+	}
+	if config.Settings.SlowCallThresholdSec > 0 {
+		defaults.SlowCallThreshold = time.Duration(config.Settings.SlowCallThresholdSec) * time.Second
+	}
+
+	// ✅ WEEK 2: Performance & Reliability configurations
+	if config.Settings.MaxErrorsPerHour > 0 {
+		defaults.MaxErrorsPerHour = config.Settings.MaxErrorsPerHour
+	}
+	if config.Settings.MaxErrorsPerDay > 0 {
+		defaults.MaxErrorsPerDay = config.Settings.MaxErrorsPerDay
+	}
+	if config.Settings.MaxConsecutiveErrors > 0 {
+		defaults.MaxConsecutiveErrors = config.Settings.MaxConsecutiveErrors
+	}
+
+	// ✅ WEEK 2: Rate Limiting & Quotas configurations
+	if config.Settings.MaxCallsPerMinute > 0 {
+		defaults.MaxCallsPerMinute = config.Settings.MaxCallsPerMinute
+	}
+	if config.Settings.MaxCallsPerHour > 0 {
+		defaults.MaxCallsPerHour = config.Settings.MaxCallsPerHour
+	}
+	if config.Settings.MaxCallsPerDay > 0 {
+		defaults.MaxCallsPerDay = config.Settings.MaxCallsPerDay
+	}
+	// EnforceQuotas is a boolean, so we check the YAML value directly (no need for > 0 check)
+	// In YAML it will be true or false, and we respect that choice
+	// For STRICT MODE, the default is already set, so we only override if explicitly in YAML
+	if config.Settings.EnforceQuotas {
+		defaults.EnforceQuotas = true
 	}
 
 	// Validate all converted values

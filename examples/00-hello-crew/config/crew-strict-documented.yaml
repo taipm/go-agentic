@@ -1,0 +1,168 @@
+version: "1.0"
+name: hello-crew
+description: A minimal crew with a single Hello agent (STRICT MODE with documented parameters)
+entry_point: hello-agent
+
+agents:
+  - hello-agent
+
+tasks:
+  - name: respond-to-user
+    description: Respond to the user's message
+    agent: hello-agent
+
+# ✅ Phase 5 Configuration Fields - STRICT MODE with Full Documentation
+settings:
+  # Configuration Mode: How system handles missing/invalid configuration values
+  # - permissive (default): Use safe defaults, continue even if missing config
+  # - strict: REQUIRE all 19 parameters to be explicitly set, FAIL if missing
+  config_mode: strict  # ← Production mode: explicit configuration required
+
+  # ╔════════════════════════════════════════════════════════════════════════╗
+  # ║              TIMEOUT PARAMETERS (11 total - all required)             ║
+  # ║   These control how long various operations are allowed to take       ║
+  # ╚════════════════════════════════════════════════════════════════════════╝
+
+  # Parallel Agent Execution Timeout (60 seconds)
+  # ├─ When: Multiple agents run in parallel simultaneously
+  # ├─ Effect: Kill execution if any agent takes > 60 seconds
+  # ├─ Use case: Team collaboration between agents
+  # └─ Too low: May kill long-running operations
+  parallel_timeout_seconds: 60
+
+  # Tool Execution Timeout (5 seconds)
+  # ├─ When: A tool/function is being executed
+  # ├─ Effect: Kill tool if not finished in 5 seconds
+  # ├─ Use case: Most tool calls (API, database, etc.)
+  # └─ Too low: Quick tools may timeout; too high: slow tools block agent
+  tool_execution_timeout_seconds: 5
+
+  # Tool Result Timeout (30 seconds)
+  # ├─ When: Waiting for tool result processing/parsing
+  # ├─ Effect: Kill processing if > 30 seconds
+  # ├─ Use case: Complex result parsing, large JSON handling
+  # └─ Longer than tool_execution_timeout to account for result processing
+  tool_result_timeout_seconds: 30
+
+  # Minimum Tool Timeout (100 milliseconds)
+  # ├─ When: Validating user-provided tool timeout values
+  # ├─ Effect: Reject tool timeouts < 100ms (sanity check)
+  # ├─ Use case: Prevent accidentally setting unreasonably low timeouts
+  # └─ Safety guard: Most operations need at least 100ms
+  min_tool_timeout_millis: 100
+
+  # Stream Chunk Timeout (500 milliseconds)
+  # ├─ When: Processing streaming responses (from OpenAI, Ollama, etc.)
+  # ├─ Effect: Kill streaming if chunk takes > 500ms
+  # ├─ Use case: Real-time streaming for fast user experience
+  # └─ Responsive feel: Not too long to avoid UI freezing
+  stream_chunk_timeout_millis: 500
+
+  # Server-Sent Events Keep-Alive Interval (30 seconds)
+  # ├─ When: Streaming responses via SSE (HTTP streaming)
+  # ├─ Effect: Send keep-alive ping every 30 seconds
+  # ├─ Use case: Prevent proxy/load-balancer timeout during slow responses
+  # └─ Without this: Long processing may drop connection as "idle"
+  sse_keep_alive_seconds: 30
+
+  # Request Store Cleanup Interval (5 minutes)
+  # ├─ When: Background cleanup of stored request data
+  # ├─ Effect: Remove old requests from memory every 5 minutes
+  # ├─ Use case: Prevent unbounded memory growth from request tracking
+  # └─ Trade-off: More frequent = less memory, less frequent = more history
+  request_store_cleanup_minutes: 5
+
+  # Retry Backoff Minimum Duration (100 milliseconds)
+  # ├─ When: First retry after a failure (exponential backoff)
+  # ├─ Effect: Wait 100ms before first retry attempt
+  # ├─ Use case: Transient failures (network hiccup, rate limit)
+  # └─ Too low: May retry too fast and fail again; too high: slow recovery
+  retry_backoff_min_millis: 100
+
+  # Retry Backoff Maximum Duration (5 seconds)
+  # ├─ When: Last retry in exponential backoff sequence
+  # ├─ Effect: Wait max 5 seconds between retry attempts
+  # ├─ Use case: Ceiling for exponential backoff (prevents infinite waiting)
+  # └─ If still failing after 5s wait, give up rather than wait 10s, 20s, etc.
+  retry_backoff_max_seconds: 5
+
+  # LLM Client Cache TTL - Time To Live (60 minutes)
+  # ├─ When: Caching OpenAI/Ollama client connections
+  # ├─ Effect: Reuse cached client for 60 minutes, then recreate
+  # ├─ Use case: Avoid recreating connections (improves performance)
+  # └─ Trade-off: More cache = faster; less cache = fresher connections
+  client_cache_ttl_minutes: 60
+
+  # Graceful Shutdown Check Interval (100 milliseconds)
+  # ├─ When: Checking for shutdown signal during long operations
+  # ├─ Effect: Check shutdown status every 100ms
+  # ├─ Use case: Responsive shutdown without hanging
+  # └─ Too frequent: CPU overhead; too infrequent: slow shutdown response
+  graceful_shutdown_check_millis: 100
+
+  # ╔════════════════════════════════════════════════════════════════════════╗
+  # ║                 SIZE LIMITS (8 total - all required)                  ║
+  # ║   These prevent DoS attacks and unbounded memory growth               ║
+  # ╚════════════════════════════════════════════════════════════════════════╝
+
+  # Maximum User Input Size (10 KB)
+  # ├─ When: User submits input to agent
+  # ├─ Effect: Reject inputs > 10 KB (10,240 bytes)
+  # ├─ Use case: Prevent DoS attacks from huge inputs
+  # └─ Trade-off: 10 KB ≈ ~2,500 words (reasonable for queries)
+  max_input_size_kb: 10
+
+  # Minimum Agent ID Length (1 character)
+  # ├─ When: Validating agent identifier
+  # ├─ Effect: Reject agent IDs with 0 length
+  # ├─ Use case: Ensure agents have meaningful names
+  # └─ Example: 'a' is valid (1 char), '' is invalid (0 chars)
+  min_agent_id_length: 1
+
+  # Maximum Agent ID Length (128 characters)
+  # ├─ When: Validating agent identifier
+  # ├─ Effect: Reject agent IDs > 128 characters
+  # ├─ Use case: Prevent unbounded identifier growth
+  # └─ Practical: 128 chars is plenty; longer is unusual
+  max_agent_id_length: 128
+
+  # Maximum HTTP Request Body Size (100 KB)
+  # ├─ When: Receiving HTTP requests (API calls)
+  # ├─ Effect: Reject HTTP bodies > 100 KB (102,400 bytes)
+  # ├─ Use case: Prevent memory exhaustion from oversized requests
+  # └─ Trade-off: 100 KB handles complex JSON; bigger = DoS risk
+  max_request_body_size_kb: 100
+
+  # Maximum Tool Output Characters (2000 characters)
+  # ├─ When: Tool returns result (API response, DB query, etc.)
+  # ├─ Effect: Truncate output if > 2000 chars
+  # ├─ Use case: Prevent LLM context overflow from huge outputs
+  # └─ Trade-off: 2000 chars ≈ 500 words (enough detail, keeps context small)
+  max_tool_output_chars: 2000
+
+  # Streaming Buffer Size (100 chunks)
+  # ├─ When: Buffering streaming response chunks
+  # ├─ Effect: Keep max 100 chunks in buffer
+  # ├─ Use case: Balance responsiveness vs memory usage
+  # └─ Too small: May drop chunks; too large: memory overhead
+  stream_buffer_size: 100
+
+  # Maximum Stored Requests (1000 requests)
+  # ├─ When: Tracking requests in memory for debugging/history
+  # ├─ Effect: Keep max 1000 recent requests, discard old ones
+  # ├─ Use case: Request history for debugging without unbounded growth
+  # └─ Trade-off: More = better history; less = less memory
+  max_stored_requests: 1000
+
+  # ╔════════════════════════════════════════════════════════════════════════╗
+  # ║            THRESHOLD PARAMETERS (1 total - required)                  ║
+  # ║   These control warnings and alerts                                   ║
+  # ╚════════════════════════════════════════════════════════════════════════╝
+
+  # Timeout Warning Threshold Percentage (20 = 20%)
+  # ├─ When: Monitoring remaining execution time
+  # ├─ Effect: WARN when only 20% of timeout remains (80% used)
+  # ├─ Use case: Alert developer before timeout happens
+  # ├─ Example: If timeout is 60 seconds, warn at 48 seconds elapsed
+  # └─ Range: 0.0 - 1.0 (must be between 0% and 100%)
+  timeout_warning_threshold_pct: 20

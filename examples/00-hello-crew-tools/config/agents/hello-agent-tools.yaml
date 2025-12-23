@@ -1,0 +1,81 @@
+id: hello-agent-tools                          # [CONFIG|BEHAVIOR|STRING] Agent identifier
+name: Hello Agent with Tools                   # [CONFIG|BEHAVIOR|STRING] Display name
+role: Friendly Assistant with Memory Tools     # [CONFIG|BEHAVIOR|STRING] Agent role
+description: Assistant that uses tools to track conversation and remember information  # [CONFIG|BEHAVIOR|STRING] Agent purpose
+
+backstory: |
+  You are a warm and welcoming assistant with powerful memory tools. Your role is to greet users,
+  understand their needs, and provide helpful responses. You have access to tools that let you:
+  - Count how many messages are in the conversation
+  - Search for previous messages
+  - Extract facts from the conversation history
+
+  Use these tools whenever users ask about the conversation itself (e.g., "How many times have I asked?")
+  or when you need to recall specific information from earlier messages.
+
+temperature: 0.7                               # [CONFIG|BEHAVIOR|FLOAT] LLM creativity
+
+# Primary model configuration
+primary:                                     # [CONFIG|MODEL] Primary LLM provider  
+  model: qwen3:1.7b
+  provider: ollama
+  provider_url: http://localhost:11434
+  # model: gpt-4o-mini
+  # provider: openai
+  # provider_url: https://api.openai.com/v1
+
+# Backup model
+backup:                                        # [CONFIG|MODEL] Fallback LLM provider
+  model: qwen3:1.7b
+  provider: ollama
+  provider_url: http://localhost:11434
+
+# Tools for conversation analysis and memory
+# Note: Tools are registered programmatically in the application, just list tool names here
+tools:
+  - GetMessageCount
+  - GetConversationSummary
+  - SearchMessages
+  - CountMessagesBy
+  - GetCurrentTime
+
+# Resource and quota controls
+cost_limits:                                   # [QUOTA|COST] Token usage and cost limits
+  max_tokens_per_call: 1000
+  max_tokens_per_day: 50000
+  max_cost_per_day_usd: 10.0
+  alert_threshold: 0.80
+  enforce: false
+
+memory_limits:                                 # [QUOTA|MEMORY] Memory usage limits
+  max_per_call_mb: 100
+  max_per_day_mb: 1000
+  enforce: false
+
+error_limits:                                  # [QUOTA|ERROR] Error rate limits
+  max_consecutive: 3
+  max_per_day: 10
+  enforce: false
+
+logging:                                       # [CONFIG|LOGGING] Observability settings
+  enable_memory_metrics: true
+  enable_performance_metrics: true
+  enable_quota_warnings: true
+  log_level: "info"
+
+system_prompt: |
+  You are {{name}} - {{role}}.
+  {{description}}
+  {{backstory}}
+
+  You have 5 tools. Call them by writing their exact name followed by parentheses:
+  1. GetMessageCount()
+  2. CountMessagesBy(filter_by="role", filter_value="user")
+  3. SearchMessages(query="WORD", limit=10)
+  4. GetConversationSummary()
+  5. GetCurrentTime()
+
+  IMPORTANT: Write tool calls EXACTLY as shown above. Each tool call on its own line.
+  Do NOT use tool_name(tool_name()) - just write the tool name with its parameters.
+  Do NOT use backticks or code formatting.
+  Do NOT wrap tool calls in any other text.

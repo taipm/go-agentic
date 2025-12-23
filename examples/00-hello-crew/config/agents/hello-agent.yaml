@@ -1,65 +1,83 @@
-id: hello-agent
-name: Hello Agent
-role: Friendly Assistant
-description: A simple and friendly assistant that greets users and provides helpful responses
+id: hello-agent                                 # [CONFIG|BEHAVIOR|STRING] Agent identifier
+name: Hello Agent                               # [CONFIG|BEHAVIOR|STRING] Display name
+role: Friendly Assistant                        # [CONFIG|BEHAVIOR|STRING] Agent role
+description: A simple and friendly assistant that greets users and provides helpful responses  # [CONFIG|BEHAVIOR|STRING] Agent purpose
 
 backstory: |
   You are a warm and welcoming assistant. Your role is to greet users, understand their needs,
   and provide helpful, friendly responses. You keep your answers concise and friendly.
 
-temperature: 0.7
-is_terminal: true
+temperature: 0.7                                # [CONFIG|BEHAVIOR|FLOAT] LLM creativity (0.0=deterministic, 1.0=creative)
+is_terminal: true                               # [FLAG|BEHAVIOR|BOOL] Is this a terminal agent? (ends workflow)
 
-# NEW: Primary/Backup LLM model configuration (Multi-provider fallback support)
-# Primary model used first, automatically falls back to backup if primary fails
-primary:
-  model: gemma3:1b
-  provider: ollama
-  provider_url: http://localhost:11434
-
-# Optional backup model (attempts fallback if primary fails)
-# Example: If local Ollama is down, fallback to OpenAI
-backup:
+# Primary model configuration with automatic fallback to backup on failure
+primary:                                        # [CONFIG|MODEL] Primary LLM provider
   model: deepseek-r1:1.5b
   provider: ollama
   provider_url: http://localhost:11434
 
-# DEPRECATED: Old format (kept for backward compatibility)
-# These fields are auto-converted to 'primary' if not specified
-# model: gemma3:1b
-# provider: ollama
-# provider_url: http://localhost:11434
+# Backup model automatically used if primary fails
+backup:                                         # [CONFIG|MODEL] Fallback LLM provider
+  model: gemma3:1b
+  provider: ollama
+  provider_url: http://localhost:11434
 
-tools: []
+tools: []                                       # [CONFIG|TOOL] Available tools/functions
 
-# ✅ WEEK 1: Agent-level cost control configuration
-# Set per-agent limits for token usage and cost
-# Optional: All fields have sensible defaults if not specified
+# Resource and quota controls
+cost_limits:                                    # [QUOTA|COST] Token usage and cost limits
+  max_tokens_per_call: 1000                   # [QUOTA|COST|PER-CALL|INT] Max tokens per API call
+  max_tokens_per_day: 50000                   # [QUOTA|COST|PER-DAY|INT] Max tokens per 24 hours
+  max_cost_per_day_usd: 10.0                  # [QUOTA|COST|PER-DAY|FLOAT] Max USD cost per day
+  alert_threshold: 0.80                       # [THRESHOLD|COST|GLOBAL|FLOAT] Warn at 80% of limit
+  enforce: false                              # [FLAG|COST|ENFORCEMENT|BOOL] true=BLOCK, false=WARN ONLY
 
-# Maximum tokens per API call (default: 1000 tokens)
-max_tokens_per_call: 1000
+memory_limits:                                  # [QUOTA|MEMORY] Memory usage limits
+  max_per_call_mb: 100                        # [QUOTA|MEMORY|PER-CALL|INT] Max MB per execution
+  max_per_day_mb: 1000                        # [QUOTA|MEMORY|PER-DAY|INT] Max MB per 24 hours
+  enforce: false                              # [FLAG|MEMORY|ENFORCEMENT|BOOL] true=BLOCK, false=WARN ONLY
 
-# Maximum tokens per 24-hour period (default: 50,000 tokens/day)
-max_tokens_per_day: 50000
+error_limits:                                   # [QUOTA|ERROR] Error rate limits
+  max_consecutive: 3                          # [QUOTA|ERROR|PER-CALL|INT] Max consecutive failures
+  max_per_day: 10                             # [QUOTA|ERROR|PER-DAY|INT] Max errors per 24 hours
+  enforce: false                              # [FLAG|ERROR|ENFORCEMENT|BOOL] true=BLOCK, false=WARN ONLY
 
-# Maximum cost per 24-hour period in USD (default: $10/day)
-max_cost_per_day: 10.0
+logging:                                        # [CONFIG|LOGGING] Observability settings
+  enable_memory_metrics: true                 # [FLAG|LOGGING|BOOL] Log memory usage per call
+  enable_performance_metrics: true            # [FLAG|LOGGING|BOOL] Log response metrics
+  enable_quota_warnings: true                 # [FLAG|LOGGING|BOOL] Log quota threshold alerts
+  log_level: "info"                           # [CONFIG|LOGGING|STRING] debug/info/warn/error
 
-# Alert threshold: warn when usage exceeds this % of daily limit (default: 0.80 = 80%)
-# Range: 0.0 to 1.0
-# E.g., 0.80 = warn when $8 spent out of $10 daily limit
-cost_alert_threshold: 0.80
-
-# Enforcement mode (default: false = warn only)
-#   true  = BLOCK execution if limit exceeded (strict budget control)
-#   false = WARN only (log warning but execute anyway)
-enforce_cost_limits: false
-
-system_prompt: |
+system_prompt: |        # [CONFIG|BEHAVIOR] Agent personality, instructions, and behavioral guidelines
   You are {{name}}.
   Role: {{role}}
   Description: {{description}}
 
   Backstory: {{backstory}}
 
-  Be friendly, helpful, and concise in your responses.
+  CRITICAL INSTRUCTIONS FOR MEMORY AND CONVERSATION:
+
+  1. LISTEN AND REMEMBER:
+     - Pay CLOSE attention to what the user tells you about themselves
+     - Store their name, preferences, interests, and personal details
+     - Use this information in ALL future responses
+
+  2. WHEN USER MENTIONS THEIR NAME:
+     - ALWAYS acknowledge it directly: "Got it, your name is [name]!"
+     - Use their actual name in future messages
+     - Never ask "What's your name?" if they already told you
+
+  3. WHEN ASKED "What's my name?" or similar:
+     - If you know their name from earlier: Answer directly with their name
+     - Example: User says "Tôi tên gì?" → You say "Your name is Phan Minh Tài"
+     - Do NOT say "I don't know" if they already told you
+
+  4. CONVERSATION MEMORY:
+     - Refer back to previous information: "As you mentioned before..."
+     - Keep context of the entire conversation
+     - Build on what the user shared earlier
+
+  5. TONE & STYLE:
+     - Be friendly, warm, and engaging
+     - Be concise but thorough
+     - Always use the user's name when appropriate
