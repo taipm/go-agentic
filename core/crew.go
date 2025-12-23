@@ -74,7 +74,7 @@ func validateFieldType(tool *Tool, fieldName string, fieldValue interface{}, pro
 }
 
 // validateToolArguments validates tool arguments against tool definition
-// ✅ FIX for Issue #25: Tool execution validation
+// Required parameters must be present and types must match schema
 func validateToolArguments(tool *Tool, args map[string]interface{}) error {
 	if tool.Parameters == nil {
 		return nil // No parameters defined, so any args are acceptable
@@ -107,11 +107,8 @@ func validateToolArguments(tool *Tool, args map[string]interface{}) error {
 }
 
 // safeExecuteTool wraps tool execution with panic recovery for graceful error handling
-// ✅ FIX for Issue #5 (Panic Risk): Catch any panic in tool execution and convert to error
-// ✅ FIX for Issue #25: Validate arguments before execution
 // This prevents one buggy tool from crashing the entire server
 // Pattern: defer-recover catches panic and converts it to error (Go standard approach)
-// ✅ FIX #5: Error classification for smart recovery decisions
 type ErrorType int
 
 const (
@@ -125,7 +122,8 @@ const (
 )
 
 // classifyError determines if an error is transient (retryable) or permanent
-// ✅ FIX #5: Helper function for error recovery strategy
+// Transient errors (timeout, network) trigger retry logic
+// Permanent errors (validation, panic) fail immediately
 func classifyError(err error) ErrorType {
 	if err == nil {
 		return ErrorTypeUnknown
@@ -165,7 +163,6 @@ func classifyError(err error) ErrorType {
 }
 
 // isRetryable determines if an error type should trigger a retry
-// ✅ FIX #5: Helper function to determine retry strategy
 func isRetryable(errType ErrorType) bool {
 	switch errType {
 	case ErrorTypeTimeout, ErrorTypeNetwork, ErrorTypeTemporary:
@@ -178,7 +175,7 @@ func isRetryable(errType ErrorType) bool {
 }
 
 // calculateBackoffDuration returns exponential backoff with jitter
-// ✅ FIX #5: Helper function for exponential backoff calculation
+// Starts at 100ms, doubles each attempt, capped at 5 seconds
 func calculateBackoffDuration(attempt int) time.Duration {
 	// Start with 100ms, double each attempt: 100ms, 200ms, 400ms, 800ms...
 	baseDelay := time.Duration(100<<uint(attempt)) * time.Millisecond
@@ -192,7 +189,7 @@ func calculateBackoffDuration(attempt int) time.Duration {
 }
 
 // retryWithBackoff executes a tool with exponential backoff retry logic
-// ✅ FIX #5: Main retry execution function
+// Returns immediately on non-retryable errors
 func retryWithBackoff(ctx context.Context, tool *Tool, args map[string]interface{}, maxRetries int) (string, error) {
 	// Handle nil context
 	if ctx == nil {
@@ -246,7 +243,7 @@ func retryWithBackoff(ctx context.Context, tool *Tool, args map[string]interface
 }
 
 // safeExecuteToolOnce executes a tool once without retry
-// ✅ FIX #5: Single execution attempt (used by retry wrapper)
+// Panic recovery prevents one buggy tool from crashing the entire system
 func safeExecuteToolOnce(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
 	defer func() {
 		// Catch panic and convert to error
@@ -265,7 +262,7 @@ func safeExecuteToolOnce(ctx context.Context, tool *Tool, args map[string]interf
 }
 
 // safeExecuteTool is the main entry point for tool execution with error recovery
-// ✅ FIX #5: Enhanced with retry logic and error recovery
+// Attempts retry on transient errors with exponential backoff
 func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
 	// Default to 2 retries (3 total attempts: 1 initial + 2 retries)
 	// This is reasonable for transient failures without significant latency impact
@@ -274,7 +271,6 @@ func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{
 	return retryWithBackoff(ctx, tool, args, maxRetries)
 }
 
-// ✅ FIX for Issue #11 (Sequential Tool Timeout)
 // ExecutionMetrics tracks execution time and status for tools
 type ExecutionMetrics struct {
 	ToolName     string        // Name of the tool executed
@@ -285,8 +281,8 @@ type ExecutionMetrics struct {
 	EndTime      time.Time     // When tool execution completed
 }
 
-// ✅ FIX for Issue #11 (Enhanced Timeout Management)
 // TimeoutTracker tracks sequence execution time and manages per-tool budgets
+// Prevents tools from exceeding allocated time in a sequence
 type TimeoutTracker struct {
 	sequenceStartTime time.Time     // When sequence started
 	sequenceDeadline  time.Time     // When sequence must complete
@@ -401,15 +397,14 @@ type CrewExecutor struct {
 	history        []Message
 	Verbose        bool               // If true, print agent responses and tool results to stdout
 	ResumeAgentID  string             // If set, execution will start from this agent instead of entry agent
-	ToolTimeouts   *ToolTimeoutConfig // ✅ FIX for Issue #11: Timeout configuration
-	Metrics        *MetricsCollector  // ✅ FIX for Issue #14: Metrics collection for observability
-	defaults       *HardcodedDefaults // ✅ Phase 5: Runtime configuration defaults
+	ToolTimeouts   *ToolTimeoutConfig // Timeout configuration
+	Metrics        *MetricsCollector  // Metrics collection for observability
+	defaults       *HardcodedDefaults // Runtime configuration defaults
 }
 
 // NewCrewExecutor creates a new crew executor
 // Note: crew.Routing MUST be set for signal-based routing to work
 // Best Practice: Use entry_point from crew.yaml instead of relying on IsTerminal
-// ✅ Phase 5: Initializes with default HardcodedDefaults
 func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 	// Find entry agent - first agent is default if no routing configured
 	var entryAgent *Agent
@@ -422,9 +417,9 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 		apiKey:       apiKey,
 		entryAgent:   entryAgent,
 		history:      []Message{},
-		ToolTimeouts: NewToolTimeoutConfig(),     // ✅ FIX for Issue #11: Initialize timeout config
-		Metrics:      NewMetricsCollector(),      // ✅ FIX for Issue #14: Initialize metrics collector
-		defaults:     DefaultHardcodedDefaults(), // ✅ Phase 5: Initialize with default values
+		ToolTimeouts: NewToolTimeoutConfig(),
+		Metrics:      NewMetricsCollector(),
+		defaults:     DefaultHardcodedDefaults(),
 	}
 }
 
@@ -440,7 +435,7 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 
 	// Load agent configurations
 	agentDir := fmt.Sprintf("%s/agents", configDir)
-	// ✅ FIX for Issue #5: Extract configMode from crew config and pass to agent loading
+	// Extract configMode from crew config for agent loading
 	configMode := PermissiveMode // Default to permissive for backward compatibility
 	if crewConfig.Settings.ConfigMode != "" {
 		configMode = ConfigMode(crewConfig.Settings.ConfigMode)
@@ -474,10 +469,10 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 	// Create executor
 	executor := NewCrewExecutor(crew, apiKey)
 
-	// ✅ Phase 5: Convert YAML config to runtime defaults
+	// Convert YAML config to runtime defaults
 	executor.defaults = ConfigToHardcodedDefaults(crewConfig)
 
-	// ✅ Phase 5.1: Check if defaults is nil (STRICT MODE validation failed)
+	// In STRICT MODE, validation errors are fatal
 	if executor.defaults == nil {
 		return nil, fmt.Errorf("STRICT MODE configuration validation failed - see errors above")
 	}
@@ -523,7 +518,7 @@ func (ce *CrewExecutor) GetResumeAgentID() string {
 }
 
 // GetHistory returns a copy of the conversation history
-// ✅ WEEK 3: Allow inspection of conversation history for debugging memory issues
+// Allows inspection for debugging memory issues
 func (ce *CrewExecutor) GetHistory() []Message {
 	// Return a copy to prevent external modification
 	historyCopy := make([]Message, len(ce.history))
@@ -533,7 +528,6 @@ func (ce *CrewExecutor) GetHistory() []Message {
 
 // estimateHistoryTokens estimates total tokens in conversation history
 // Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
-// ✅ FIX for HIGH Issue #1: Cost leak from unbounded history
 func (ce *CrewExecutor) estimateHistoryTokens() int {
 	total := 0
 	for _, msg := range ce.history {
@@ -545,11 +539,7 @@ func (ce *CrewExecutor) estimateHistoryTokens() int {
 
 // trimHistoryIfNeeded trims conversation history to fit within context window
 // Uses ce.defaults.MaxContextWindow and ce.defaults.ContextTrimPercent
-// ✅ FIX for HIGH Issue #1: Prevents unbounded history growth causing cost leakage
-// Strategy:
-// - Always keep first message (initial context)
-// - Always keep recent messages (most relevant)
-// - Remove oldest messages in middle when over limit
+// Strategy: Keep first + recent messages, remove oldest in middle when over limit
 func (ce *CrewExecutor) trimHistoryIfNeeded() {
 	if ce.defaults == nil || len(ce.history) <= 2 {
 		return
@@ -663,10 +653,10 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		// Send agent start event
 		streamChan <- NewStreamEvent("agent_start", currentAgent.Name, fmt.Sprintf("🔄 Starting %s...", currentAgent.Name))
 
-		// ✅ FIX for HIGH Issue #1: Trim history before LLM call to prevent cost leakage
+		// Trim history before LLM call to prevent cost leakage
 		ce.trimHistoryIfNeeded()
 
-		// ✅ FIX for Issue #14: Start tracking agent execution time
+		// Track agent execution time for metrics
 		agentStartTime := time.Now()
 
 		// Execute current agent
@@ -675,12 +665,12 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 		agentDuration := agentEndTime.Sub(agentStartTime)
 
 		if err != nil {
-		// ✅ ISSUE #2: Update performance metrics FIRST with error
+		// Update performance metrics with error
 		if currentAgent.Metadata != nil {
 		 currentAgent.UpdatePerformanceMetrics(false, err.Error())
 		}
 
-		// ✅ ISSUE #2: Check error quota (use different variable to avoid shadowing)
+		// Check error quota (use different variable to avoid shadowing)
 		 if quotaErr := currentAgent.CheckErrorQuota(); quotaErr != nil {
 			log.Printf("[QUOTA] Agent %s exceeded error quota: %v", currentAgent.ID, quotaErr)
 			streamChan <- NewStreamEvent("error", currentAgent.Name,
@@ -688,27 +678,26 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			return quotaErr
 		}
 
-		// Original error handling (now using original 'err' variable correctly)
+		// Report agent error
 		streamChan <- NewStreamEvent("error", currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
-		// ✅ FIX for Issue #14: Record failed agent execution
+		// Record failed agent execution
 		if ce.Metrics != nil {
 			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
 		}
 		return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
 	}
 
-		// ✅ FIX for Issue #14: Record successful agent execution
+		// Record successful agent execution
 		if ce.Metrics != nil {
 			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, true)
 
-			// ✅ Crew-level cost tracking: aggregate agent's last LLM call cost
+			// Aggregate agent's last LLM call cost for crew-level tracking
 			tokens, cost := currentAgent.GetLastCallCost()
 			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
 			ce.Metrics.LogCrewCostSummary()
 
-			// ✅ ISSUE #1: Check memory quota AFTER execution, BEFORE metrics update
-			// Note: Memory is estimated based on token count. Actual usage may differ.
-			// Formula: 1 token ≈ 4 bytes (conservative estimate)
+			// Check memory quota after execution
+			// Memory estimated based on token count: 1 token ≈ 4 bytes
 			memoryUsedMB := (tokens * 4) / 1024 / 1024
 
 			if err := currentAgent.CheckMemoryQuota(); err != nil {
@@ -718,7 +707,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				return err
 			}
 
-			// ✅ ISSUE #3: Update memory & performance metrics (only after quota check passes)
+			// Update memory & performance metrics (only after quota check passes)
 			callDurationMs := agentDuration.Milliseconds()
 			if currentAgent.Metadata != nil {
 				currentAgent.UpdateMemoryMetrics(memoryUsedMB, callDurationMs)
@@ -772,7 +761,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			continue
 		}
 
-		// ✅ FIX: Check for TERMINATION signals FIRST (target="")
+		// Check for termination signals first (before routing)
 		// If agent emits a termination signal like [KẾT THÚC THI], workflow should end
 		terminationResult := ce.checkTerminationSignal(currentAgent, response.Content)
 		if terminationResult != nil && terminationResult.ShouldTerminate {
@@ -890,7 +879,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 	handoffCount := 0
 
 	for {
-		// ✅ FIX for HIGH Issue #1: Trim history before LLM call to prevent cost leakage
+		// Trim history before LLM call to prevent cost leakage
 		ce.trimHistoryIfNeeded()
 
 		// Execute current agent
@@ -902,7 +891,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 		}
 		log.Printf("[AGENT END] %s (%s) - Success", currentAgent.Name, currentAgent.ID)
 
-		// ✅ Crew-level cost tracking: aggregate agent's last LLM call cost
+		// Aggregate agent's last LLM call cost for crew-level tracking
 		if ce.Metrics != nil {
 			tokens, cost := currentAgent.GetLastCallCost()
 			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
@@ -941,7 +930,7 @@ func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewRespons
 			continue
 		}
 
-		// ✅ FIX: Check for TERMINATION signals FIRST (target="")
+		// Check for termination signals first (before routing)
 		// If agent emits a termination signal like [KẾT THÚC THI], workflow should end
 		terminationResult := ce.checkTerminationSignal(currentAgent, response.Content)
 		if terminationResult != nil && terminationResult.ShouldTerminate {
