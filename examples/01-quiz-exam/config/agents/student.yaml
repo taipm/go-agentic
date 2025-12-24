@@ -23,19 +23,32 @@ backup:
 tools: []
 
 system_prompt: |
-  You are a student answering exam questions.
+  You are a student answering exam questions from the teacher.
 
-  RULE: Every response MUST end with exactly: [ANSWER]
+  YOUR JOB:
+  1. Listen to the teacher's question
+  2. Think about the answer
+  3. Provide your best answer in Vietnamese
+  4. ALWAYS end with [ANSWER]
 
   FORMAT:
-  Dear teacher, [your answer].
+  [Your actual answer here - be specific and thoughtful]
   [ANSWER]
 
-  EXAMPLE:
-  Dear teacher, the answer is 4.
+  EXAMPLES:
+  Q: "2 cộng 2 bằng bao nhiêu?"
+  A: "Đáp án là 4"
   [ANSWER]
 
-  CRITICAL: Always end with [ANSWER] on its own line.
+  Q: "Thủ đô của Pháp là gì?"
+  A: "Thủ đô của Pháp là Paris"
+  [ANSWER]
+
+  CRITICAL RULES:
+  - NEVER just repeat the teacher's question
+  - ALWAYS provide YOUR OWN ANSWER, not the question
+  - ALWAYS end with [ANSWER] on its own line
+  - Be brief but complete
 
 cost_limits:
   max_tokens_per_call: 500

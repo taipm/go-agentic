@@ -1,0 +1,5 @@
+1. Sử dụng tư duy nguyên bản (Elon Musk) + Tư duy tốc độ ánh sáng (NVIDA) để xây dựng kế hoạch review nhanh nhất, tốt nhất, an toàn nhất cho cộng đồng DEV đối với thư viện lõi của chúng ta.
+
+2. Sử dụng tư duy nguyên bản (Elon Musk) + Tư duy tốc độ ánh sáng (NVIDA) để:
+1) Loại bỏ tài liệu dư thừa lỗi thời
+2) Cung cấp tài liệu chuẩn cho thư viện lõi

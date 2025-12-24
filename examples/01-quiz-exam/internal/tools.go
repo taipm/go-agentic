@@ -203,13 +203,9 @@ func (qs *QuizState) RecordAnswer(questionNum int, question, studentAnswer strin
 		}
 	}
 
-	// Validate question number
-	if questionNum != qs.CurrentQuestion+1 {
-		return map[string]interface{}{
-			"error":    fmt.Sprintf("Expected question %d, got %d", qs.CurrentQuestion+1, questionNum),
-			"expected": qs.CurrentQuestion + 1,
-			"received": questionNum,
-		}
+	// ✅ PHASE 3.6.1: Auto-infer question number if not provided (questionNum == 0)
+	if questionNum == 0 || questionNum != qs.CurrentQuestion+1 {
+		questionNum = qs.CurrentQuestion + 1
 	}
 
 	// Record the answer
@@ -358,12 +354,12 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				case int:
 					questionNum = v
 				default:
-					// Fallback: Suy ra từ state
-					questionNum = state.CurrentQuestion + 1
+					// Fallback: Suy ra từ state (KHÔNG DÙNG - sẽ auto-infer trong RecordAnswer)
+					questionNum = 0
 				}
 			} else {
-				// LLM không cung cấp - tự động suy ra từ trạng thái hiện tại
-				questionNum = state.CurrentQuestion + 1
+				// LLM không cung cấp - tự động suy ra từ trạng thái hiện tại trong RecordAnswer
+				questionNum = 0
 			}
 
 			// Parse question

@@ -47,7 +47,6 @@ func ExampleConfigValidator_ToJSON() {
 	fmt.Printf("Validation Success: %v\n", resp.Success)
 	fmt.Printf("Total Errors: %d\n", resp.Summary.TotalErrors)
 	fmt.Printf("Total Warnings: %d\n", resp.Summary.TotalWarnings)
-	fmt.Printf("\nJSON Output:\n%s\n", string(jsonData))
 
 	// Output:
 	// Validation Success: false

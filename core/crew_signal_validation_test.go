@@ -125,7 +125,7 @@ func TestValidateSignalsUnknownTarget(t *testing.T) {
 		t.Error("Should reject signal targeting unknown agent")
 	}
 	if err != nil {
-		expected := "agent 'teacher' emits signal '[NEXT]' targeting unknown agent 'unknown_agent' - target must be empty (terminate) or valid agent ID"
+		expected := "agent 'teacher' emits signal '[NEXT]' targeting unknown target 'unknown_agent' - target must be empty (terminate), valid agent ID, or parallel group name"
 		if err.Error() != expected {
 			t.Errorf("Wrong error message:\nGot:      %v\nExpected: %v", err.Error(), expected)
 		}
