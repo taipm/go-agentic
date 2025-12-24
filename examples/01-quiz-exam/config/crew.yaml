@@ -22,6 +22,8 @@ routing:
         target: parallel_question  # -> Student + Reporter
       - signal: "[END]"
         target: reporter  # Final save
+      - signal: "[END_EXAM]"
+        target: ""  # ✅ Terminate workflow immediately when exam ends
     student:
       - signal: "[ANSWER]"
         target: parallel_answer  # -> Teacher + Reporter
@@ -30,6 +32,8 @@ routing:
         target: ""  # Just acknowledge, don't route
       - signal: "[DONE]"
         target: ""  # Terminate workflow
+      - signal: "[END_EXAM]"
+        target: ""  # ✅ Terminate if reporter emits end exam signal
 
   # Parallel groups
   parallel_groups:
