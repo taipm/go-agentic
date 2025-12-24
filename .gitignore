@@ -47,3 +47,10 @@ it-support
 go-crewai
 /examples/*/main
 /examples/*/*.out
+
+# BMAD & Claude directories (local development only)
+_bmad/
+_bmad-output/
+.claude/
+.github/agents/
+.qwen/
