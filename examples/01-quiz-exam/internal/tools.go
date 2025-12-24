@@ -323,7 +323,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"properties": map[string]interface{}{
 				"question_number": map[string]interface{}{
 					"type":        "integer",
-					"description": "Số thứ tự câu hỏi (1-10)",
+					"description": "Số thứ tự câu hỏi (1-10) - sẽ tự động suy ra nếu không cung cấp",
 				},
 				"question": map[string]interface{}{
 					"type":        "string",
@@ -342,20 +342,28 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 					"description": "Nhận xét ngắn gọn của giáo viên về câu trả lời (tùy chọn)",
 				},
 			},
-			"required": []string{"question_number", "question", "student_answer", "is_correct"},
+			"required": []string{"question", "student_answer", "is_correct"},
 		},
 		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
-			// Parse question_number (could be float64/int64/int from JSON or text parsing)
+			// ✅ PHASE 3.6: Auto-infer question_number from current state
 			var questionNum int
-			switch v := args["question_number"].(type) {
-			case float64:
-				questionNum = int(v)
-			case int64:
-				questionNum = int(v)
-			case int:
-				questionNum = v
-			default:
-				return "", fmt.Errorf("invalid question_number type: %T", v)
+
+			if qn, exists := args["question_number"]; exists && qn != nil {
+				// LLM cung cấp question_number - sử dụng giá trị này
+				switch v := qn.(type) {
+				case float64:
+					questionNum = int(v)
+				case int64:
+					questionNum = int(v)
+				case int:
+					questionNum = v
+				default:
+					// Fallback: Suy ra từ state
+					questionNum = state.CurrentQuestion + 1
+				}
+			} else {
+				// LLM không cung cấp - tự động suy ra từ trạng thái hiện tại
+				questionNum = state.CurrentQuestion + 1
 			}
 
 			// Parse question
@@ -376,10 +384,12 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				studentAnswer = fmt.Sprintf("%v", v)
 			}
 
-			// Parse is_correct
-			isCorrect, ok := args["is_correct"].(bool)
-			if !ok {
-				return "", fmt.Errorf("invalid is_correct type: %T", args["is_correct"])
+			// ✅ PHASE 3.6: Auto-detect is_correct (fallback to true if not provided)
+			isCorrect := true  // Default: assume answer is correct
+			if ic, exists := args["is_correct"]; exists && ic != nil {
+				if b, ok := ic.(bool); ok {
+					isCorrect = b
+				}
 			}
 
 			// Parse teacher_comment (optional)
