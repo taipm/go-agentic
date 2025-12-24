@@ -1,0 +1,20 @@
+version: "1.0"
+name: master-team
+description: |
+  Master Team - Điều phối workflow giữa các team khác.
+  Coordinator nhận yêu cầu từ user và phân công cho Team Alpha/Beta.
+
+entry_point: coordinator
+
+agents:
+  - coordinator
+
+# No routing signals - orchestrator handles inter-team coordination
+# Coordinator just emits signals in response text for orchestrator to detect
+
+settings:
+  max_rounds: 10
+  max_handoffs: 10
+  config_mode: permissive
+  max_tokens_per_call: 2000
+  max_context_window: 32000

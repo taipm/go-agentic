@@ -1,0 +1,36 @@
+version: "1.0"
+name: team-alpha
+description: |
+  Team Alpha - Nghiên cứu & Phân tích
+  - Researcher: Thu thập thông tin
+  - Analyst: Phân tích và đưa ra insights
+
+entry_point: researcher
+
+agents:
+  - researcher
+  - analyst
+
+routing:
+  signals:
+    researcher:
+      - signal: "[RESEARCH_DONE]"
+        target: analyst
+        description: "Nghiên cứu xong, chuyển cho Analyst"
+    analyst:
+      - signal: "[ALPHA_COMPLETE]"
+        target: ""  # Kết thúc team, trả về orchestrator
+        description: "Team Alpha hoàn thành"
+
+  agent_behaviors:
+    researcher:
+      wait_for_signal: false
+    analyst:
+      wait_for_signal: false
+
+settings:
+  max_rounds: 5
+  max_handoffs: 5
+  config_mode: permissive
+  max_tokens_per_call: 1500
+  max_context_window: 32000

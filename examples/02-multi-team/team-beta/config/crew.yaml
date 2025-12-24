@@ -1,0 +1,36 @@
+version: "1.0"
+name: team-beta
+description: |
+  Team Beta - Viết & Review Content
+  - Writer: Viết content dựa trên insights
+  - Reviewer: Review và hoàn thiện
+
+entry_point: writer
+
+agents:
+  - writer
+  - reviewer
+
+routing:
+  signals:
+    writer:
+      - signal: "[DRAFT_DONE]"
+        target: reviewer
+        description: "Bản nháp xong, chuyển cho Reviewer"
+    reviewer:
+      - signal: "[BETA_COMPLETE]"
+        target: ""  # Kết thúc team, trả về orchestrator
+        description: "Team Beta hoàn thành"
+
+  agent_behaviors:
+    writer:
+      wait_for_signal: false
+    reviewer:
+      wait_for_signal: false
+
+settings:
+  max_rounds: 5
+  max_handoffs: 5
+  config_mode: permissive
+  max_tokens_per_call: 1500
+  max_context_window: 32000

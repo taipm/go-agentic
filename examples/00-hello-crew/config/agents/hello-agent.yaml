@@ -12,7 +12,7 @@ is_terminal: true                               # [FLAG|BEHAVIOR|BOOL] Is this a
 
 # Primary model configuration with automatic fallback to backup on failure
 primary:                                        # [CONFIG|MODEL] Primary LLM provider
-  model: deepseek-r1:1.5b
+  model: qwen3:1.7b
   provider: ollama
   provider_url: http://localhost:11434
 
