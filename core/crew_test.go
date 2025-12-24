@@ -952,54 +952,54 @@ func TestTrimHistoryIfNeeded(t *testing.T) {
 	}
 
 	// Test 1: History within limits should not be trimmed
-	executor.history = []Message{
+	executor.history = NewHistoryManagerWith([]Message{
 		{Role: "user", Content: "Hello"},
 		{Role: "assistant", Content: "Hi there"},
-	}
+	})
 
-	originalCount := len(executor.history)
+	originalCount := executor.history.Length()
 	executor.trimHistoryIfNeeded()
 
-	if len(executor.history) != originalCount {
-		t.Errorf("History within limits should not be trimmed: %d vs %d", len(executor.history), originalCount)
+	if executor.history.Length() != originalCount {
+		t.Errorf("History within limits should not be trimmed: %d vs %d", executor.history.Length(), originalCount)
 	}
 
 	// Test 2: Very small history (<=2 messages) should not be trimmed
-	executor.history = []Message{
+	executor.history = NewHistoryManagerWith([]Message{
 		{Role: "user", Content: "Q1"},
 		{Role: "assistant", Content: "A1"},
-	}
+	})
 
 	executor.trimHistoryIfNeeded()
 
-	if len(executor.history) != 2 {
+	if executor.history.Length() != 2 {
 		t.Error("History with 2 messages should not be trimmed")
 	}
 
 	// Test 3: Large history exceeding MaxContextWindow should be trimmed
-	executor.history = []Message{
+	executor.history = NewHistoryManagerWith([]Message{
 		{Role: "user", Content: "Initial system context about the user"},
-	}
+	})
 
 	// Add many large messages to exceed MaxContextWindow (32000 tokens default)
 	largeContent := strings.Repeat("x", 5000) // ~1250 tokens per message
 	for i := 0; i < 30; i++ {
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: fmt.Sprintf("Question %d: %s", i, largeContent),
 		})
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: fmt.Sprintf("Answer %d: %s", i, largeContent),
 		})
 	}
 
-	beforeTrimCount := len(executor.history)
+	beforeTrimCount := executor.history.Length()
 	beforeTokens := executor.estimateHistoryTokens()
 
 	executor.trimHistoryIfNeeded()
 
-	afterTrimCount := len(executor.history)
+	afterTrimCount := executor.history.Length()
 	afterTokens := executor.estimateHistoryTokens()
 
 	// Verify trimming happened
@@ -1014,12 +1014,12 @@ func TestTrimHistoryIfNeeded(t *testing.T) {
 	}
 
 	// Verify first message is kept
-	if len(executor.history) > 0 && executor.history[0].Content != "Initial system context about the user" {
+	if executor.history.Length() > 0 && executor.history.Copy()[0].Content != "Initial system context about the user" {
 		t.Error("First message should be preserved after trimming")
 	}
 
 	// Verify summary message is added
-	if len(executor.history) > 1 && !strings.Contains(executor.history[1].Content, "earlier messages trimmed") {
+	if executor.history.Length() > 1 && !strings.Contains(executor.history.Copy()[1].Content, "earlier messages trimmed") {
 		t.Error("Summary message should be added for trimmed content")
 	}
 
@@ -1037,7 +1037,7 @@ func TestHistoryGrowthBounds(t *testing.T) {
 
 	for turn := 1; turn <= 100; turn++ {
 		// Add user message
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: fmt.Sprintf("Turn %d: %s", turn, messageContent),
 		})
@@ -1046,7 +1046,7 @@ func TestHistoryGrowthBounds(t *testing.T) {
 		executor.trimHistoryIfNeeded()
 
 		// Add assistant response
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: fmt.Sprintf("Response to turn %d: %s", turn, messageContent),
 		})
@@ -1065,7 +1065,7 @@ func TestHistoryGrowthBounds(t *testing.T) {
 	// Final verification
 	finalTokens := executor.estimateHistoryTokens()
 	t.Logf("After 100 turns: %d messages, ~%d tokens (max %d)",
-		len(executor.history), finalTokens, executor.defaults.MaxContextWindow)
+		executor.history.Length(), finalTokens, executor.defaults.MaxContextWindow)
 
 	if finalTokens > executor.defaults.MaxContextWindow {
 		t.Errorf("Final history exceeds MaxContextWindow: %d > %d",
@@ -1073,8 +1073,8 @@ func TestHistoryGrowthBounds(t *testing.T) {
 	}
 
 	// Verify minimum messages retained (at least context + couple recent)
-	if len(executor.history) < 3 {
-		t.Errorf("Should retain at least 3 messages after 100 turns, got %d", len(executor.history))
+	if executor.history.Length() < 3 {
+		t.Errorf("Should retain at least 3 messages after 100 turns, got %d", executor.history.Length())
 	}
 }
 
@@ -1084,19 +1084,18 @@ func TestTrimPreservesFirstMessage(t *testing.T) {
 	executor := NewCrewExecutor(crew, "test-key")
 
 	systemContext := "You are a helpful assistant specialized in Go programming"
-	executor.history = append(executor.history, Message{
-		Role:    "system",
-		Content: systemContext,
+	executor.history = NewHistoryManagerWith([]Message{
+		{Role: "system", Content: systemContext},
 	})
 
 	// Add many large messages to force trimming
 	largeContent := strings.Repeat("x", 5000)
 	for i := 0; i < 40; i++ {
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: largeContent,
 		})
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: largeContent,
 		})
@@ -1105,13 +1104,13 @@ func TestTrimPreservesFirstMessage(t *testing.T) {
 	executor.trimHistoryIfNeeded()
 
 	// Verify first message is preserved
-	if len(executor.history) == 0 {
+	if executor.history.Length() == 0 {
 		t.Fatal("History should not be empty after trimming")
 	}
 
-	if executor.history[0].Content != systemContext {
+	if executor.history.Copy()[0].Content != systemContext {
 		t.Errorf("First message not preserved: expected %q, got %q",
-			systemContext, executor.history[0].Content)
+			systemContext, executor.history.Copy()[0].Content)
 	}
 }
 
@@ -1120,19 +1119,18 @@ func TestTrimKeepsRecentMessages(t *testing.T) {
 	crew := &Crew{Agents: []*Agent{}}
 	executor := NewCrewExecutor(crew, "test-key")
 
-	executor.history = append(executor.history, Message{
-		Role:    "user",
-		Content: "Initial context",
+	executor.history = NewHistoryManagerWith([]Message{
+		{Role: "user", Content: "Initial context"},
 	})
 
 	// Add 50 messages with identifiable content
 	largeContent := strings.Repeat("x", 5000)
 	for i := 0; i < 50; i++ {
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: fmt.Sprintf("Message_%d_%s", i, largeContent),
 		})
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: fmt.Sprintf("Response_%d_%s", i, largeContent),
 		})
@@ -1142,7 +1140,7 @@ func TestTrimKeepsRecentMessages(t *testing.T) {
 
 	// Verify recent messages are kept
 	recentFound := false
-	for _, msg := range executor.history {
+	for _, msg := range executor.history.Copy() {
 		if strings.Contains(msg.Content, "Message_4") || strings.Contains(msg.Content, "Response_4") {
 			recentFound = true
 			break
@@ -1155,7 +1153,7 @@ func TestTrimKeepsRecentMessages(t *testing.T) {
 
 	// Old messages should be removed
 	oldFound := false
-	for _, msg := range executor.history {
+	for _, msg := range executor.history.Copy() {
 		if strings.Contains(msg.Content, "Message_0_") && !strings.Contains(msg.Content, "Initial") {
 			oldFound = true
 			break
@@ -1173,18 +1171,17 @@ func TestTrimLoggingOutput(t *testing.T) {
 	executor := NewCrewExecutor(crew, "test-key")
 
 	// Create history that will trigger trimming
-	executor.history = append(executor.history, Message{
-		Role:    "user",
-		Content: "Initial",
+	executor.history = NewHistoryManagerWith([]Message{
+		{Role: "user", Content: "Initial"},
 	})
 
 	largeContent := strings.Repeat("x", 5000)
 	for i := 0; i < 30; i++ {
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: fmt.Sprintf("Q%d: %s", i, largeContent),
 		})
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: fmt.Sprintf("A%d: %s", i, largeContent),
 		})
@@ -1201,7 +1198,7 @@ func TestTrimLoggingOutput(t *testing.T) {
 	}
 
 	// Verify message count decreased
-	if len(executor.history) >= 61 { // Original count was 1 + 30*2 = 61
+	if executor.history.Length() >= 61 { // Original count was 1 + 30*2 = 61
 		t.Error("Trimming should reduce message count")
 	}
 }
@@ -1226,15 +1223,15 @@ func TestExecuteVsStreamMemoryConsistency(t *testing.T) {
 
 	// Executor 1: Simulate Execute() path pattern
 	executor1 := NewCrewExecutor(crew, "test-key")
-	executor1.history = []Message{
+	executor1.history = NewHistoryManagerWith([]Message{
 		{Role: "user", Content: "Initial context"},
-	}
+	})
 
 	// Executor 2: Simulate ExecuteStream() path pattern
 	executor2 := NewCrewExecutor(crew, "test-key")
-	executor2.history = []Message{
+	executor2.history = NewHistoryManagerWith([]Message{
 		{Role: "user", Content: "Initial context"},
-	}
+	})
 
 	// Add same content to both
 	testContent := strings.Repeat("x", 5000)
@@ -1243,17 +1240,17 @@ func TestExecuteVsStreamMemoryConsistency(t *testing.T) {
 			Role:    "user",
 			Content: fmt.Sprintf("Turn %d: %s", i, testContent),
 		}
-		executor1.history = append(executor1.history, msg)
-		executor2.history = append(executor2.history, msg)
+		executor1.history.Append(msg)
+		executor2.history.Append(msg)
 
 		// Both should trim identically
 		executor1.trimHistoryIfNeeded()
 		executor2.trimHistoryIfNeeded()
 
 		// Messages should be identical
-		if len(executor1.history) != len(executor2.history) {
+		if executor1.history.Length() != executor2.history.Length() {
 			t.Errorf("Message count differs: %d vs %d at turn %d",
-				len(executor1.history), len(executor2.history), i)
+				executor1.history.Length(), executor2.history.Length(), i)
 		}
 
 		tokens1 := executor1.estimateHistoryTokens()
@@ -1265,7 +1262,7 @@ func TestExecuteVsStreamMemoryConsistency(t *testing.T) {
 	}
 
 	t.Logf("Both executors converged: %d messages, ~%d tokens",
-		len(executor1.history), executor1.estimateHistoryTokens())
+		executor1.history.Length(), executor1.estimateHistoryTokens())
 }
 
 // TestLongConversationMemory simulates realistic long conversation
@@ -1282,7 +1279,7 @@ func TestLongConversationMemory(t *testing.T) {
 		userQuery := fmt.Sprintf("Question %d: %s",
 			turn, strings.Repeat("word ", userSize/5))
 
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: userQuery,
 		})
@@ -1295,7 +1292,7 @@ func TestLongConversationMemory(t *testing.T) {
 		assistantResponse := fmt.Sprintf("Response to Q%d: %s",
 			turn, strings.Repeat("response ", responseSize/9))
 
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: assistantResponse,
 		})
@@ -1313,12 +1310,12 @@ func TestLongConversationMemory(t *testing.T) {
 		// Every 25 turns, log stats
 		if turn%25 == 0 {
 			t.Logf("Turn %d: %d messages, ~%d tokens",
-				turn, len(executor.history), tokens)
+				turn, executor.history.Length(), tokens)
 		}
 	}
 
 	finalTokens := executor.estimateHistoryTokens()
-	finalMessages := len(executor.history)
+	finalMessages := executor.history.Length()
 
 	t.Logf("Final state: %d messages, ~%d tokens (max %d)",
 		finalMessages, finalTokens, executor.defaults.MaxContextWindow)
@@ -1357,18 +1354,17 @@ func TestTrimThresholdConfiguration(t *testing.T) {
 	executor.defaults.MaxContextWindow = 10000
 	executor.defaults.ContextTrimPercent = 30.0
 
-	executor.history = append(executor.history, Message{
-		Role:    "user",
-		Content: "Start",
+	executor.history = NewHistoryManagerWith([]Message{
+		{Role: "user", Content: "Start"},
 	})
 
 	largeContent := strings.Repeat("x", 3000) // Large messages to quickly exceed 10K window
 	for i := 0; i < 20; i++ {
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "user",
 			Content: largeContent,
 		})
-		executor.history = append(executor.history, Message{
+		executor.history.Append(Message{
 			Role:    "assistant",
 			Content: largeContent,
 		})

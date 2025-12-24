@@ -1,6 +1,7 @@
 package crewai
 
 import (
+	"fmt"
 	"log"
 	"strings"
 )
@@ -246,4 +247,133 @@ func (ce *CrewExecutor) findParallelGroup(agentID string, signalContent string) 
 
 	log.Printf("[PARALLEL-NO-MATCH] Agent %s: No signals matched for parallel group execution", agentID)
 	return nil
+}
+
+// ValidateSignals validates all signals defined in the routing configuration
+// It checks:
+// 1. Signal format matches [NAME] pattern
+// 2. Target agent/group exists (or is empty for termination)
+// 3. No duplicate signal definitions
+// Returns an error with detailed message if validation fails
+func (ce *CrewExecutor) ValidateSignals() error {
+	// If no routing configured, skip validation
+	if ce.crew == nil || ce.crew.Routing == nil || len(ce.crew.Routing.Signals) == 0 {
+		return nil
+	}
+
+	// Build a map of valid agent IDs and parallel group names for quick lookup
+	validTargets := make(map[string]bool)
+
+	// Add agent IDs as valid targets
+	validAgents := make(map[string]bool)
+	for _, agent := range ce.crew.Agents {
+		validAgents[agent.ID] = true
+		validTargets[agent.ID] = true
+	}
+
+	// Add parallel group names as valid targets (Phase 3.6 enhancement)
+	if ce.crew.Routing.ParallelGroups != nil {
+		for groupName := range ce.crew.Routing.ParallelGroups {
+			validTargets[groupName] = true
+		}
+	}
+
+	// Track all signal definitions to detect duplicates
+	seenSignals := make(map[string]string) // signal -> agent that defines it
+
+	// Validate each signal in the routing configuration
+	for agentID, signals := range ce.crew.Routing.Signals {
+		for _, signal := range signals {
+			// 1. Validate signal format: must match [NAME] pattern
+			if signal.Signal == "" {
+				return fmt.Errorf("agent '%s' has signal with empty name - signal must be in [NAME] format", agentID)
+			}
+
+			// Check if signal is in brackets format
+			if !isValidSignalFormat(signal.Signal) {
+				return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
+			}
+
+			// 2. Validate target: either empty (termination), valid agent ID, or parallel group name
+			if signal.Target != "" {
+				if !validTargets[signal.Target] {
+					return fmt.Errorf("agent '%s' emits signal '%s' targeting unknown target '%s' - target must be empty (terminate), valid agent ID, or parallel group name", agentID, signal.Signal, signal.Target)
+				}
+			}
+
+			// 3. Check for duplicate signal definitions from same agent
+			if existing, exists := seenSignals[signal.Signal]; exists && existing == agentID {
+				return fmt.Errorf("agent '%s' has duplicate signal definition for '%s'", agentID, signal.Signal)
+			}
+
+			// Track this signal definition
+			seenSignals[signal.Signal] = agentID
+		}
+	}
+
+	// Phase 3.6: Validate parallel group contents
+	if ce.crew.Routing.ParallelGroups != nil {
+		for groupName, group := range ce.crew.Routing.ParallelGroups {
+			// Check that group has agents defined
+			if group.Agents == nil || len(group.Agents) == 0 {
+				return fmt.Errorf("parallel group '%s' has no agents defined", groupName)
+			}
+
+			// Validate that all agents in the group exist
+			for _, agentID := range group.Agents {
+				if !validAgents[agentID] {
+					return fmt.Errorf("parallel group '%s' references unknown agent '%s'", groupName, agentID)
+				}
+			}
+		}
+	}
+
+	parallelGroupCount := 0
+	if ce.crew.Routing.ParallelGroups != nil {
+		parallelGroupCount = len(ce.crew.Routing.ParallelGroups)
+	}
+	log.Printf("Signal validation passed: %d signals defined across %d agents, %d parallel groups", countTotalSignals(ce.crew.Routing.Signals), len(ce.crew.Agents), parallelGroupCount)
+
+	// Phase 3.5: Enhanced registry validation (optional)
+	if ce.signalRegistry != nil {
+		log.Printf("[PHASE-3.5] Validating signals against signal registry...")
+		validator := NewSignalValidator(ce.signalRegistry)
+
+		// Validate configuration against registry
+		validationErrors := validator.ValidateConfiguration(ce.crew.Routing.Signals, validTargets)
+		if len(validationErrors) > 0 {
+			// Return first error, but log all of them
+			for _, err := range validationErrors {
+				log.Printf("[SIGNAL-REGISTRY-ERROR] %v", err)
+			}
+			return fmt.Errorf("signal registry validation failed: %v", validationErrors[0])
+		}
+
+		log.Printf("[PHASE-3.5] Signal registry validation passed ✅")
+	}
+
+	return nil
+}
+
+// isValidSignalFormat checks if a signal matches the [NAME] format
+func isValidSignalFormat(signal string) bool {
+	if len(signal) < 3 {
+		return false // Minimum: [X]
+	}
+	// Must start with [ and end with ]
+	if signal[0] != '[' || signal[len(signal)-1] != ']' {
+		return false
+	}
+	// Must have content inside brackets
+	inner := signal[1 : len(signal)-1]
+	return len(inner) > 0
+}
+
+// countTotalSignals returns the total number of signals across all agents
+func countTotalSignals(signals map[string][]RoutingSignal) int {
+	count := 0
+	for _, signalList := range signals {
+		count += len(signalList)
+	}
+	return count
 }

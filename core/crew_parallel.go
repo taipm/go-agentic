@@ -61,7 +61,7 @@ func (ce *CrewExecutor) ExecuteParallelStream(
 			agentStartTime := time.Now()
 
 			// Execute the agent with timeout
-			response, err := ExecuteAgent(agentCtx, ag, input, ce.history, ce.apiKey)
+			response, err := ExecuteAgent(agentCtx, ag, input, ce.getHistoryCopy(), ce.apiKey)
 			agentDuration := time.Since(agentStartTime)
 
 			if err != nil {
@@ -223,7 +223,7 @@ func (ce *CrewExecutor) ExecuteParallel(
 
 			// Execute the agent with timeout
 			// If agentCtx is cancelled, ExecuteAgent should return immediately
-			response, err := ExecuteAgent(agentCtx, ag, input, ce.history, ce.apiKey)
+			response, err := ExecuteAgent(agentCtx, ag, input, ce.getHistoryCopy(), ce.apiKey)
 			agentDuration := time.Since(agentStartTime)
 
 			if err != nil {

@@ -441,17 +441,16 @@ func (tc *ToolTimeoutConfig) GetToolTimeout(toolName string) time.Duration {
 
 // CrewExecutor handles the execution of a crew
 type CrewExecutor struct {
-	crew            *Crew
-	apiKey          string
-	entryAgent      *Agent
-	historyMu       sync.RWMutex       // Mutex to protect history from concurrent access
-	history         []Message          // Protected by historyMu
-	Verbose         bool               // If true, print agent responses and tool results to stdout
-	ResumeAgentID   string             // If set, execution will start from this agent instead of entry agent
-	ToolTimeouts    *ToolTimeoutConfig // Timeout configuration
-	Metrics         *MetricsCollector  // Metrics collection for observability
-	defaults        *HardcodedDefaults // Runtime configuration defaults
-	signalRegistry  *SignalRegistry    // Optional signal registry for enhanced validation (Phase 3.5)
+	crew           *Crew
+	apiKey         string
+	entryAgent     *Agent
+	history        *HistoryManager    // Manages conversation history with thread-safe operations
+	Verbose        bool               // If true, print agent responses and tool results to stdout
+	ResumeAgentID  string             // If set, execution will start from this agent instead of entry agent
+	ToolTimeouts   *ToolTimeoutConfig // Timeout configuration
+	Metrics        *MetricsCollector  // Metrics collection for observability
+	defaults       *HardcodedDefaults // Runtime configuration defaults
+	signalRegistry *SignalRegistry    // Optional signal registry for enhanced validation (Phase 3.5)
 }
 
 // NewCrewExecutor creates a new crew executor
@@ -474,7 +473,7 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 		crew:         crew,
 		apiKey:       apiKey,
 		entryAgent:   entryAgent,
-		history:      []Message{},
+		history:      NewHistoryManager(),
 		ToolTimeouts: NewToolTimeoutConfig(),
 		Metrics:      NewMetricsCollector(),
 		defaults:     DefaultHardcodedDefaults(),
@@ -488,135 +487,6 @@ func (ce *CrewExecutor) SetSignalRegistry(registry *SignalRegistry) {
 	if ce != nil {
 		ce.signalRegistry = registry
 	}
-}
-
-// ValidateSignals validates all signals defined in the routing configuration
-// It checks:
-// 1. Signal format matches [NAME] pattern
-// 2. Target agent/group exists (or is empty for termination)
-// 3. No duplicate signal definitions
-// Returns an error with detailed message if validation fails
-func (ce *CrewExecutor) ValidateSignals() error {
-	// If no routing configured, skip validation
-	if ce.crew == nil || ce.crew.Routing == nil || len(ce.crew.Routing.Signals) == 0 {
-		return nil
-	}
-
-	// Build a map of valid agent IDs and parallel group names for quick lookup
-	validTargets := make(map[string]bool)
-
-	// Add agent IDs as valid targets
-	validAgents := make(map[string]bool)
-	for _, agent := range ce.crew.Agents {
-		validAgents[agent.ID] = true
-		validTargets[agent.ID] = true
-	}
-
-	// Add parallel group names as valid targets (Phase 3.6 enhancement)
-	if ce.crew.Routing.ParallelGroups != nil {
-		for groupName := range ce.crew.Routing.ParallelGroups {
-			validTargets[groupName] = true
-		}
-	}
-
-	// Track all signal definitions to detect duplicates
-	seenSignals := make(map[string]string) // signal -> agent that defines it
-
-	// Validate each signal in the routing configuration
-	for agentID, signals := range ce.crew.Routing.Signals {
-		for _, signal := range signals {
-			// 1. Validate signal format: must match [NAME] pattern
-			if signal.Signal == "" {
-				return fmt.Errorf("agent '%s' has signal with empty name - signal must be in [NAME] format", agentID)
-			}
-
-			// Check if signal is in brackets format
-			if !isValidSignalFormat(signal.Signal) {
-				return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
-			}
-
-			// 2. Validate target: either empty (termination), valid agent ID, or parallel group name
-			if signal.Target != "" {
-				if !validTargets[signal.Target] {
-					return fmt.Errorf("agent '%s' emits signal '%s' targeting unknown target '%s' - target must be empty (terminate), valid agent ID, or parallel group name", agentID, signal.Signal, signal.Target)
-				}
-			}
-
-			// 3. Check for duplicate signal definitions from same agent
-			if existing, exists := seenSignals[signal.Signal]; exists && existing == agentID {
-				return fmt.Errorf("agent '%s' has duplicate signal definition for '%s'", agentID, signal.Signal)
-			}
-
-			// Track this signal definition
-			seenSignals[signal.Signal] = agentID
-		}
-	}
-
-	// Phase 3.6: Validate parallel group contents
-	if ce.crew.Routing.ParallelGroups != nil {
-		for groupName, group := range ce.crew.Routing.ParallelGroups {
-			// Check that group has agents defined
-			if group.Agents == nil || len(group.Agents) == 0 {
-				return fmt.Errorf("parallel group '%s' has no agents defined", groupName)
-			}
-
-			// Validate that all agents in the group exist
-			for _, agentID := range group.Agents {
-				if !validAgents[agentID] {
-					return fmt.Errorf("parallel group '%s' references unknown agent '%s'", groupName, agentID)
-				}
-			}
-		}
-	}
-
-	parallelGroupCount := 0
-	if ce.crew.Routing.ParallelGroups != nil {
-		parallelGroupCount = len(ce.crew.Routing.ParallelGroups)
-	}
-	log.Printf("Signal validation passed: %d signals defined across %d agents, %d parallel groups", countTotalSignals(ce.crew.Routing.Signals), len(ce.crew.Agents), parallelGroupCount)
-
-	// Phase 3.5: Enhanced registry validation (optional)
-	if ce.signalRegistry != nil {
-		log.Printf("[PHASE-3.5] Validating signals against signal registry...")
-		validator := NewSignalValidator(ce.signalRegistry)
-
-		// Validate configuration against registry
-		validationErrors := validator.ValidateConfiguration(ce.crew.Routing.Signals, validTargets)
-		if len(validationErrors) > 0 {
-			// Return first error, but log all of them
-			for _, err := range validationErrors {
-				log.Printf("[SIGNAL-REGISTRY-ERROR] %v", err)
-			}
-			return fmt.Errorf("signal registry validation failed: %v", validationErrors[0])
-		}
-
-		log.Printf("[PHASE-3.5] Signal registry validation passed ✅")
-	}
-
-	return nil
-}
-
-// isValidSignalFormat checks if a signal matches the [NAME] format
-func isValidSignalFormat(signal string) bool {
-	if len(signal) < 3 {
-		return false // Minimum: [X]
-	}
-	// Must start with [ and end with ]
-	if signal[0] != '[' || signal[len(signal)-1] != ']' {
-		return false
-	}
-	// Must have content inside brackets
-	inner := signal[1 : len(signal)-1]
-	return len(inner) > 0
-}
-
-// countTotalSignals returns the total number of signals across all agents
-func countTotalSignals(signals map[string][]RoutingSignal) int {
-	count := 0
-	for _, signalList := range signals {
-		count += len(signalList)
-	}
-	return count
 }
 
 // NewCrewExecutorFromConfig creates a crew executor by loading configuration from files
@@ -719,25 +589,21 @@ func (ce *CrewExecutor) GetResumeAgentID() string {
 }
 
 // appendMessage safely appends a message to history with mutex protection
+// Delegates to HistoryManager for thread-safe operations
 func (ce *CrewExecutor) appendMessage(msg Message) {
-	ce.historyMu.Lock()
-	defer ce.historyMu.Unlock()
-	ce.history = append(ce.history, msg)
+	if ce.history != nil {
+		ce.history.Append(msg)
+	}
 }
 
 // getHistoryCopy returns a copy of history for safe reading
 // Caller can safely read the returned copy without affecting concurrent writers
+// Delegates to HistoryManager
 func (ce *CrewExecutor) getHistoryCopy() []Message {
-	ce.historyMu.RLock()
-	defer ce.historyMu.RUnlock()
-
-	if len(ce.history) == 0 {
+	if ce.history == nil {
 		return []Message{}
 	}
-
-	historyCopy := make([]Message, len(ce.history))
-	copy(historyCopy, ce.history)
-	return historyCopy
+	return ce.history.Copy()
 }
 
 // GetHistory returns a copy of the conversation history
@@ -748,98 +614,31 @@ func (ce *CrewExecutor) GetHistory() []Message {
 
 // estimateHistoryTokens estimates total tokens in conversation history
 // Uses approximation: 1 token ≈ TokenDivisor characters (OpenAI convention)
+// Delegates to HistoryManager
 func (ce *CrewExecutor) estimateHistoryTokens() int {
-	ce.historyMu.RLock()
-	defer ce.historyMu.RUnlock()
-
-	total := 0
-	for _, msg := range ce.history {
-		// Role overhead + content tokens
-		total += TokenBaseValue + (len(msg.Content)+TokenPaddingValue)/TokenDivisor
+	if ce.history == nil {
+		return 0
 	}
-	return total
+	return ce.history.EstimateTokens()
 }
 
 // trimHistoryIfNeeded trims conversation history to fit within context window
 // Uses ce.defaults.MaxContextWindow and ce.defaults.ContextTrimPercent
 // Strategy: Keep first + recent messages, remove oldest in middle when over limit
+// Delegates to HistoryManager
 func (ce *CrewExecutor) trimHistoryIfNeeded() {
-	ce.historyMu.Lock()
-	defer ce.historyMu.Unlock()
-
-	if ce.defaults == nil || len(ce.history) <= MinHistoryLength {
+	if ce.history == nil || ce.defaults == nil {
 		return
 	}
-
-	// Calculate tokens directly (don't call estimateHistoryTokens which would deadlock)
-	currentTokens := 0
-	for _, msg := range ce.history {
-		currentTokens += TokenBaseValue + (len(msg.Content)+TokenPaddingValue)/TokenDivisor
-	}
-	maxTokens := ce.defaults.MaxContextWindow
-
-	// Check if within limit
-	if currentTokens <= maxTokens {
-		return
-	}
-
-	// Calculate target after trimming (remove ContextTrimPercent of max)
-	trimPercent := ce.defaults.ContextTrimPercent / PercentDivisor
-	targetTokens := int(float64(maxTokens) * (1.0 - trimPercent))
-
-	// Calculate how many messages to keep from end
-	// Keep removing from middle until under target
-	keepFromEnd := len(ce.history) - 1
-	tokensFromEnd := 0
-
-	for i := len(ce.history) - 1; i > 0 && tokensFromEnd < targetTokens; i-- {
-		msgTokens := TokenBaseValue + (len(ce.history[i].Content)+TokenPaddingValue)/TokenDivisor
-		tokensFromEnd += msgTokens
-		keepFromEnd = len(ce.history) - i
-	}
-
-	// Ensure we keep at least MinHistoryLength messages from end
-	if keepFromEnd < MinHistoryLength {
-		keepFromEnd = MinHistoryLength
-	}
-
-	// Build trimmed history: first message + summary + last N messages
-	if len(ce.history) > keepFromEnd+1 {
-		trimmedCount := len(ce.history) - keepFromEnd - 1
-
-		newHistory := make([]Message, 0, keepFromEnd+2)
-
-		// Keep first message
-		newHistory = append(newHistory, ce.history[0])
-
-		// Add summary for trimmed content
-		newHistory = append(newHistory, Message{
-			Role:    "system",
-			Content: fmt.Sprintf("[%d earlier messages trimmed to fit context window]", trimmedCount),
-		})
-
-		// Keep last N messages
-		startIdx := len(ce.history) - keepFromEnd
-		newHistory = append(newHistory, ce.history[startIdx:]...)
-
-		newTokens := 0
-		for _, msg := range newHistory {
-			newTokens += 4 + (len(msg.Content)+3)/4
-		}
-
-		log.Printf("[CONTEXT TRIM] %d→%d messages, ~%d→%d tokens (saved ~%d tokens)",
-			len(ce.history), len(newHistory), currentTokens, newTokens, currentTokens-newTokens)
-
-		ce.history = newHistory
-	}
+	ce.history.TrimIfNeeded(ce.defaults.MaxContextWindow, ce.defaults.ContextTrimPercent)
 }
 
 // ClearHistory clears the conversation history
 // Useful for starting fresh conversations
 func (ce *CrewExecutor) ClearHistory() {
-	ce.historyMu.Lock()
-	ce.history = []Message{}
-	ce.historyMu.Unlock()
+	if ce.history != nil {
+		ce.history.Clear()
+	}
 
 	// ✅ Reset session cost tracking when starting fresh
 	if ce.Metrics != nil {
@@ -942,435 +741,28 @@ func (ce *CrewExecutor) recordAgentExecution(agent *Agent, duration time.Duratio
 
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
-	// Add user input to history
-	ce.appendMessage(Message{
-		Role:    RoleUser,
-		Content: input,
-	})
-
-	// Determine starting agent: resume agent or entry agent
-	var currentAgent *Agent
-	if ce.ResumeAgentID != "" {
-		// Resume from paused agent
-		currentAgent = ce.findAgentByID(ce.ResumeAgentID)
-		if currentAgent == nil {
-			return fmt.Errorf("resume agent %s not found", ce.ResumeAgentID)
-		}
-		// Clear resume agent after using it
-		ce.ResumeAgentID = ""
-	} else {
-		// Start with entry agent
-		currentAgent = ce.entryAgent
-		if currentAgent == nil {
-			return fmt.Errorf("no entry agent found")
-		}
+	handler := NewStreamHandler(streamChan)
+	result := ce.executeWorkflow(ctx, input, handler)
+	if err, ok := result.(error); ok {
+		return err
 	}
-
-	handoffCount := 0
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// Send agent start event
-		streamChan <- NewStreamEvent("agent_start", currentAgent.Name, fmt.Sprintf("🔄 Starting %s...", currentAgent.Name))
-
-		// Trim history before LLM call to prevent cost leakage
-		ce.trimHistoryIfNeeded()
-
-		// Track agent execution time for metrics
-		agentStartTime := time.Now()
-
-		// Execute current agent
-		response, err := ExecuteAgent(ctx, currentAgent, input, ce.history, ce.apiKey)
-		agentEndTime := time.Now()
-		agentDuration := agentEndTime.Sub(agentStartTime)
-
-		if err != nil {
-			// Update performance metrics with error
-			if currentAgent.Metadata != nil {
-				currentAgent.UpdatePerformanceMetrics(false, err.Error())
-			}
-
-			// Check error quota (use different variable to avoid shadowing)
-			if quotaErr := currentAgent.CheckErrorQuota(); quotaErr != nil {
-				log.Printf("[QUOTA] Agent %s exceeded error quota: %v", currentAgent.ID, quotaErr)
-				streamChan <- NewStreamEvent(EventTypeError, currentAgent.Name,
-					fmt.Sprintf("Error quota exceeded: %v", quotaErr))
-				return quotaErr
-			}
-
-			// Report agent error
-			streamChan <- NewStreamEvent(EventTypeError, currentAgent.Name, fmt.Sprintf("Agent failed: %v", err))
-			// Record failed agent execution
-			if ce.Metrics != nil {
-				ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, false)
-			}
-			return fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
-		}
-
-		// Record successful agent execution
-		if ce.Metrics != nil {
-			ce.Metrics.RecordAgentExecution(currentAgent.ID, currentAgent.Name, agentDuration, true)
-
-			// Aggregate agent's last LLM call cost for crew-level tracking
-			tokens, cost := currentAgent.GetLastCallCost()
-			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
-			ce.Metrics.LogCrewCostSummary()
-
-			// Check memory quota after execution
-			// Memory estimated based on token count: 1 token ≈ 4 bytes
-			memoryUsedMB := (tokens * 4) / 1024 / 1024
-
-			if err := currentAgent.CheckMemoryQuota(); err != nil {
-				log.Printf("[QUOTA] Agent %s exceeded memory quota: %v", currentAgent.ID, err)
-				streamChan <- NewStreamEvent(EventTypeError, currentAgent.Name,
-					fmt.Sprintf("Memory quota exceeded: %v", err))
-				return err
-			}
-
-			// Update memory & performance metrics (only after quota check passes)
-			callDurationMs := agentDuration.Milliseconds()
-			if currentAgent.Metadata != nil {
-				currentAgent.UpdateMemoryMetrics(memoryUsedMB, callDurationMs)
-				currentAgent.UpdatePerformanceMetrics(true, "")
-			}
-		}
-
-		// Send agent response event
-		streamChan <- NewStreamEvent("agent_response", currentAgent.Name, response.Content)
-
-		// Add agent response to history
-		ce.appendMessage(Message{
-			Role:    RoleAssistant,
-			Content: response.Content,
-		})
-
-		// Execute any tool calls BEFORE checking if terminal
-		if len(response.ToolCalls) > 0 {
-			for _, toolCall := range response.ToolCalls {
-				// Send tool start event
-				streamChan <- NewStreamEvent("tool_start", currentAgent.Name,
-					fmt.Sprintf("🔧 [Tool] %s → Executing...", toolCall.ToolName))
-			}
-
-			toolResults := ce.executeCalls(ctx, response.ToolCalls, currentAgent)
-
-			// Send tool results
-			for _, result := range toolResults {
-				status := "✅"
-				if result.Status == "error" {
-					status = "❌"
-				}
-
-				// Note: Show full output including embedding vectors - agents need to extract vectors
-				streamChan <- NewStreamEvent(EventTypeToolResult, currentAgent.Name,
-					fmt.Sprintf("%s [Tool] %s → %s", status, result.ToolName, result.Output))
-			}
-
-			// Format results for feedback
-			resultText := ce.formatToolResults(toolResults)
-
-			// Add results to history
-			ce.appendMessage(Message{
-				Role:    RoleUser,
-				Content: resultText,
-			})
-
-			// Feed results back to current agent for analysis
-			// This matches Non-Stream behavior - agent can analyze tool results before routing
-			input = resultText
-			continue
-		}
-
-		// Check for termination signals first (before routing)
-		// If agent emits a termination signal like [KẾT THÚC THI], workflow should end
-		terminationResult := ce.checkTerminationSignal(currentAgent, response.Content)
-		if terminationResult != nil && terminationResult.ShouldTerminate {
-			streamChan <- NewStreamEvent("terminate", currentAgent.Name,
-				fmt.Sprintf("[TERMINATE] Workflow ended by signal: %s", terminationResult.Signal))
-			return nil
-		}
-
-		// Check for routing signals from current agent (config-driven)
-		// This is checked AFTER termination because if agent emits a routing signal,
-		// it means it wants to hand off to another agent, not pause
-		nextAgent := ce.findNextAgentBySignal(currentAgent, response.Content)
-		if nextAgent != nil {
-			currentAgent = nextAgent
-			input = response.Content
-			handoffCount++
-			continue
-		}
-
-		// Check wait_for_signal BEFORE terminal check
-		// This allows terminal agents (like Creator) to pause for user confirmation
-		// before actually finishing. If no routing signal was found AND agent has
-		// wait_for_signal enabled, pause and wait for user input.
-		behavior := ce.getAgentBehavior(currentAgent.ID)
-		if behavior != nil && behavior.WaitForSignal {
-			// Agent waits for explicit signal, send pause event with agent ID for resume
-			// Format: [PAUSE:agent_id] allows CLI to know which agent to resume from
-			streamChan <- NewStreamEvent("pause", currentAgent.Name,
-				fmt.Sprintf("[PAUSE:%s] Waiting for user input", currentAgent.ID))
-			return nil
-		}
-
-		// Check if current agent is terminal (only after tool execution and wait_for_signal)
-		if currentAgent.IsTerminal {
-			return nil
-		}
-
-		// Check for parallel group execution
-		parallelGroup := ce.findParallelGroup(currentAgent.ID, response.Content)
-		if parallelGroup != nil {
-			// Get the agents for this parallel group
-			var parallelAgents []*Agent
-			agentMap := make(map[string]*Agent)
-			for _, agent := range ce.crew.Agents {
-				agentMap[agent.ID] = agent
-			}
-
-			for _, agentID := range parallelGroup.Agents {
-				if agent, exists := agentMap[agentID]; exists {
-					parallelAgents = append(parallelAgents, agent)
-				}
-			}
-
-			if len(parallelAgents) > 0 {
-				// Execute all parallel agents
-				// IMPORTANT: Pass 'input' (which has tool results + embedding vector), not 'response.Content' (which only has text)
-				parallelResults, err := ce.ExecuteParallelStream(ctx, input, parallelAgents, streamChan)
-				if err != nil {
-					streamChan <- NewStreamEvent(EventTypeError, "system", fmt.Sprintf("Parallel execution failed: %v", err))
-					return err
-				}
-
-				// Aggregate results
-				aggregatedInput := ce.aggregateParallelResults(parallelResults)
-
-				// Add aggregated results to history
-				ce.appendMessage(Message{
-					Role:    RoleUser,
-					Content: aggregatedInput,
-				})
-
-				// Move to next agent in the pipeline
-				if parallelGroup.NextAgent != "" {
-					if nextAgent, exists := agentMap[parallelGroup.NextAgent]; exists {
-						currentAgent = nextAgent
-						input = aggregatedInput
-						handoffCount++
-						continue
-					}
-				}
-			}
-		}
-
-		// For other agents, handoff normally
-		handoffCount++
-		if handoffCount >= ce.crew.MaxHandoffs {
-			return nil
-		}
-
-		// Find next agent based on handoff targets
-		nextAgent = ce.findNextAgent(currentAgent)
-		if nextAgent == nil {
-			return nil
-		}
-
-		currentAgent = nextAgent
-		input = response.Content
-	}
+	return nil
 }
 
 // Execute runs the crew with the given input
 func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewResponse, error) {
-	// Add user input to history
-	ce.appendMessage(Message{
-		Role:    "user",
-		Content: input,
-	})
+	handler := NewSyncHandler(ce, ce.Verbose)
+	result := ce.executeWorkflow(ctx, input, handler)
 
-	// Start with entry agent
-	currentAgent := ce.entryAgent
-	if currentAgent == nil {
-		return nil, fmt.Errorf("no entry agent found")
+	// Handle the result based on its type
+	if err, ok := result.(error); ok {
+		return nil, err
 	}
 
-	handoffCount := 0
-
-	for {
-		// Trim history before LLM call to prevent cost leakage
-		ce.trimHistoryIfNeeded()
-
-		// Execute current agent
-		log.Printf("[AGENT START] %s (%s)", currentAgent.Name, currentAgent.ID)
-		response, err := ExecuteAgent(ctx, currentAgent, input, ce.history, ce.apiKey)
-		if err != nil {
-			log.Printf("[AGENT ERROR] %s (%s) - %v", currentAgent.Name, currentAgent.ID, err)
-			return nil, fmt.Errorf("agent %s failed: %w", currentAgent.ID, err)
-		}
-		log.Printf("[AGENT END] %s (%s) - Success", currentAgent.Name, currentAgent.ID)
-
-		// Aggregate agent's last LLM call cost for crew-level tracking
-		if ce.Metrics != nil {
-			tokens, cost := currentAgent.GetLastCallCost()
-			ce.Metrics.RecordLLMCall(currentAgent.ID, tokens, cost)
-			ce.Metrics.LogCrewCostSummary()
-		}
-
-		if ce.Verbose {
-			fmt.Printf("\n[%s]: %s\n", currentAgent.Name, response.Content)
-		}
-
-		// Add agent response to history
-		ce.appendMessage(Message{
-			Role:    RoleAssistant,
-			Content: response.Content,
-		})
-
-		// Execute any tool calls BEFORE checking if terminal
-		if len(response.ToolCalls) > 0 {
-			toolResults := ce.executeCalls(ctx, response.ToolCalls, currentAgent)
-
-			// Format results for feedback
-			resultText := ce.formatToolResults(toolResults)
-			if ce.Verbose {
-				fmt.Println(resultText)
-			}
-
-			// Add results to history
-			ce.appendMessage(Message{
-				Role:    RoleUser,
-				Content: resultText,
-			})
-
-			// Feed results back to current agent for analysis
-			input = resultText
-			// Continue loop to let agent process results
-			continue
-		}
-
-		// Check for termination signals first (before routing)
-		// If agent emits a termination signal like [KẾT THÚC THI], workflow should end
-		terminationResult := ce.checkTerminationSignal(currentAgent, response.Content)
-		if terminationResult != nil && terminationResult.ShouldTerminate {
-			log.Printf("[TERMINATE] Workflow ended by signal: %s", terminationResult.Signal)
-			return &CrewResponse{
-				AgentID:    currentAgent.ID,
-				AgentName:  currentAgent.Name,
-				Content:    response.Content,
-				IsTerminal: true,
-			}, nil
-		}
-
-		// Check for routing signals from current agent (config-driven)
-		// This is checked AFTER termination because if agent emits a routing signal,
-		// it means it wants to hand off to another agent, not pause
-		nextAgent := ce.findNextAgentBySignal(currentAgent, response.Content)
-		if nextAgent != nil {
-			currentAgent = nextAgent
-			input = response.Content
-			handoffCount++
-			continue
-		}
-
-		// Check wait_for_signal BEFORE terminal check
-		// This allows terminal agents (like Creator) to pause for user confirmation
-		behavior := ce.getAgentBehavior(currentAgent.ID)
-		if behavior != nil && behavior.WaitForSignal {
-			// Agent waits for explicit signal, return and wait for next input
-			return &CrewResponse{
-				AgentID:       currentAgent.ID,
-				AgentName:     currentAgent.Name,
-				Content:       response.Content,
-				ToolCalls:     response.ToolCalls,
-				PausedAgentID: currentAgent.ID, // Include paused agent ID for resume
-			}, nil
-		}
-
-		// Check if current agent is terminal (only after tool execution and wait_for_signal)
-		if currentAgent.IsTerminal {
-			return &CrewResponse{
-				AgentID:    currentAgent.ID,
-				AgentName:  currentAgent.Name,
-				Content:    response.Content,
-				ToolCalls:  response.ToolCalls,
-				IsTerminal: true,
-			}, nil
-		}
-
-		// Check for parallel group execution
-		parallelGroup := ce.findParallelGroup(currentAgent.ID, response.Content)
-		if parallelGroup != nil {
-			// Get the agents for this parallel group
-			var parallelAgents []*Agent
-			agentMap := make(map[string]*Agent)
-			for _, agent := range ce.crew.Agents {
-				agentMap[agent.ID] = agent
-			}
-
-			for _, agentID := range parallelGroup.Agents {
-				if agent, exists := agentMap[agentID]; exists {
-					parallelAgents = append(parallelAgents, agent)
-				}
-			}
-
-			if len(parallelAgents) > 0 {
-				// Execute all parallel agents
-				parallelResults, err := ce.ExecuteParallel(ctx, input, parallelAgents)
-				if err != nil {
-					return nil, fmt.Errorf("parallel execution failed: %w", err)
-				}
-
-				// Aggregate results
-				aggregatedInput := ce.aggregateParallelResults(parallelResults)
-
-				// Add aggregated results to history
-				ce.appendMessage(Message{
-					Role:    RoleUser,
-					Content: aggregatedInput,
-				})
-
-				// Move to next agent in the pipeline
-				if parallelGroup.NextAgent != "" {
-					if nextAgent, exists := agentMap[parallelGroup.NextAgent]; exists {
-						currentAgent = nextAgent
-						input = aggregatedInput
-						handoffCount++
-						continue
-					}
-				}
-			}
-		}
-
-		// For other agents, handoff normally
-		handoffCount++
-		if handoffCount >= ce.crew.MaxHandoffs {
-			return &CrewResponse{
-				AgentID:   currentAgent.ID,
-				AgentName: currentAgent.Name,
-				Content:   response.Content,
-				ToolCalls: response.ToolCalls,
-			}, nil
-		}
-
-		// Find next agent based on handoff targets
-		nextAgent = ce.findNextAgent(currentAgent)
-		if nextAgent == nil {
-			return &CrewResponse{
-				AgentID:   currentAgent.ID,
-				AgentName: currentAgent.Name,
-				Content:   response.Content,
-				ToolCalls: response.ToolCalls,
-			}, nil
-		}
-
-		currentAgent = nextAgent
-		input = response.Content
+	if response, ok := result.(*CrewResponse); ok {
+		return response, nil
 	}
+
+	// Should not reach here
+	return nil, fmt.Errorf("unexpected result type from executeWorkflow")
 }

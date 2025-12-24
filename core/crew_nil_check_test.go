@@ -62,7 +62,7 @@ func TestExecuteStreamNilEntryAgent(t *testing.T) {
 			crew:        &Crew{Agents: []*Agent{}},
 			apiKey:      "test-key",
 			entryAgent:  nil, // ← nil entry agent
-			history:     []Message{},
+			history:     NewHistoryManager(),
 			Verbose:     false,
 			ResumeAgentID: "",
 			ToolTimeouts: NewToolTimeoutConfig(),
