@@ -699,6 +699,99 @@ func (ce *CrewExecutor) ClearHistory() {
 	}
 }
 
+// ===== PHASE 2: EXTRACTED HELPER FUNCTIONS =====
+
+// sendStreamEvent safely sends a stream event to the channel
+// It handles nil channels gracefully and won't block indefinitely
+func (ce *CrewExecutor) sendStreamEvent(streamChan chan *StreamEvent, eventType string, agentName string, message string) {
+	if streamChan == nil {
+		return
+	}
+
+	select {
+	case streamChan <- NewStreamEvent(eventType, agentName, message):
+		// Event sent successfully
+	case <-time.After(100 * time.Millisecond):
+		// Timeout - channel might be full or blocked
+		log.Printf("WARNING: stream event send timeout for event: %s", eventType)
+	}
+}
+
+// handleAgentError handles errors from agent execution
+// It logs the error, sends a stream event, and returns the error
+// This centralizes error handling logic that was previously duplicated
+func (ce *CrewExecutor) handleAgentError(ctx context.Context, agent *Agent, err error, streamChan chan *StreamEvent) error {
+	if err == nil {
+		return nil
+	}
+
+	// Log the error
+	log.Printf("[ERROR] Agent %s: %v", agent.ID, err)
+
+	// Send stream event
+	ce.sendStreamEvent(streamChan, EventTypeError, agent.Name,
+		fmt.Sprintf("Agent failed: %v", err))
+
+	// Update performance metrics
+	if agent.Metadata != nil {
+		agent.UpdatePerformanceMetrics(false, err.Error())
+	}
+
+	return err
+}
+
+// updateAgentMetrics updates agent performance and memory metrics after execution
+// It handles nil agent and nil metadata gracefully
+// memory: estimated memory usage in MB (int)
+// duration: execution duration as time.Duration
+func (ce *CrewExecutor) updateAgentMetrics(agent *Agent, success bool, duration time.Duration, memory int, errorMsg string) error {
+	if agent == nil || agent.Metadata == nil {
+		return nil
+	}
+
+	// Update performance metrics
+	agent.UpdatePerformanceMetrics(success, errorMsg)
+
+	// Update memory metrics (convert duration to milliseconds)
+	durationMs := duration.Milliseconds()
+	agent.UpdateMemoryMetrics(memory, durationMs)
+
+	return nil
+}
+
+// calculateMessageTokens calculates the token count for a message
+// Uses the formula: base_tokens + (content_length + padding) / divisor
+func calculateMessageTokens(msg Message) int {
+	return TokenBaseValue + (len(msg.Content)+TokenPaddingValue)/TokenDivisor
+}
+
+// addUserMessageToHistory adds a user message to the conversation history
+// This is a convenience wrapper around appendMessage
+func (ce *CrewExecutor) addUserMessageToHistory(content string) {
+	ce.appendMessage(Message{
+		Role:    RoleUser,
+		Content: content,
+	})
+}
+
+// addAssistantMessageToHistory adds an assistant message to the conversation history
+// This is a convenience wrapper around appendMessage
+func (ce *CrewExecutor) addAssistantMessageToHistory(content string) {
+	ce.appendMessage(Message{
+		Role:    RoleAssistant,
+		Content: content,
+	})
+}
+
+// recordAgentExecution records metrics about agent execution
+// Updates both internal metrics and global metrics collector
+func (ce *CrewExecutor) recordAgentExecution(agent *Agent, duration time.Duration, success bool) {
+	if agent == nil || ce.Metrics == nil {
+		return
+	}
+	ce.Metrics.RecordAgentExecution(agent.ID, agent.Name, duration, success)
+}
+
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
 	// Add user input to history
