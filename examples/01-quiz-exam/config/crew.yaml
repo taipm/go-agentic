@@ -19,14 +19,12 @@ routing:
   signals:
     teacher:
       - signal: "[QUESTION]"
-        target: parallel_question  # -> Student + Reporter
-      - signal: "[END]"
-        target: reporter  # Final save
+        target: student  # Question goes to student (not parallel)
       - signal: "[END_EXAM]"
         target: ""  # ✅ Terminate workflow immediately when exam ends
     student:
       - signal: "[ANSWER]"
-        target: parallel_answer  # -> Teacher + Reporter
+        target: teacher  # Student answers go back to teacher
     reporter:
       - signal: "[OK]"
         target: ""  # Just acknowledge, don't route
