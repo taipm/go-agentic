@@ -393,6 +393,20 @@ func LoadAgentConfigs(dir string, configMode ConfigMode) (map[string]*AgentConfi
 // ValidateCrewConfig validates crew configuration structure and constraints
 // ✅ FIX for Issue #6: Validate YAML config at load time instead of runtime
 // This prevents invalid configs from causing runtime crashes
+// isSignalFormatValid checks if a signal matches the [NAME] format
+func isSignalFormatValid(signal string) bool {
+	if len(signal) < 3 {
+		return false // Minimum: [X]
+	}
+	// Must start with [ and end with ]
+	if signal[0] != '[' || signal[len(signal)-1] != ']' {
+		return false
+	}
+	// Must have content inside brackets
+	inner := signal[1 : len(signal)-1]
+	return len(inner) > 0
+}
+
 func ValidateCrewConfig(config *CrewConfig) error {
 	// Validate required fields
 	if config.Version == "" {
@@ -443,6 +457,14 @@ func ValidateCrewConfig(config *CrewConfig) error {
 				return fmt.Errorf("routing.signals references non-existent agent '%s'", agentID)
 			}
 			for _, signal := range signals {
+				// Validate signal format: must match [NAME] pattern
+				if signal.Signal == "" {
+					return fmt.Errorf("agent '%s' has signal with empty name - must be in [NAME] format", agentID)
+				}
+				if !isSignalFormatValid(signal.Signal) {
+					return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
+				}
+
 				// Allow empty target for terminal signals
 				// Allow target to be agent ID or parallel group name
 				if signal.Target != "" && !agentMap[signal.Target] && !parallelGroupMap[signal.Target] {

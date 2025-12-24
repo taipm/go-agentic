@@ -476,6 +476,84 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 	}
 }
 
+// ValidateSignals validates all signals defined in the routing configuration
+// It checks:
+// 1. Signal format matches [NAME] pattern
+// 2. Target agent/group exists (or is empty for termination)
+// 3. No duplicate signal definitions
+// Returns an error with detailed message if validation fails
+func (ce *CrewExecutor) ValidateSignals() error {
+	// If no routing configured, skip validation
+	if ce.crew == nil || ce.crew.Routing == nil || len(ce.crew.Routing.Signals) == 0 {
+		return nil
+	}
+
+	// Build a map of valid agent IDs for quick lookup
+	validAgents := make(map[string]bool)
+	for _, agent := range ce.crew.Agents {
+		validAgents[agent.ID] = true
+	}
+
+	// Track all signal definitions to detect duplicates
+	seenSignals := make(map[string]string) // signal -> agent that defines it
+
+	// Validate each signal in the routing configuration
+	for agentID, signals := range ce.crew.Routing.Signals {
+		for _, signal := range signals {
+			// 1. Validate signal format: must match [NAME] pattern
+			if signal.Signal == "" {
+				return fmt.Errorf("agent '%s' has signal with empty name - signal must be in [NAME] format", agentID)
+			}
+
+			// Check if signal is in brackets format
+			if !isValidSignalFormat(signal.Signal) {
+				return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
+			}
+
+			// 2. Validate target: either empty (termination) or agent exists
+			if signal.Target != "" {
+				if !validAgents[signal.Target] {
+					return fmt.Errorf("agent '%s' emits signal '%s' targeting unknown agent '%s' - target must be empty (terminate) or valid agent ID", agentID, signal.Signal, signal.Target)
+				}
+			}
+
+			// 3. Check for duplicate signal definitions from same agent
+			if existing, exists := seenSignals[signal.Signal]; exists && existing == agentID {
+				return fmt.Errorf("agent '%s' has duplicate signal definition for '%s'", agentID, signal.Signal)
+			}
+
+			// Track this signal definition
+			seenSignals[signal.Signal] = agentID
+		}
+	}
+
+	log.Printf("Signal validation passed: %d signals defined across %d agents", countTotalSignals(ce.crew.Routing.Signals), len(ce.crew.Routing.Signals))
+	return nil
+}
+
+// isValidSignalFormat checks if a signal matches the [NAME] format
+func isValidSignalFormat(signal string) bool {
+	if len(signal) < 3 {
+		return false // Minimum: [X]
+	}
+	// Must start with [ and end with ]
+	if signal[0] != '[' || signal[len(signal)-1] != ']' {
+		return false
+	}
+	// Must have content inside brackets
+	inner := signal[1 : len(signal)-1]
+	return len(inner) > 0
+}
+
+// countTotalSignals returns the total number of signals across all agents
+func countTotalSignals(signals map[string][]RoutingSignal) int {
+	count := 0
+	for _, signalList := range signals {
+		count += len(signalList)
+	}
+	return count
+}
+
 // NewCrewExecutorFromConfig creates a crew executor by loading configuration from files
 // This is the recommended way to initialize a crew with routing configuration
 // tools: map of available tools that can be assigned to agents (can be empty map if no tools needed)
@@ -521,6 +599,11 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 
 	// Create executor
 	executor := NewCrewExecutor(crew, apiKey)
+
+	// Validate signals at startup (fail-fast approach)
+	if err := executor.ValidateSignals(); err != nil {
+		return nil, fmt.Errorf("signal validation failed: %w", err)
+	}
 
 	// Convert YAML config to runtime defaults
 	executor.defaults = ConfigToHardcodedDefaults(crewConfig)
