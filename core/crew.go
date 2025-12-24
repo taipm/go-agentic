@@ -437,16 +437,17 @@ func (tc *ToolTimeoutConfig) GetToolTimeout(toolName string) time.Duration {
 
 // CrewExecutor handles the execution of a crew
 type CrewExecutor struct {
-	crew          *Crew
-	apiKey        string
-	entryAgent    *Agent
-	historyMu     sync.RWMutex       // Mutex to protect history from concurrent access
-	history       []Message          // Protected by historyMu
-	Verbose       bool               // If true, print agent responses and tool results to stdout
-	ResumeAgentID string             // If set, execution will start from this agent instead of entry agent
-	ToolTimeouts  *ToolTimeoutConfig // Timeout configuration
-	Metrics       *MetricsCollector  // Metrics collection for observability
-	defaults      *HardcodedDefaults // Runtime configuration defaults
+	crew            *Crew
+	apiKey          string
+	entryAgent      *Agent
+	historyMu       sync.RWMutex       // Mutex to protect history from concurrent access
+	history         []Message          // Protected by historyMu
+	Verbose         bool               // If true, print agent responses and tool results to stdout
+	ResumeAgentID   string             // If set, execution will start from this agent instead of entry agent
+	ToolTimeouts    *ToolTimeoutConfig // Timeout configuration
+	Metrics         *MetricsCollector  // Metrics collection for observability
+	defaults        *HardcodedDefaults // Runtime configuration defaults
+	signalRegistry  *SignalRegistry    // Optional signal registry for enhanced validation (Phase 3.5)
 }
 
 // NewCrewExecutor creates a new crew executor
@@ -473,6 +474,15 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 		ToolTimeouts: NewToolTimeoutConfig(),
 		Metrics:      NewMetricsCollector(),
 		defaults:     DefaultHardcodedDefaults(),
+	}
+}
+
+// SetSignalRegistry sets the signal registry for enhanced signal validation (Phase 3.5)
+// When a registry is set, ValidateSignals() will perform enhanced validation using the registry
+// This is optional - the executor works fine without a registry (Phase 2 validation only)
+func (ce *CrewExecutor) SetSignalRegistry(registry *SignalRegistry) {
+	if ce != nil {
+		ce.signalRegistry = registry
 	}
 }
 
@@ -528,6 +538,25 @@ func (ce *CrewExecutor) ValidateSignals() error {
 	}
 
 	log.Printf("Signal validation passed: %d signals defined across %d agents", countTotalSignals(ce.crew.Routing.Signals), len(ce.crew.Routing.Signals))
+
+	// Phase 3.5: Enhanced registry validation (optional)
+	if ce.signalRegistry != nil {
+		log.Printf("[PHASE-3.5] Validating signals against signal registry...")
+		validator := NewSignalValidator(ce.signalRegistry)
+
+		// Validate configuration against registry
+		validationErrors := validator.ValidateConfiguration(ce.crew.Routing.Signals, validAgents)
+		if len(validationErrors) > 0 {
+			// Return first error, but log all of them
+			for _, err := range validationErrors {
+				log.Printf("[SIGNAL-REGISTRY-ERROR] %v", err)
+			}
+			return fmt.Errorf("signal registry validation failed: %v", validationErrors[0])
+		}
+
+		log.Printf("[PHASE-3.5] Signal registry validation passed ✅")
+	}
+
 	return nil
 }
 
