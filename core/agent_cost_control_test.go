@@ -6,52 +6,102 @@ import (
 )
 
 // TestEstimateTokens verifies token estimation accuracy
-// Tests the formula: 1 token ≈ 4 characters
+// Uses heuristic rules based on OpenAI's BPE tokenization patterns:
+//   - English text: ~4 chars/token
+//   - Numbers: ~2 chars/token
+//   - Punctuation: ~1 char/token
+//   - CJK: ~1.5 chars/token
+//   - Other Unicode: ~2 chars/token
 func TestEstimateTokens(t *testing.T) {
 	tests := []struct {
-		name     string
-		content  string
-		expected int
+		name    string
+		content string
+		min     int // minimum expected tokens
+		max     int // maximum expected tokens (allows for 10% safety margin)
 	}{
 		{
-			name:     "empty content",
-			content:  "",
-			expected: 0,
+			name:    "empty content",
+			content: "",
+			min:     0,
+			max:     0,
 		},
 		{
-			name:     "single character",
-			content:  "a",
-			expected: 1, // (1+3)/4 = 1
+			name:    "single English letter",
+			content: "a",
+			min:     1,
+			max:     1, // minimum 1 token
 		},
 		{
-			name:     "four characters (exact)",
-			content:  "abcd",
-			expected: 1, // (4+3)/4 = 1
+			name:    "English word (hello)",
+			content: "hello",
+			min:     1,
+			max:     2, // 5 letters × 0.25 = 1.25, +10% = ~2
 		},
 		{
-			name:     "five characters (round up)",
-			content:  "abcde",
-			expected: 2, // (5+3)/4 = 2
+			name:    "English sentence",
+			content: "Hello world", // 10 letters + 1 space
+			min:     3,
+			max:     5, // letters: 10×0.25=2.5, space: 0.5, total ~3, +10%
 		},
 		{
-			name:     "eight characters",
-			content:  "abcdefgh",
-			expected: 2, // (8+3)/4 = 2
+			name:    "Numbers only",
+			content: "12345678",
+			min:     4,
+			max:     6, // 8 digits × 0.5 = 4, +10%
 		},
 		{
-			name:     "nine characters",
-			content:  "abcdefghi",
-			expected: 3, // (9+3)/4 = 3
+			name:    "Punctuation heavy",
+			content: "{}[]().,!?",
+			min:     10,
+			max:     12, // 10 punctuation × 1.0 = 10, +10%
 		},
 		{
-			name:     "typical message (11 chars)",
-			content:  "Hello world", // "Hello " (6) + "world" (5) = 11
-			expected: 3, // (11+3)/4 = 3
+			name:    "JSON structure",
+			content: `{"name":"test","value":123}`,
+			min:     15,
+			max:     25, // mix of punctuation (high) + letters (low) + numbers
 		},
 		{
-			name:     "large content (1000 chars)",
-			content:  string(make([]byte, 1000)),
-			expected: 250, // (1000+3)/4 = 250
+			name:    "Code snippet",
+			content: "func main() { fmt.Println(42) }",
+			min:     15,
+			max:     25, // letters + punctuation + spaces
+		},
+		{
+			name:    "Chinese text",
+			content: "你好世界", // 4 CJK characters
+			min:     6,
+			max:     8, // 4 × 1.5 = 6, +10%
+		},
+		{
+			name:    "Japanese text",
+			content: "こんにちは", // 5 Hiragana characters
+			min:     7,
+			max:     10, // 5 × 1.5 = 7.5, +10%
+		},
+		{
+			name:    "Korean text",
+			content: "안녕하세요", // 5 Hangul syllables
+			min:     7,
+			max:     10, // 5 × 1.5 = 7.5, +10%
+		},
+		{
+			name:    "Vietnamese text",
+			content: "Xin chào thế giới", // Vietnamese with diacritics
+			min:     6,
+			max:     12, // 13 letters (ASCII+diacritics) × ~0.35 + 3 spaces × 0.5 = ~6-7, +10%
+		},
+		{
+			name:    "Russian text",
+			content: "Привет мир", // Cyrillic
+			min:     5,
+			max:     10, // 9 Cyrillic × 0.5 + 1 space × 0.5 = 5, +10%
+		},
+		{
+			name:    "Mixed content",
+			content: "Hello 世界! 123",
+			min:     8,
+			max:     15, // English + CJK + punctuation + numbers
 		},
 	}
 
@@ -63,67 +113,126 @@ func TestEstimateTokens(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := agent.EstimateTokens(tt.content)
-			if got != tt.expected {
-				t.Errorf("EstimateTokens(%q) = %d, want %d", tt.content, got, tt.expected)
+			if got < tt.min || got > tt.max {
+				t.Errorf("EstimateTokens(%q) = %d, want between %d and %d", tt.content, got, tt.min, tt.max)
 			}
 		})
 	}
 }
 
-// TestCalculateCost verifies cost calculation accuracy
-// Uses OpenAI pricing: $0.15 per 1M input tokens
+// TestCalculateCost verifies cost calculation with configurable pricing
+// Default: gpt-4o-mini pricing ($0.15 per 1M input tokens)
 func TestCalculateCost(t *testing.T) {
-	tests := []struct {
-		name     string
-		tokens   int
-		expected float64
-	}{
-		{
-			name:     "zero tokens",
-			tokens:   0,
-			expected: 0.0,
-		},
-		{
-			name:     "single token",
-			tokens:   1,
-			expected: 0.00000015, // 1 * 0.00000015
-		},
-		{
-			name:     "1000 tokens",
-			tokens:   1000,
-			expected: 0.00015, // 1000 * 0.00000015 = 0.00015 (0.15 cents)
-		},
-		{
-			name:     "1 million tokens",
-			tokens:   1000000,
-			expected: 0.15, // 1M tokens = $0.15
-		},
-		{
-			name:     "10 million tokens",
-			tokens:   10000000,
-			expected: 1.5, // 10M tokens = $1.50
-		},
-		{
-			name:     "large amount (100M tokens)",
-			tokens:   100000000,
-			expected: 15.0, // 100M tokens = $15.00
-		},
-	}
+	t.Run("default pricing (gpt-4o-mini)", func(t *testing.T) {
+		agent := &Agent{
+			ID:   "test-agent",
+			Name: "Test Agent",
+			// No pricing configured - should use default $0.15/1M
+		}
 
-	agent := &Agent{
-		ID:   "test-agent",
-		Name: "Test Agent",
-	}
+		tests := []struct {
+			tokens   int
+			expected float64
+		}{
+			{0, 0.0},
+			{1, 0.00000015},           // 1 × ($0.15 / 1M)
+			{1000, 0.00015},           // 1K tokens = $0.00015
+			{1000000, 0.15},           // 1M tokens = $0.15
+			{10000000, 1.5},           // 10M tokens = $1.50
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		for _, tt := range tests {
 			got := agent.CalculateCost(tt.tokens)
-			// Use small epsilon for float comparison (allow 0.00000001 error)
 			epsilon := 0.00000001
 			if diff := got - tt.expected; diff < -epsilon || diff > epsilon {
 				t.Errorf("CalculateCost(%d) = %.8f, want %.8f", tt.tokens, got, tt.expected)
 			}
-		})
+		}
+	})
+
+	t.Run("custom pricing (gpt-4o)", func(t *testing.T) {
+		agent := &Agent{
+			ID:                        "test-agent",
+			Name:                      "Test Agent",
+			InputTokenPricePerMillion: 2.50, // gpt-4o pricing
+		}
+
+		tests := []struct {
+			tokens   int
+			expected float64
+		}{
+			{0, 0.0},
+			{1000000, 2.50},  // 1M tokens = $2.50
+			{10000000, 25.0}, // 10M tokens = $25.00
+		}
+
+		for _, tt := range tests {
+			got := agent.CalculateCost(tt.tokens)
+			epsilon := 0.00000001
+			if diff := got - tt.expected; diff < -epsilon || diff > epsilon {
+				t.Errorf("CalculateCost(%d) with gpt-4o pricing = %.8f, want %.8f", tt.tokens, got, tt.expected)
+			}
+		}
+	})
+
+	t.Run("ollama (free/local)", func(t *testing.T) {
+		// Note: When price is 0, it defaults to gpt-4o-mini pricing
+		// To truly disable cost tracking, check if provider is "ollama"
+		agent := &Agent{
+			ID:                        "test-agent",
+			Name:                      "Test Agent",
+			InputTokenPricePerMillion: 0.0001, // Near-zero for local
+		}
+
+		got := agent.CalculateCost(1000000)
+		if got > 0.001 {
+			t.Errorf("Local model should have near-zero cost, got %.8f", got)
+		}
+	})
+}
+
+// TestCalculateOutputCost verifies output token cost calculation
+func TestCalculateOutputCost(t *testing.T) {
+	t.Run("default pricing (gpt-4o-mini)", func(t *testing.T) {
+		agent := &Agent{ID: "test"}
+
+		got := agent.CalculateOutputCost(1000000)
+		expected := 0.60 // $0.60 per 1M output tokens
+		epsilon := 0.00000001
+		if diff := got - expected; diff < -epsilon || diff > epsilon {
+			t.Errorf("CalculateOutputCost(1M) = %.8f, want %.8f", got, expected)
+		}
+	})
+
+	t.Run("custom pricing (gpt-4o)", func(t *testing.T) {
+		agent := &Agent{
+			ID:                         "test",
+			OutputTokenPricePerMillion: 10.0, // gpt-4o output pricing
+		}
+
+		got := agent.CalculateOutputCost(1000000)
+		expected := 10.0 // $10.00 per 1M output tokens
+		epsilon := 0.00000001
+		if diff := got - expected; diff < -epsilon || diff > epsilon {
+			t.Errorf("CalculateOutputCost(1M) with gpt-4o = %.8f, want %.8f", got, expected)
+		}
+	})
+}
+
+// TestCalculateTotalCost verifies combined input + output cost
+func TestCalculateTotalCost(t *testing.T) {
+	agent := &Agent{
+		ID:                         "test",
+		InputTokenPricePerMillion:  2.50,  // gpt-4o input
+		OutputTokenPricePerMillion: 10.00, // gpt-4o output
+	}
+
+	// 1M input + 500K output
+	got := agent.CalculateTotalCost(1000000, 500000)
+	expected := 2.50 + 5.00 // $2.50 input + $5.00 output
+	epsilon := 0.00000001
+	if diff := got - expected; diff < -epsilon || diff > epsilon {
+		t.Errorf("CalculateTotalCost(1M, 500K) = %.8f, want %.8f", got, expected)
 	}
 }
 

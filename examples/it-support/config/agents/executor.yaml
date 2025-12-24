@@ -124,3 +124,13 @@ system_prompt: |
   - Luôn cung cấp các bước tiếp theo
 
   PHẢI TỰ GIỚI THIỆU: "Xin chào, tôi là {{name}} - {{description}}. Tôi sẽ chẩn đoán vấn đề IT của bạn ngay bây giờ."
+
+cost_limits:
+  max_tokens_per_call: 3000
+  max_tokens_per_day: 150000
+  max_cost_per_day_usd: 30.0
+  alert_threshold: 0.80
+  enforce: false
+  # Ollama pricing (local model cost estimation)
+  input_token_price_per_million: 1.0          # $1.00 per 1M input tokens
+  output_token_price_per_million: 3.0         # $3.00 per 1M output tokens

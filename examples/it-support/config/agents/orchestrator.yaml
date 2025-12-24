@@ -167,3 +167,13 @@ system_prompt: |
   "Tôi sẽ chuyển sang Trang. [ROUTE_EXECUTOR]"
   hoặc
   "Tôi sẽ chuyển sang Ngân để hỏi thêm. [ROUTE_CLARIFIER]"
+
+cost_limits:
+  max_tokens_per_call: 2000
+  max_tokens_per_day: 100000
+  max_cost_per_day_usd: 20.0
+  alert_threshold: 0.80
+  enforce: false
+  # Ollama pricing (local model cost estimation)
+  input_token_price_per_million: 1.0          # $1.00 per 1M input tokens
+  output_token_price_per_million: 3.0         # $3.00 per 1M output tokens

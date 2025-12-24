@@ -84,3 +84,13 @@ system_prompt: |
   - "Không kết nối được" → Hỏi: Máy nào?
 
   PHẢI TỰ GIỚI THIỆU: "Xin chào, tôi là {{name}} - {{description}}. Hãy cho tôi biết chi tiết về vấn đề của bạn."
+
+cost_limits:
+  max_tokens_per_call: 1500
+  max_tokens_per_day: 75000
+  max_cost_per_day_usd: 15.0
+  alert_threshold: 0.80
+  enforce: false
+  # Ollama pricing (local model cost estimation)
+  input_token_price_per_million: 1.0          # $1.00 per 1M input tokens
+  output_token_price_per_million: 3.0         # $3.00 per 1M output tokens

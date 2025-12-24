@@ -141,6 +141,20 @@ type CostLimitsConfig struct {
 	MaxCostPerDayUSD    float64 `yaml:"max_cost_per_day_usd"`   // [QUOTA|COST|PER-DAY|FLOAT] Max USD cost per day
 	AlertThreshold      float64 `yaml:"alert_threshold"`        // [THRESHOLD|COST|GLOBAL|FLOAT] Warn at % of limit
 	BlockOnCostExceed   bool    `yaml:"block_on_cost_exceed"`   // [FLAG|COST|ENFORCEMENT|BOOL] true=BLOCK request, false=WARN only (default: true)
+
+	// Model Pricing Configuration (per 1M tokens, in USD)
+	// Users should configure these based on their chosen model's pricing
+	// See: https://openai.com/api/pricing/ or your provider's pricing page
+	//
+	// Example pricing (as of 2025):
+	//   gpt-4o:        input=$2.50,  output=$10.00
+	//   gpt-4o-mini:   input=$0.15,  output=$0.60
+	//   gpt-4-turbo:   input=$10.00, output=$30.00
+	//   o1:            input=$15.00, output=$60.00
+	//   claude-3-opus: input=$15.00, output=$75.00
+	//   ollama (local): input=$0.00, output=$0.00
+	InputTokenPricePerMillion  float64 `yaml:"input_token_price_per_million"`  // [PRICING|INPUT|FLOAT] Cost per 1M input tokens (default: 0.15 for gpt-4o-mini)
+	OutputTokenPricePerMillion float64 `yaml:"output_token_price_per_million"` // [PRICING|OUTPUT|FLOAT] Cost per 1M output tokens (default: 0.60 for gpt-4o-mini)
 }
 
 // MemoryLimitsConfig defines memory quota limits
@@ -775,6 +789,11 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 			DailyCost:     0,
 			LastResetTime: time.Time{}, // Will be initialized on first use
 		},
+
+		// ✅ Model Pricing Configuration
+		// Loaded from cost_limits if specified, otherwise defaults to gpt-4o-mini pricing
+		InputTokenPricePerMillion:  getInputTokenPrice(config.CostLimits),
+		OutputTokenPricePerMillion: getOutputTokenPrice(config.CostLimits),
 	}
 
 	// Add tools from config
@@ -785,6 +804,22 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 	}
 
 	return agent
+}
+
+// getInputTokenPrice extracts input token price from config, returns default if not set
+func getInputTokenPrice(costLimits *CostLimitsConfig) float64 {
+	if costLimits != nil && costLimits.InputTokenPricePerMillion > 0 {
+		return costLimits.InputTokenPricePerMillion
+	}
+	return 0.15 // Default: gpt-4o-mini pricing
+}
+
+// getOutputTokenPrice extracts output token price from config, returns default if not set
+func getOutputTokenPrice(costLimits *CostLimitsConfig) float64 {
+	if costLimits != nil && costLimits.OutputTokenPricePerMillion > 0 {
+		return costLimits.OutputTokenPricePerMillion
+	}
+	return 0.60 // Default: gpt-4o-mini pricing
 }
 
 // ConfigToHardcodedDefaults converts CrewConfig settings to HardcodedDefaults struct

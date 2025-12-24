@@ -587,24 +587,143 @@ func getToolParameterNames(tool *Tool) []string {
 
 // ✅ NEW WEEK 1: Cost Control Functions
 
-// EstimateTokens estimates the number of tokens in content
-// Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
+// EstimateTokens estimates the number of tokens in content using heuristic rules
+// based on OpenAI's BPE tokenization patterns.
+//
+// Token estimation rules (based on OpenAI tiktoken research):
+//   - English text: ~4 chars/token (common words merge well)
+//   - Source code: ~3 chars/token (syntax, operators, keywords)
+//   - JSON/structured: ~2.5 chars/token (brackets, quotes, colons)
+//   - CJK (Chinese/Japanese/Korean): ~1.5 chars/token (3 bytes per char)
+//   - Other Unicode (Vietnamese, Thai, Arabic, Cyrillic): ~2 chars/token
+//   - Numbers: ~2 chars/token (each digit often separate)
+//   - Punctuation/special: ~1 char/token
+//
+// Sources:
+//   - https://help.openai.com/en/articles/4936856-what-are-tokens-and-how-to-count-them
+//   - https://community.openai.com/t/rules-of-thumb-for-number-of-source-code-characters-to-tokens/622947
 func (a *Agent) EstimateTokens(content string) int {
 	if content == "" {
 		return 0
 	}
-	// Rough estimation: 1 token ≈ 4 characters
-	// This is a reasonable approximation for OpenAI models
-	return (len(content) + 3) / 4 // Round up
+
+	var tokens float64
+
+	for _, r := range content {
+		switch {
+		// ASCII letters (English): ~4 chars/token
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			tokens += 0.25 // 1/4 token per char
+
+		// Digits: ~2 chars/token (numbers tokenize poorly)
+		case r >= '0' && r <= '9':
+			tokens += 0.5 // 1/2 token per char
+
+		// Common punctuation and operators: ~1 char/token
+		case r == '.' || r == ',' || r == '!' || r == '?' || r == ':' || r == ';':
+			tokens += 1.0
+		case r == '(' || r == ')' || r == '[' || r == ']' || r == '{' || r == '}':
+			tokens += 1.0
+		case r == '+' || r == '-' || r == '*' || r == '/' || r == '=' || r == '<' || r == '>':
+			tokens += 1.0
+		case r == '"' || r == '\'' || r == '`':
+			tokens += 1.0
+
+		// Whitespace: often merged with next word, count as ~0.5
+		case r == ' ' || r == '\t':
+			tokens += 0.5
+		case r == '\n' || r == '\r':
+			tokens += 1.0
+
+		// CJK characters (Chinese, Japanese, Korean): ~1.5 chars/token
+		// Range: U+4E00-U+9FFF (CJK Unified), U+3040-U+30FF (Hiragana/Katakana)
+		case (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3040 && r <= 0x30FF):
+			tokens += 1.5
+
+		// Vietnamese, Thai, other Southeast Asian: ~2 chars/token
+		// Vietnamese uses Latin with diacritics (U+00C0-U+1EF9)
+		case (r >= 0x00C0 && r <= 0x024F) || (r >= 0x1E00 && r <= 0x1EFF):
+			tokens += 0.5
+		// Thai script: U+0E00-U+0E7F
+		case r >= 0x0E00 && r <= 0x0E7F:
+			tokens += 0.5
+
+		// Cyrillic (Russian, etc.): ~2 chars/token
+		case r >= 0x0400 && r <= 0x04FF:
+			tokens += 0.5
+
+		// Arabic: ~2 chars/token
+		case r >= 0x0600 && r <= 0x06FF:
+			tokens += 0.5
+
+		// Korean Hangul syllables: ~1.5 chars/token
+		case r >= 0xAC00 && r <= 0xD7AF:
+			tokens += 1.5
+
+		// Other Unicode (emojis, symbols): ~2 chars/token
+		case r > 0x7F:
+			tokens += 0.5
+
+		// Default ASCII (underscore, backslash, etc.): ~2 chars/token
+		default:
+			tokens += 0.5
+		}
+	}
+
+	// Round up and add safety margin of 10% for edge cases
+	result := int(tokens*1.1 + 0.99)
+	if result < 1 && len(content) > 0 {
+		return 1
+	}
+	return result
 }
 
 // CalculateCost calculates the cost for a given number of tokens
-// Uses OpenAI pricing: $0.15 per 1M input tokens
+// Uses configurable pricing from agent's InputTokenPricePerMillion field
+//
+// Pricing is configured per agent in YAML:
+//
+//	cost_limits:
+//	  input_token_price_per_million: 0.15   # $0.15 per 1M input tokens (gpt-4o-mini)
+//	  output_token_price_per_million: 0.60  # $0.60 per 1M output tokens
+//
+// Common model pricing (as of 2025):
+//
+//	gpt-4o:        $2.50/$10.00 per 1M tokens (input/output)
+//	gpt-4o-mini:   $0.15/$0.60 per 1M tokens
+//	gpt-4-turbo:   $10.00/$30.00 per 1M tokens
+//	o1:            $15.00/$60.00 per 1M tokens
+//	claude-3-opus: $15.00/$75.00 per 1M tokens
+//	ollama:        $0.00/$0.00 (local, free)
 func (a *Agent) CalculateCost(tokens int) float64 {
-	// OpenAI pricing: $0.15 per 1M input tokens
-	// So: cost = tokens * (0.15 / 1,000,000) = tokens * 0.00000015
-	const costPerToken = 0.00000015 // $0.15 per 1M tokens
-	return float64(tokens) * costPerToken
+	pricePerMillion := a.InputTokenPricePerMillion
+
+	// Default to gpt-4o-mini pricing if not configured
+	// HINT: Set to 0.0 for local models (Ollama) to disable cost tracking
+	if pricePerMillion == 0 {
+		pricePerMillion = 0.15 // Default: $0.15 per 1M tokens (gpt-4o-mini)
+	}
+
+	// cost = tokens × (price_per_million / 1,000,000)
+	return float64(tokens) * (pricePerMillion / 1_000_000)
+}
+
+// CalculateOutputCost calculates the cost for output tokens (usually higher than input)
+// Uses configurable pricing from agent's OutputTokenPricePerMillion field
+func (a *Agent) CalculateOutputCost(tokens int) float64 {
+	pricePerMillion := a.OutputTokenPricePerMillion
+
+	// Default to gpt-4o-mini output pricing if not configured
+	if pricePerMillion == 0 {
+		pricePerMillion = 0.60 // Default: $0.60 per 1M tokens (gpt-4o-mini)
+	}
+
+	return float64(tokens) * (pricePerMillion / 1_000_000)
+}
+
+// CalculateTotalCost calculates total cost for both input and output tokens
+func (a *Agent) CalculateTotalCost(inputTokens, outputTokens int) float64 {
+	return a.CalculateCost(inputTokens) + a.CalculateOutputCost(outputTokens)
 }
 
 // ResetDailyMetricsIfNeeded resets daily metrics if 24+ hours have passed

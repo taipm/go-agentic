@@ -65,3 +65,6 @@ cost_limits:
   max_cost_per_day_usd: 5.0
   alert_threshold: 0.80
   enforce: false
+  # Ollama pricing (local model cost estimation)
+  input_token_price_per_million: 1.0          # $1.00 per 1M input tokens
+  output_token_price_per_million: 3.0         # $3.00 per 1M output tokens

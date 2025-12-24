@@ -31,6 +31,9 @@ cost_limits:                                    # [QUOTA|COST] Token usage and c
   max_cost_per_day_usd: 10.0                  # [QUOTA|COST|PER-DAY|FLOAT] Max USD cost per day
   alert_threshold: 0.80                       # [THRESHOLD|COST|GLOBAL|FLOAT] Warn at 80% of limit
   enforce: false                              # [FLAG|COST|ENFORCEMENT|BOOL] true=BLOCK, false=WARN ONLY
+  # Ollama pricing (local model cost estimation)
+  input_token_price_per_million: 1.0          # [PRICING|INPUT|FLOAT] $1.00 per 1M input tokens
+  output_token_price_per_million: 3.0         # [PRICING|OUTPUT|FLOAT] $3.00 per 1M output tokens
 
 memory_limits:                                  # [QUOTA|MEMORY] Memory usage limits
   max_per_call_mb: 100                        # [QUOTA|MEMORY|PER-CALL|INT] Max MB per execution

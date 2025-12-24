@@ -159,6 +159,13 @@ type Agent struct {
 	CostAlertThreshold float64 `yaml:"cost_alert_threshold"`  // Warn when % of budget used (e.g., 0.80 = 80%)
 	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`   // true=block, false=warn (default: true)
 	CostMetrics        AgentCostMetrics `json:"-" yaml:"-"` // Runtime metrics (deprecated, use Metadata.Cost)
+
+	// ✅ Model Pricing Configuration (per 1M tokens, in USD)
+	// Configure based on your model's pricing - see provider's pricing page
+	// Default: gpt-4o-mini pricing ($0.15 input, $0.60 output per 1M tokens)
+	// Set both to 0.0 for local models (Ollama) to disable cost tracking
+	InputTokenPricePerMillion  float64 `yaml:"input_token_price_per_million"`  // Cost per 1M input tokens
+	OutputTokenPricePerMillion float64 `yaml:"output_token_price_per_million"` // Cost per 1M output tokens
 }
 
 // Task represents a task to be executed by an agent

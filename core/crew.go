@@ -310,9 +310,13 @@ func safeExecuteToolOnce(ctx context.Context, tool *Tool, args map[string]interf
 // safeExecuteTool is the main entry point for tool execution with error recovery
 // Attempts retry on transient errors with exponential backoff
 func safeExecuteTool(ctx context.Context, tool *Tool, args map[string]interface{}) (output string, err error) {
-	// Default to 2 retries (3 total attempts: 1 initial + 2 retries)
-	// This is reasonable for transient failures without significant latency impact
-	maxRetries := 2
+	// Default to 0 retries (1 total attempt: no retry)
+	// COST HINT: Each retry multiplies LLM API costs. Set higher values only if:
+	// - You have unreliable network/tools that frequently timeout
+	// - Cost is not a concern (e.g., using local Ollama)
+	// - You need high reliability over cost efficiency
+	// Values: 0 = no retry (cheapest), 1 = 2 attempts, 2 = 3 attempts (most expensive)
+	maxRetries := 0
 
 	return retryWithBackoff(ctx, tool, args, maxRetries)
 }

@@ -1,4 +1,5 @@
 version: "1.0"
+name: it-support-crew
 description: "Go-CrewAI IT Support Crew Configuration"
 
 entry_point: orchestrator
@@ -11,20 +12,58 @@ agents:
 settings:
   max_handoffs: 5
   max_rounds: 10
-  timeout_seconds: 300
-  language: en
-  organization: IT-Support-Team
+  config_mode: strict
 
-  # ✅ NEW Phase 1 Configuration Fields (Fix #4 & #5)
-  # Parallel Agent Execution Timeout (Fix #4)
-  # For IT Support: Increase to allow time for diagnostic tools
-  # Default: 60 seconds if not specified or zero
-  parallel_timeout_seconds: 120
+  # ===== TIMEOUT PARAMETERS (11 required in Strict Mode) =====
+  parallel_timeout_seconds: 120              # IT Support: longer for diagnostic tools
+  tool_execution_timeout_seconds: 10         # IT Support: diagnostic tools may take longer
+  tool_result_timeout_seconds: 30
+  min_tool_timeout_millis: 100
+  stream_chunk_timeout_millis: 500
+  sse_keep_alive_seconds: 30
+  request_store_cleanup_minutes: 5
+  retry_backoff_min_millis: 100
+  retry_backoff_max_seconds: 5
+  client_cache_ttl_minutes: 60
+  graceful_shutdown_check_millis: 100
 
-  # Tool Output Truncation Limit (Fix #5)
-  # For IT Support: Increase to capture full diagnostic output
-  # Default: 2000 characters if not specified or zero
-  max_tool_output_chars: 5000
+  # ===== SIZE LIMITS (9 required in Strict Mode) =====
+  max_input_size_kb: 10
+  min_agent_id_length: 1
+  max_agent_id_length: 128
+  max_request_body_size_kb: 100
+  max_tool_output_chars: 5000                # IT Support: larger diagnostic output
+  max_total_tool_output_chars: 10000         # IT Support: multiple diagnostic tools
+  stream_buffer_size: 100
+  max_stored_requests: 1000
+
+  # ===== THRESHOLD =====
+  timeout_warning_threshold_pct: 20
+
+  # ===== COST CONTROL =====
+  max_tokens_per_call: 4000
+  max_tokens_per_day: 100000
+  max_cost_per_day: 50.0
+  cost_alert_threshold: 0.80
+
+  # ===== MEMORY MANAGEMENT =====
+  max_memory_mb: 512
+  max_daily_memory_gb: 10
+  memory_alert_percent: 80.0
+  max_context_window: 32000
+  context_trim_percent: 20.0
+  slow_call_threshold_seconds: 30
+
+  # ===== PERFORMANCE & RELIABILITY =====
+  max_errors_per_hour: 10
+  max_errors_per_day: 50
+  max_consecutive_errors: 5
+
+  # ===== RATE LIMITING & QUOTAS =====
+  max_calls_per_minute: 60
+  max_calls_per_hour: 1000
+  max_calls_per_day: 10000
+  block_on_quota_exceed: true
 
 # Routing configuration - defines how agents interact and hand off
 routing:
