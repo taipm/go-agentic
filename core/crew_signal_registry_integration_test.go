@@ -2,6 +2,8 @@ package crewai
 
 import (
 	"testing"
+
+	"github.com/taipm/go-agentic/core/signal"
 )
 
 // Helper function to create a test agent
@@ -50,7 +52,7 @@ func TestCrewExecutorWithRegistry(t *testing.T) {
 	}
 
 	// Test 2: Set registry
-	registry := LoadDefaultSignals()
+	registry := signal.LoadDefaultSignals()
 	executor.SetSignalRegistry(registry)
 
 	// Test 3: Validation with registry should pass
@@ -112,7 +114,7 @@ func TestCrewExecutorRegistryWithInvalidSignal(t *testing.T) {
 	}
 
 	executor := NewCrewExecutor(crew, "test-api-key")
-	registry := LoadDefaultSignals()
+	registry := signal.LoadDefaultSignals()
 	executor.SetSignalRegistry(registry)
 
 	// Validation should fail because [UNKNOWN_SIGNAL] is not in registry
@@ -140,7 +142,7 @@ func TestCrewExecutorRegistryWithTerminationSignalError(t *testing.T) {
 	}
 
 	executor := NewCrewExecutor(crew, "test-api-key")
-	registry := LoadDefaultSignals()
+	registry := signal.LoadDefaultSignals()
 	executor.SetSignalRegistry(registry)
 
 	// Validation should fail: termination signal must have empty target
@@ -172,7 +174,7 @@ func TestCrewExecutorRegistryWithRoutingSignal(t *testing.T) {
 	}
 
 	executor := NewCrewExecutor(crew, "test-api-key")
-	registry := LoadDefaultSignals()
+	registry := signal.LoadDefaultSignals()
 	executor.SetSignalRegistry(registry)
 
 	// Validation should pass
@@ -185,7 +187,7 @@ func TestCrewExecutorRegistryWithRoutingSignal(t *testing.T) {
 // TestSetSignalRegistryNilExecutor tests SetSignalRegistry with nil executor (safety check)
 func TestSetSignalRegistryNilExecutor(t *testing.T) {
 	var executor *CrewExecutor
-	registry := LoadDefaultSignals()
+	registry := signal.LoadDefaultSignals()
 
 	// Should not panic even with nil executor
 	executor.SetSignalRegistry(registry)
@@ -221,7 +223,7 @@ func TestCrewExecutorMultipleSignalsWithRegistry(t *testing.T) {
 	}
 
 	executor := NewCrewExecutor(crew, "test-api-key")
-	registry := LoadDefaultSignals()
+	registry := signal.LoadDefaultSignals()
 	executor.SetSignalRegistry(registry)
 
 	// All these signals are in the default registry
@@ -249,12 +251,12 @@ func TestCrewExecutorCustomSignalsWithRegistry(t *testing.T) {
 	executor := NewCrewExecutor(crew, "test-api-key")
 
 	// Create custom registry with the custom signal
-	registry := NewSignalRegistry()
-	registry.Register(&SignalDefinition{
+	registry := signal.NewSignalRegistry()
+	registry.Register(&signal.SignalDefinition{
 		Name:           "[CUSTOM]",
 		Description:    "Custom signal",
 		AllowAllAgents: true,
-		Behavior:       SignalBehaviorTerminate,
+		Behavior:       signal.SignalBehaviorTerminate,
 	})
 	executor.SetSignalRegistry(registry)
 
@@ -288,7 +290,7 @@ func TestCrewExecutorBackwardCompatibility(t *testing.T) {
 	}
 
 	// New code (Phase 3.5 - with registry)
-	executor.SetSignalRegistry(LoadDefaultSignals())
+	executor.SetSignalRegistry(signal.LoadDefaultSignals())
 	// Registry should be set
 	if executor.signalRegistry == nil {
 		t.Error("Registry should be set")

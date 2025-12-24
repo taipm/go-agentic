@@ -303,7 +303,8 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Printf("\n[TOOL] GetQuizStatus()\n")
 			fmt.Printf("  Câu đã hỏi: %d/%d\n", result["questions_asked"], result["total_questions"])
 			fmt.Printf("  Điểm hiện tại: %d\n", result["current_score"])
-			fmt.Printf("  Còn lại: %d câu\n\n", result["questions_remaining"])
+			fmt.Printf("  Còn lại: %d câu\n", result["questions_remaining"])
+			fmt.Printf("  [DEBUG] state pointer: %p, CorrectAnswers: %d, CurrentQuestion: %d\n\n", state, state.CorrectAnswers, state.CurrentQuestion)
 
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
@@ -409,7 +410,8 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Printf("  Trả lời: %s\n", studentAnswer)
 			fmt.Printf("  Kết quả: %s (+%d điểm)\n", correctStr, result["points_awarded"])
 			fmt.Printf("  Tổng điểm: %d\n", result["total_score"])
-			fmt.Printf("  Còn lại: %d câu\n\n", result["questions_remaining"])
+			fmt.Printf("  Còn lại: %d câu\n", result["questions_remaining"])
+			fmt.Printf("  [DEBUG] state pointer: %p, CorrectAnswers: %d, CurrentQuestion: %d\n\n", state, state.CorrectAnswers, state.CurrentQuestion)
 
 			// ✅ AUTO-SAVE: Write report after each answer to ensure file is updated
 			if err := state.WriteReportToFile(""); err != nil {

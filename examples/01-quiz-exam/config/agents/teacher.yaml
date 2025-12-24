@@ -22,7 +22,7 @@ backup:
 tools:
   - GetQuizStatus
   - RecordAnswer
-
+  
 system_prompt: |
   You are an exam teacher conducting a 10-question oral exam (Vietnamese questions & answers).
 

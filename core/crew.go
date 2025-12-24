@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/taipm/go-agentic/core/signal"
 )
 
 // ===== Token Calculation Constants =====
@@ -450,7 +452,7 @@ type CrewExecutor struct {
 	ToolTimeouts   *ToolTimeoutConfig // Timeout configuration
 	Metrics        *MetricsCollector  // Metrics collection for observability
 	defaults       *HardcodedDefaults // Runtime configuration defaults
-	signalRegistry *SignalRegistry    // Optional signal registry for enhanced validation (Phase 3.5)
+	signalRegistry *signal.SignalRegistry    // Optional signal registry for enhanced validation (Phase 3.5)
 }
 
 // NewCrewExecutor creates a new crew executor
@@ -483,7 +485,7 @@ func NewCrewExecutor(crew *Crew, apiKey string) *CrewExecutor {
 // SetSignalRegistry sets the signal registry for enhanced signal validation (Phase 3.5)
 // When a registry is set, ValidateSignals() will perform enhanced validation using the registry
 // This is optional - the executor works fine without a registry (Phase 2 validation only)
-func (ce *CrewExecutor) SetSignalRegistry(registry *SignalRegistry) {
+func (ce *CrewExecutor) SetSignalRegistry(registry *signal.SignalRegistry) {
 	if ce != nil {
 		ce.signalRegistry = registry
 	}
