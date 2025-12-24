@@ -498,10 +498,21 @@ func (ce *CrewExecutor) ValidateSignals() error {
 		return nil
 	}
 
-	// Build a map of valid agent IDs for quick lookup
+	// Build a map of valid agent IDs and parallel group names for quick lookup
+	validTargets := make(map[string]bool)
+
+	// Add agent IDs as valid targets
 	validAgents := make(map[string]bool)
 	for _, agent := range ce.crew.Agents {
 		validAgents[agent.ID] = true
+		validTargets[agent.ID] = true
+	}
+
+	// Add parallel group names as valid targets (Phase 3.6 enhancement)
+	if ce.crew.Routing.ParallelGroups != nil {
+		for groupName := range ce.crew.Routing.ParallelGroups {
+			validTargets[groupName] = true
+		}
 	}
 
 	// Track all signal definitions to detect duplicates
@@ -520,10 +531,10 @@ func (ce *CrewExecutor) ValidateSignals() error {
 				return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
 			}
 
-			// 2. Validate target: either empty (termination) or agent exists
+			// 2. Validate target: either empty (termination), valid agent ID, or parallel group name
 			if signal.Target != "" {
-				if !validAgents[signal.Target] {
-					return fmt.Errorf("agent '%s' emits signal '%s' targeting unknown agent '%s' - target must be empty (terminate) or valid agent ID", agentID, signal.Signal, signal.Target)
+				if !validTargets[signal.Target] {
+					return fmt.Errorf("agent '%s' emits signal '%s' targeting unknown target '%s' - target must be empty (terminate), valid agent ID, or parallel group name", agentID, signal.Signal, signal.Target)
 				}
 			}
 
@@ -537,7 +548,28 @@ func (ce *CrewExecutor) ValidateSignals() error {
 		}
 	}
 
-	log.Printf("Signal validation passed: %d signals defined across %d agents", countTotalSignals(ce.crew.Routing.Signals), len(ce.crew.Routing.Signals))
+	// Phase 3.6: Validate parallel group contents
+	if ce.crew.Routing.ParallelGroups != nil {
+		for groupName, group := range ce.crew.Routing.ParallelGroups {
+			// Check that group has agents defined
+			if group.Agents == nil || len(group.Agents) == 0 {
+				return fmt.Errorf("parallel group '%s' has no agents defined", groupName)
+			}
+
+			// Validate that all agents in the group exist
+			for _, agentID := range group.Agents {
+				if !validAgents[agentID] {
+					return fmt.Errorf("parallel group '%s' references unknown agent '%s'", groupName, agentID)
+				}
+			}
+		}
+	}
+
+	parallelGroupCount := 0
+	if ce.crew.Routing.ParallelGroups != nil {
+		parallelGroupCount = len(ce.crew.Routing.ParallelGroups)
+	}
+	log.Printf("Signal validation passed: %d signals defined across %d agents, %d parallel groups", countTotalSignals(ce.crew.Routing.Signals), len(ce.crew.Agents), parallelGroupCount)
 
 	// Phase 3.5: Enhanced registry validation (optional)
 	if ce.signalRegistry != nil {
@@ -545,7 +577,7 @@ func (ce *CrewExecutor) ValidateSignals() error {
 		validator := NewSignalValidator(ce.signalRegistry)
 
 		// Validate configuration against registry
-		validationErrors := validator.ValidateConfiguration(ce.crew.Routing.Signals, validAgents)
+		validationErrors := validator.ValidateConfiguration(ce.crew.Routing.Signals, validTargets)
 		if len(validationErrors) > 0 {
 			// Return first error, but log all of them
 			for _, err := range validationErrors {

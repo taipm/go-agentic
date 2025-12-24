@@ -312,3 +312,100 @@ func TestCrewExecutorNoSignalsNoRegistry(t *testing.T) {
 		t.Errorf("Should pass with no signals: %v", err)
 	}
 }
+
+// TestCrewExecutorWithParallelGroups tests validation with parallel group targets
+func TestCrewExecutorWithParallelGroups(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			createTestAgent("teacher", "Teacher", "Quiz Master"),
+			createTestAgent("student", "Student", "Test Taker"),
+			createTestAgent("reporter", "Reporter", "Report Handler"),
+		},
+		Routing: &RoutingConfig{
+			Signals: map[string][]RoutingSignal{
+				"teacher": {
+					{Signal: "[QUESTION]", Target: "parallel_question"},
+					{Signal: "[END_EXAM]", Target: ""},
+				},
+				"student": {
+					{Signal: "[ANSWER]", Target: "parallel_answer"},
+				},
+				"reporter": {
+					{Signal: "[DONE]", Target: ""},
+				},
+			},
+			ParallelGroups: map[string]ParallelGroupConfig{
+				"parallel_question": {
+					Agents:         []string{"student", "reporter"},
+					WaitForAll:     false,
+					TimeoutSeconds: 30,
+				},
+				"parallel_answer": {
+					Agents:         []string{"teacher", "reporter"},
+					WaitForAll:     false,
+					TimeoutSeconds: 30,
+				},
+			},
+		},
+	}
+
+	executor := NewCrewExecutor(crew, "test-api-key")
+
+	// Should validate successfully even though targets are parallel groups
+	if err := executor.ValidateSignals(); err != nil {
+		t.Errorf("Should validate with parallel group targets: %v", err)
+	}
+}
+
+// TestCrewExecutorWithInvalidParallelGroup tests validation catches invalid group references
+func TestCrewExecutorWithInvalidParallelGroup(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			createTestAgent("agent1", "Agent 1", "Role"),
+		},
+		Routing: &RoutingConfig{
+			Signals: map[string][]RoutingSignal{
+				"agent1": {
+					{Signal: "[TEST]", Target: "nonexistent_group"},
+				},
+			},
+		},
+	}
+
+	executor := NewCrewExecutor(crew, "test-api-key")
+
+	// Should fail - nonexistent_group is neither agent nor parallel group
+	err := executor.ValidateSignals()
+	if err == nil {
+		t.Error("Should fail validation for nonexistent parallel group")
+	}
+}
+
+// TestCrewExecutorWithInvalidParallelGroupContent tests validation of group agents
+func TestCrewExecutorWithInvalidParallelGroupContent(t *testing.T) {
+	crew := &Crew{
+		Agents: []*Agent{
+			createTestAgent("agent1", "Agent 1", "Role"),
+		},
+		Routing: &RoutingConfig{
+			Signals: map[string][]RoutingSignal{
+				"agent1": {
+					{Signal: "[TEST]", Target: "valid_group"},
+				},
+			},
+			ParallelGroups: map[string]ParallelGroupConfig{
+				"valid_group": {
+					Agents: []string{"nonexistent_agent"},
+				},
+			},
+		},
+	}
+
+	executor := NewCrewExecutor(crew, "test-api-key")
+
+	// Should fail - group references non-existent agent
+	err := executor.ValidateSignals()
+	if err == nil {
+		t.Error("Should fail validation when parallel group contains invalid agent")
+	}
+}
