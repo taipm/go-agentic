@@ -92,11 +92,8 @@ func ValidateRequiredFields(config interface{}, configMode ConfigMode, entityID 
 	return missingFields, nil
 }
 
-// ValidateCrewConfig validates crew configuration structure and constraints
-// ✅ FIX for Issue #6: Validate YAML config at load time instead of runtime
-// This prevents invalid configs from causing runtime crashes
-func ValidateCrewConfig(config *CrewConfig) error {
-	// Validate required fields
+// validateCrewRequiredFields checks for essential crew configuration fields
+func validateCrewRequiredFields(config *CrewConfig) error {
 	if config.Version == "" {
 		return fmt.Errorf("required field 'version' is empty")
 	}
@@ -106,21 +103,30 @@ func ValidateCrewConfig(config *CrewConfig) error {
 	if config.EntryPoint == "" {
 		return fmt.Errorf("required field 'entry_point' is empty")
 	}
+	return nil
+}
 
-	// Validate entry_point exists in agents
-	entryExists := false
+// validateEntryPointAndBuildMap validates that entry_point exists and builds agent map
+func validateEntryPointAndBuildMap(config *CrewConfig) (map[string]bool, error) {
 	agentMap := make(map[string]bool)
+	entryExists := false
+
 	for _, agent := range config.Agents {
 		agentMap[agent] = true
 		if agent == config.EntryPoint {
 			entryExists = true
 		}
 	}
+
 	if !entryExists {
-		return fmt.Errorf("entry_point '%s' not found in agents list", config.EntryPoint)
+		return nil, fmt.Errorf("entry_point '%s' not found in agents list", config.EntryPoint)
 	}
 
-	// Validate field constraints
+	return agentMap, nil
+}
+
+// validateCrewSettings validates settings constraints
+func validateCrewSettings(config *CrewConfig) error {
 	if config.Settings.MaxHandoffs < 0 {
 		return fmt.Errorf("settings.max_handoffs must be >= 0, got %d", config.Settings.MaxHandoffs)
 	}
@@ -130,89 +136,130 @@ func ValidateCrewConfig(config *CrewConfig) error {
 	if config.Settings.TimeoutSeconds <= 0 {
 		return fmt.Errorf("settings.timeout_seconds must be > 0, got %d", config.Settings.TimeoutSeconds)
 	}
+	return nil
+}
 
-	// Validate routing references
-	if config.Routing != nil {
-		// Build parallel groups map for validation
-		parallelGroupMap := make(map[string]bool)
-		for groupName := range config.Routing.ParallelGroups {
-			parallelGroupMap[groupName] = true
+// validateSignals validates routing signals reference valid agents and formats
+func validateSignals(signals map[string][]RoutingSignal, agentMap, parallelGroupMap map[string]bool) error {
+	for agentID, signalList := range signals {
+		if !agentMap[agentID] {
+			return fmt.Errorf("routing.signals references non-existent agent '%s'", agentID)
 		}
 
-		// Validate signals reference existing agents or parallel groups
-		for agentID, signals := range config.Routing.Signals {
+		for _, signal := range signalList {
+			if signal.Signal == "" {
+				return fmt.Errorf("agent '%s' has signal with empty name - must be in [NAME] format", agentID)
+			}
+			if !isSignalFormatValid(signal.Signal) {
+				return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
+			}
+
+			if signal.Target != "" && !agentMap[signal.Target] && !parallelGroupMap[signal.Target] {
+				return fmt.Errorf("routing signal from agent '%s' targets non-existent agent/group '%s'", agentID, signal.Target)
+			}
+		}
+	}
+	return nil
+}
+
+// validateAgentBehaviors validates agent behaviors reference existing agents
+func validateAgentBehaviors(behaviors map[string]AgentBehavior, agentMap map[string]bool) error {
+	for agentID := range behaviors {
+		if !agentMap[agentID] {
+			return fmt.Errorf("routing.agent_behaviors references non-existent agent '%s'", agentID)
+		}
+	}
+	return nil
+}
+
+// validateParallelGroups validates parallel groups structure and references
+func validateParallelGroups(groups map[string]ParallelGroupConfig, agentMap map[string]bool) error {
+	for groupName, group := range groups {
+		if len(group.Agents) == 0 {
+			return fmt.Errorf("parallel_group '%s' has no agents", groupName)
+		}
+
+		for _, agentID := range group.Agents {
 			if !agentMap[agentID] {
-				return fmt.Errorf("routing.signals references non-existent agent '%s'", agentID)
-			}
-			for _, signal := range signals {
-				// Validate signal format: must match [NAME] pattern
-				if signal.Signal == "" {
-					return fmt.Errorf("agent '%s' has signal with empty name - must be in [NAME] format", agentID)
-				}
-				if !isSignalFormatValid(signal.Signal) {
-					return fmt.Errorf("agent '%s' has invalid signal format '%s' - must be in [NAME] format (e.g., [END_EXAM])", agentID, signal.Signal)
-				}
-
-				// Allow empty target for terminal signals
-				// Allow target to be agent ID or parallel group name
-				if signal.Target != "" && !agentMap[signal.Target] && !parallelGroupMap[signal.Target] {
-					return fmt.Errorf("routing signal from agent '%s' targets non-existent agent/group '%s'", agentID, signal.Target)
-				}
+				return fmt.Errorf("parallel_group '%s' references non-existent agent '%s'", groupName, agentID)
 			}
 		}
 
-		// Validate agent behaviors reference existing agents
-		for agentID := range config.Routing.AgentBehaviors {
-			if !agentMap[agentID] {
-				return fmt.Errorf("routing.agent_behaviors references non-existent agent '%s'", agentID)
-			}
+		if group.NextAgent != "" && !agentMap[group.NextAgent] {
+			return fmt.Errorf("parallel_group '%s' next_agent '%s' does not exist", groupName, group.NextAgent)
 		}
 
-		// Validate parallel groups reference existing agents
-		for groupName, group := range config.Routing.ParallelGroups {
-			if len(group.Agents) == 0 {
-				return fmt.Errorf("parallel_group '%s' has no agents", groupName)
-			}
-			for _, agentID := range group.Agents {
-				if !agentMap[agentID] {
-					return fmt.Errorf("parallel_group '%s' references non-existent agent '%s'", groupName, agentID)
-				}
-			}
-			if group.NextAgent != "" && !agentMap[group.NextAgent] {
-				return fmt.Errorf("parallel_group '%s' next_agent '%s' does not exist", groupName, group.NextAgent)
-			}
-			if group.TimeoutSeconds <= 0 {
-				return fmt.Errorf("parallel_group '%s' timeout_seconds must be > 0, got %d", groupName, group.TimeoutSeconds)
-			}
+		if group.TimeoutSeconds <= 0 {
+			return fmt.Errorf("parallel_group '%s' timeout_seconds must be > 0, got %d", groupName, group.TimeoutSeconds)
 		}
+	}
+	return nil
+}
+
+// validateRoutingReferences validates routing signals and parallel groups
+func validateRoutingReferences(config *CrewConfig, agentMap map[string]bool) error {
+	if config.Routing == nil {
+		return nil
+	}
+
+	// Build parallel groups map
+	parallelGroupMap := make(map[string]bool)
+	for groupName := range config.Routing.ParallelGroups {
+		parallelGroupMap[groupName] = true
+	}
+
+	// Validate signals
+	if err := validateSignals(config.Routing.Signals, agentMap, parallelGroupMap); err != nil {
+		return err
+	}
+
+	// Validate agent behaviors
+	if err := validateAgentBehaviors(config.Routing.AgentBehaviors, agentMap); err != nil {
+		return err
+	}
+
+	// Validate parallel groups
+	if err := validateParallelGroups(config.Routing.ParallelGroups, agentMap); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// ValidateAgentConfig validates agent configuration structure and constraints
-// ✅ FIX for Issue #6: Validate agent config at load time
-// ✅ Support for primary/backup LLM model configuration
-// ✅ FIX for Issue #5: Add configMode parameter for STRICT/PERMISSIVE mode validation
-// ✅ FIX for Issue #5 Phase 2: Use tag-based validation for required fields
-func ValidateAgentConfig(config *AgentConfig, configMode ConfigMode) error {
-	// ✅ FIX for Issue #23 + Issue #5 Phase 2: Enhanced required field validation using tags
-	// Check required fields based on struct tags and config mode
-	missingFields, _ := ValidateRequiredFields(config, configMode, config.ID)
-	if len(missingFields) > 0 {
-		return fmt.Errorf(
-			"agent '%s': missing required fields in STRICT MODE: %v\n"+
-				"    Explicit configuration is mandatory.\n"+
-				"    Check your agent config file for: %v",
-			config.ID, missingFields, missingFields)
+// ValidateCrewConfig validates crew configuration structure and constraints
+// ✅ FIX for Issue #6: Validate YAML config at load time instead of runtime
+// This prevents invalid configs from causing runtime crashes
+func ValidateCrewConfig(config *CrewConfig) error {
+	// Step 1: Validate required fields
+	if err := validateCrewRequiredFields(config); err != nil {
+		return err
 	}
 
-	// Validate field constraints
+	// Step 2: Validate entry_point and build agent map
+	agentMap, err := validateEntryPointAndBuildMap(config)
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Validate settings constraints
+	if err := validateCrewSettings(config); err != nil {
+		return err
+	}
+
+	// Step 4: Validate routing references
+	if err := validateRoutingReferences(config, agentMap); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateAgentBasicConstraints validates temperature and quota constraints
+func validateAgentBasicConstraints(config *AgentConfig) error {
 	if config.Temperature < 0 || config.Temperature > 2 {
 		return fmt.Errorf("agent '%s': temperature must be between 0 and 2, got %f", config.ID, config.Temperature)
 	}
 
-	// ✅ WEEK 1: Validate cost control configuration
 	if config.MaxTokensPerCall < 0 {
 		return fmt.Errorf("agent '%s': max_tokens_per_call must be >= 0, got %d", config.ID, config.MaxTokensPerCall)
 	}
@@ -226,12 +273,16 @@ func ValidateAgentConfig(config *AgentConfig, configMode ConfigMode) error {
 		return fmt.Errorf("agent '%s': cost_alert_threshold must be between 0 and 1, got %f", config.ID, config.CostAlertThreshold)
 	}
 
-	// Validate primary LLM model configuration
+	return nil
+}
+
+// validatePrimaryModelConfig validates primary model configuration
+func validatePrimaryModelConfig(config *AgentConfig, configMode ConfigMode) error {
 	if config.Primary == nil {
 		return fmt.Errorf("agent '%s': primary model configuration is missing", config.ID)
 	}
 
-	// ✅ FIX for Issue #5 Phase 2: Validate Primary fields using tag-based validation
+	// Check required fields in STRICT mode
 	primaryMissingFields, _ := ValidateRequiredFields(config.Primary, configMode, config.ID)
 	if len(primaryMissingFields) > 0 {
 		return fmt.Errorf(
@@ -243,7 +294,7 @@ func ValidateAgentConfig(config *AgentConfig, configMode ConfigMode) error {
 			config.ID, primaryMissingFields)
 	}
 
-	// ✅ FIX for Issue #5: PERMISSIVE MODE auto-set defaults if not in STRICT MODE
+	// Apply defaults in PERMISSIVE mode
 	if configMode != StrictMode {
 		if config.Primary.Model == "" {
 			config.Primary.Model = "gpt-4o"
@@ -255,22 +306,66 @@ func ValidateAgentConfig(config *AgentConfig, configMode ConfigMode) error {
 		}
 	}
 
-	// Validate backup model configuration if present
-	if config.Backup != nil {
-		if config.Backup.Model == "" {
-			return fmt.Errorf("agent '%s': backup.model must not be empty if backup is specified", config.ID)
-		}
-		if config.Backup.Provider == "" {
-			return fmt.Errorf("agent '%s': backup.provider must not be empty if backup is specified", config.ID)
-		}
-		// Log info about backup configuration
-		log.Printf("[CONFIG INFO] agent '%s': backup model '%s' (%s) configured", config.ID, config.Backup.Model, config.Backup.Provider)
+	return nil
+}
+
+// validateBackupModelConfig validates backup model configuration if present
+func validateBackupModelConfig(config *AgentConfig) error {
+	if config.Backup == nil {
+		return nil
 	}
 
-	// Warn about suspicious configurations
+	if config.Backup.Model == "" {
+		return fmt.Errorf("agent '%s': backup.model must not be empty if backup is specified", config.ID)
+	}
+	if config.Backup.Provider == "" {
+		return fmt.Errorf("agent '%s': backup.provider must not be empty if backup is specified", config.ID)
+	}
+
+	log.Printf("[CONFIG INFO] agent '%s': backup model '%s' (%s) configured", config.ID, config.Backup.Model, config.Backup.Provider)
+	return nil
+}
+
+// warnAgentContextMissing warns if agent has no system prompt or backstory
+func warnAgentContextMissing(config *AgentConfig) {
 	if config.SystemPrompt == "" && config.Backstory == "" {
 		log.Printf("[CONFIG WARNING] agent '%s': both 'system_prompt' and 'backstory' are empty - agent may not have proper context", config.ID)
 	}
+}
+
+// ValidateAgentConfig validates agent configuration structure and constraints
+// ✅ FIX for Issue #6: Validate agent config at load time
+// ✅ Support for primary/backup LLM model configuration
+// ✅ FIX for Issue #5: Add configMode parameter for STRICT/PERMISSIVE mode validation
+// ✅ FIX for Issue #5 Phase 2: Use tag-based validation for required fields
+func ValidateAgentConfig(config *AgentConfig, configMode ConfigMode) error {
+	// Step 1: Check required fields
+	missingFields, _ := ValidateRequiredFields(config, configMode, config.ID)
+	if len(missingFields) > 0 {
+		return fmt.Errorf(
+			"agent '%s': missing required fields in STRICT MODE: %v\n"+
+				"    Explicit configuration is mandatory.\n"+
+				"    Check your agent config file for: %v",
+			config.ID, missingFields, missingFields)
+	}
+
+	// Step 2: Validate basic constraints
+	if err := validateAgentBasicConstraints(config); err != nil {
+		return err
+	}
+
+	// Step 3: Validate primary model config
+	if err := validatePrimaryModelConfig(config, configMode); err != nil {
+		return err
+	}
+
+	// Step 4: Validate backup model config if present
+	if err := validateBackupModelConfig(config); err != nil {
+		return err
+	}
+
+	// Step 5: Warn about missing context
+	warnAgentContextMissing(config)
 
 	return nil
 }
