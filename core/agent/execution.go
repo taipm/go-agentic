@@ -96,7 +96,7 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 	for _, msg := range messages {
 		systemAndPromptContent += msg.Content
 	}
-	_ = EstimateTokens(agent, systemAndPromptContent) // Token estimation for future metrics use
+	_ = agent.EstimateTokens(systemAndPromptContent) // Token estimation for future metrics use
 
 	// Step 2: Build completion request
 	request := &providers.CompletionRequest{
@@ -136,7 +136,7 @@ func executeWithModelConfigStream(ctx context.Context, agent *common.Agent, syst
 	for _, msg := range messages {
 		systemAndPromptContent += msg.Content
 	}
-	estimatedTokens := EstimateTokens(agent, systemAndPromptContent)
+	estimatedTokens := agent.EstimateTokens(systemAndPromptContent)
 
 	// Get provider instance
 	provider, err := providerFactory.GetProvider(modelConfig.Provider, modelConfig.ProviderURL, apiKey)
@@ -239,8 +239,3 @@ func buildGenericPrompt(agent *common.Agent) string {
 	return prompt.String()
 }
 
-// EstimateTokens estimates the token count for a text string
-func EstimateTokens(agent *common.Agent, text string) int {
-	// Simple token estimation: ~4 characters per token
-	return (len(text) + common.TokenBaseValue - 1) / common.TokenBaseValue
-}

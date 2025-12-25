@@ -1,6 +1,6 @@
 # Removal Plan - Code Cleanup
 
-## Status: READY FOR IMPLEMENTATION ✅
+## Status: STRATEGY UPDATED ✅
 
 Created: 2025-12-25
 Verified: YES
@@ -8,87 +8,89 @@ Risk Level: VERY LOW
 
 ---
 
-## Functions to Remove
+## STRATEGY CHANGE: Remove Lowercase Duplicates Instead
 
-### Phase 1: Remove Public Duplicate Functions from core/agent/execution.go
+After review: core/agent/execution.go (package `agent`) and core/agent_execution.go (package `crewai`) are in **different packages**.
 
-These 4 functions are exact duplicates of lowercase versions in core/agent_execution.go:
-
-1. **ConvertToProviderMessages** (lines 165-175)
-   - Replace calls with: `convertToProviderMessages()` from core/agent_execution.go:354
-   - Update locations: lines 29, 66
-
-2. **ConvertToolsToProvider** (lines 177-187)
-   - Replace calls with: `convertToolsToProvider()` from core/agent_execution.go:386
-   - Update locations: lines 107, 153
-
-3. **ConvertToolCallsFromProvider** (lines 189-200)
-   - Replace calls with: `convertToolCallsFromProvider()` from core/agent_execution.go:407
-   - Update locations: line 128
-
-4. **buildCustomPrompt** (lines 210-218)
-   - Remove from core/agent/execution.go
-   - Keep in core/agent_execution.go (lines 419-427)
-   - Called from: line 205
-
-### Phase 2: Remove Shadowing Function
-
-5. **EstimateTokens** (lines 242-246)
-   - Replace calls with: `agent.EstimateTokens()` method
-   - Update locations: lines 99, 139
-   - Rationale: Shadows Agent method in common/types.go
-
-### Phase 3: Inline Single-Caller Function
-
-6. **buildCompletionRequest** in core/agent_execution.go (lines 87-96)
-   - Inline into: `executeWithModelConfig()` at line 187
-   - Rationale: Single caller, simple transformation
+**New Strategy:** Keep uppercase versions in `core/agent/` (official public API), remove lowercase duplicate versions from `core/agent_execution.go`.
 
 ---
 
-## Tests to Remove from core/agent_test.go
+## Functions to Remove
 
-Remove these 6 test functions:
-- TestConvertToProviderMessages
-- TestConvertToProviderMessagesEmpty
-- TestConvertToolsToProvider
-- TestConvertToolsToProviderEmpty
-- TestConvertToolCallsFromProvider
-- TestConvertToolCallsFromProviderEmpty
+### Phase 1: Remove Lowercase Duplicates from core/agent_execution.go
+
+These 4 functions are exact duplicates of the upstream versions in core/agent/execution.go:
+
+1. **convertToProviderMessages** (lines 354-363)
+   - Duplicate of: `ConvertToProviderMessages` in core/agent/execution.go:165
+   - Usage in file: 1 call at line 239
+   - Action: Remove and use `agent.ConvertToProviderMessages()` instead
+
+2. **convertToolsToProvider** (lines 386-404)
+   - Duplicate of: `ConvertToolsToProvider` in core/agent/execution.go:177
+   - Usage in file: 2 calls (lines 94, 294)
+   - Action: Remove and use `agent.ConvertToolsToProvider()` instead
+
+3. **convertToolCallsFromProvider** (lines 407-417)
+   - Duplicate of: `ConvertToolCallsFromProvider` in core/agent/execution.go:189
+   - Usage in file: 1 call at line 211
+   - Action: Remove and use `agent.ConvertToolCallsFromProvider()` instead
+
+4. **buildCustomPrompt** (lines 419-427)
+   - Duplicate of: buildCustomPrompt in core/agent/execution.go:210
+   - Usage in file: 1 call at line 489
+   - Action: Remove and use the one from core/agent/execution.go via import
+
+### Phase 2: Remove Shadowing Function
+
+5. **EstimateTokens** in core/agent/execution.go (lines 242-246)
+   - Shadows: `agent.EstimateTokens()` method in common/types.go
+   - Usage: 2 calls (lines 99, 139)
+   - Action: Remove and replace with `agent.EstimateTokens()` method
+
+### Phase 3: Inline Single-Caller Function
+
+1. **buildCompletionRequest** in core/agent_execution.go (lines 87-96)
+   - Single caller: `executeWithModelConfig()` at line 187
+   - Action: Inline the 10-line function into its only caller
 
 ---
 
 ## Implementation Checklist
 
-- [ ] 1. Update ConvertToProviderMessages call sites (2 locations)
-- [ ] 2. Update ConvertToolsToProvider call sites (2 locations)
-- [ ] 3. Update ConvertToolCallsFromProvider call sites (1 location)
-- [ ] 4. Remove buildCustomPrompt from core/agent/execution.go
-- [ ] 5. Update EstimateTokens call sites (2 locations)
-- [ ] 6. Remove buildCompletionRequest and inline into caller
-- [ ] 7. Remove test functions from core/agent_test.go (6 functions)
-- [ ] 8. Run full test suite
-- [ ] 9. Verify no breakage
-- [ ] 10. Commit changes
+- [ ] 1. Update call sites in core/agent_execution.go to use agent.ConvertToProviderMessages()
+- [ ] 2. Update call sites in core/agent_execution.go to use agent.ConvertToolsToProvider()
+- [ ] 3. Update call sites in core/agent_execution.go to use agent.ConvertToolCallsFromProvider()
+- [ ] 4. Update call site in core/agent_execution.go for buildCustomPrompt
+- [ ] 5. Remove convertToProviderMessages from core/agent_execution.go (9 lines)
+- [ ] 6. Remove convertToolsToProvider from core/agent_execution.go (19 lines)
+- [ ] 7. Remove convertToolCallsFromProvider from core/agent_execution.go (11 lines)
+- [ ] 8. Remove buildCustomPrompt from core/agent_execution.go (9 lines)
+- [ ] 9. Remove EstimateTokens from core/agent/execution.go (5 lines)
+- [ ] 10. Remove buildCompletionRequest and inline into caller
+- [ ] 11. Run full test suite
+- [ ] 12. Verify no breakage
 
 ---
 
 ## Files to Modify
 
-1. **core/agent/execution.go**
-   - Remove: ConvertToProviderMessages (11 lines)
-   - Remove: ConvertToolsToProvider (11 lines)
-   - Remove: ConvertToolCallsFromProvider (12 lines)
-   - Remove: EstimateTokens (5 lines)
-   - Remove: buildCustomPrompt (9 lines)
-   - Update: Call sites for above functions
+1. **core/agent_execution.go** (main file)
+   - Remove: convertToProviderMessages (9 lines) - lines 354-363
+   - Remove: convertToolsToProvider (19 lines) - lines 386-404
+   - Remove: convertToolCallsFromProvider (11 lines) - lines 407-417
+   - Remove: buildCustomPrompt (9 lines) - lines 419-427
+   - Remove: buildCompletionRequest (10 lines) - lines 87-96 + inline
+   - Update: 5 call sites to use agent.* versions
+   - Total lines removed: ~58 lines
 
-2. **core/agent_execution.go**
-   - Remove: buildCompletionRequest (10 lines) and inline
-   - Update: Caller site
+2. **core/agent/execution.go** (minor)
+   - Remove: EstimateTokens (5 lines) - lines 242-246
+   - Update: 2 call sites to use agent.EstimateTokens() method
 
-3. **core/agent_test.go**
-   - Remove: 6 test functions
+3. **core/** (package-level)
+   - Add: import of core/agent in agent_execution.go if needed
 
 ---
 

@@ -84,17 +84,6 @@ func validateAndCheckCostLimits(agent *Agent, systemPrompt string, messages []pr
 	return estimatedTokens, nil
 }
 
-// buildCompletionRequest creates a provider-agnostic completion request
-func buildCompletionRequest(modelConfig *ModelConfig, systemPrompt string, messages []providers.ProviderMessage, agent *Agent) *providers.CompletionRequest {
-	return &providers.CompletionRequest{
-		Model:        modelConfig.Model,
-		SystemPrompt: systemPrompt,
-		Messages:     messages,
-		Temperature:  agent.Temperature,
-		Tools:        convertToolsToProvider(convertAgentToolsToToolPointers(agent.Tools)), // ✅ Convert []interface{} → []*Tool
-	}
-}
-
 // executeProviderCall invokes the LLM provider and returns the response
 // Tracks execution time for performance metrics
 func executeProviderCall(ctx context.Context, agent *Agent, modelConfig *ModelConfig, request *providers.CompletionRequest, apiKey string) (*providers.CompletionResponse, time.Duration, error) {
@@ -184,7 +173,13 @@ func executeWithModelConfig(ctx context.Context, agent *Agent, systemPrompt stri
 	}
 
 	// Step 2: Build completion request
-	request := buildCompletionRequest(modelConfig, systemPrompt, messages, agent)
+	request := &providers.CompletionRequest{
+		Model:        modelConfig.Model,
+		SystemPrompt: systemPrompt,
+		Messages:     messages,
+		Temperature:  agent.Temperature,
+		Tools:        convertToolsToProvider(convertAgentToolsToToolPointers(agent.Tools)), // ✅ Convert []interface{} → []*Tool
+	}
 
 	// Step 3: Execute provider call
 	response, executionDuration, err := executeProviderCall(ctx, agent, modelConfig, request, apiKey)
