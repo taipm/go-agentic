@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	providers "github.com/taipm/go-agentic/core/providers"
@@ -364,59 +363,10 @@ func extractToolCallsFromText(text string) []providers.ToolCall {
 	return calls
 }
 
-// parseToolArguments splits tool arguments respecting nested brackets
+// parseToolArguments delegates to shared tools package implementation
+// Supports JSON, key=value, and positional argument formats with type conversion
 func parseToolArguments(argsStr string) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	if argsStr == "" {
-		return result
-	}
-
-	// Simple approach: try to parse as JSON first (handles complex types)
-	// If that fails, treat as simple string arguments
-	var jsonArgs map[string]interface{}
-	if err := json.Unmarshal([]byte("{"+argsStr+"}"), &jsonArgs); err == nil {
-		return jsonArgs
-	}
-
-	// Try to parse key=value format (e.g., question_number=1, question="Q")
-	parts := tools.SplitArguments(argsStr)
-	hasKeyValue := false
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if idx := strings.Index(part, "="); idx > 0 {
-			hasKeyValue = true
-			key := strings.TrimSpace(part[:idx])
-			value := strings.TrimSpace(part[idx+1:])
-
-			// Remove quotes from string values
-			value = strings.Trim(value, `"'`)
-
-			// Try to parse as number or boolean
-			if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-				result[key] = v
-			} else if v, err := strconv.ParseFloat(value, 64); err == nil {
-				result[key] = v
-			} else if v, err := strconv.ParseBool(value); err == nil {
-				result[key] = v
-			} else {
-				result[key] = value
-			}
-		}
-	}
-
-	if hasKeyValue {
-		return result
-	}
-
-	// Fallback: parse as comma-separated positional arguments
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.Trim(part, `"'`)
-		result[fmt.Sprintf("arg%d", i)] = part
-	}
-
-	return result
+	return tools.ParseArguments(argsStr)
 }
 
 // splitArguments delegates to shared tools package implementation

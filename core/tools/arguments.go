@@ -4,11 +4,17 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 // ParseArguments parses tool arguments from a string, supporting multiple formats
-// Tries JSON parsing first, falls back to comma-separated key-value pairs
+// Priority:
+// 1. JSON format: {key: value, ...}
+// 2. Key=value format: key1=value1, key2=value2
+// 3. Positional arguments: arg1, arg2, arg3
+//
+// Supports type conversion for numbers, booleans, and strings
 func ParseArguments(argsStr string) map[string]interface{} {
 	result := make(map[string]interface{})
 
@@ -22,8 +28,37 @@ func ParseArguments(argsStr string) map[string]interface{} {
 		return jsonArgs
 	}
 
-	// Fallback: parse as comma-separated positional arguments
+	// Try to parse key=value format (e.g., question_number=1, question="Q")
 	parts := SplitArguments(argsStr)
+	hasKeyValue := false
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if idx := strings.Index(part, "="); idx > 0 {
+			hasKeyValue = true
+			key := strings.TrimSpace(part[:idx])
+			value := strings.TrimSpace(part[idx+1:])
+
+			// Remove quotes from string values
+			value = strings.Trim(value, `"'`)
+
+			// Try to parse as number or boolean
+			if v, err := strconv.ParseInt(value, 10, 64); err == nil {
+				result[key] = v
+			} else if v, err := strconv.ParseFloat(value, 64); err == nil {
+				result[key] = v
+			} else if v, err := strconv.ParseBool(value); err == nil {
+				result[key] = v
+			} else {
+				result[key] = value
+			}
+		}
+	}
+
+	if hasKeyValue {
+		return result
+	}
+
+	// Fallback: parse as comma-separated positional arguments
 	for i, part := range parts {
 		part = strings.TrimSpace(part)
 		part = strings.Trim(part, `"'`)
