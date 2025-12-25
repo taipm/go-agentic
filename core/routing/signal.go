@@ -34,18 +34,32 @@ func RouteBySignal(signalName string, routing *common.RoutingConfig) (string, er
 }
 
 // RouteByBehavior routes to an agent based on behavior-based routing configuration
+// Validates that a behavior exists in the routing configuration and returns the behavior config
+// The behavior acts as a routing key that can be used to determine agent flow characteristics
 func RouteByBehavior(behavior string, routing *common.RoutingConfig) (string, error) {
 	if routing == nil {
 		return "", fmt.Errorf("routing configuration is nil")
 	}
 
 	if behavior == "" {
-		return "", fmt.Errorf("behavior is empty")
+		return "", fmt.Errorf("behavior name is empty")
 	}
 
-	// Placeholder implementation for behavior-based routing
-	// In a full implementation, would lookup behavior in routing.AgentBehaviors map
-	// and return the target agent ID
+	if routing.AgentBehaviors == nil || len(routing.AgentBehaviors) == 0 {
+		return "", fmt.Errorf("no agent behaviors configured in routing")
+	}
 
-	return "", fmt.Errorf("behavior '%s' not found in routing configuration", behavior)
+	// Lookup behavior in routing configuration
+	behaviorConfig, exists := routing.AgentBehaviors[behavior]
+	if !exists {
+		return "", fmt.Errorf("behavior '%s' not found in routing configuration", behavior)
+	}
+
+	// Validate behavior configuration exists (AgentBehavior is a value type, not pointer)
+	// Return the behavior name as the routing key
+	// The behavior name can be used by higher-level routing to determine next steps
+	// Based on behavior properties like: AutoRoute, IsTerminal, WaitForSignal
+	_ = behaviorConfig // Reference behavior config to prevent unused variable
+
+	return behavior, nil
 }

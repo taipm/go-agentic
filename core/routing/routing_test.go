@@ -167,3 +167,194 @@ func TestValidateRouting_Nil(t *testing.T) {
 		t.Fatalf("Expected no error for nil routing, got %v", err)
 	}
 }
+
+// ============================================================================
+// BEHAVIOR ROUTING TESTS
+// ============================================================================
+
+// TestRouteByBehavior_Valid tests successful behavior lookup
+func TestRouteByBehavior_Valid(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: map[string]common.AgentBehavior{
+			"standard": {
+				WaitForSignal: false,
+				AutoRoute:     true,
+				IsTerminal:    false,
+				Description:   "Standard routing behavior",
+			},
+		},
+	}
+
+	result, err := RouteByBehavior("standard", routing)
+	if err != nil {
+		t.Fatalf("Expected no error for valid behavior, got %v", err)
+	}
+
+	if result != "standard" {
+		t.Errorf("Expected behavior name 'standard', got '%s'", result)
+	}
+}
+
+// TestRouteByBehavior_NilRouting tests nil routing parameter
+func TestRouteByBehavior_NilRouting(t *testing.T) {
+	result, err := RouteByBehavior("some_behavior", nil)
+	if err == nil {
+		t.Fatalf("Expected error for nil routing, got none")
+	}
+
+	if result != "" {
+		t.Errorf("Expected empty result for nil routing, got '%s'", result)
+	}
+
+	if err.Error() != "routing configuration is nil" {
+		t.Errorf("Expected 'routing configuration is nil' error, got: %v", err)
+	}
+}
+
+// TestRouteByBehavior_EmptyBehaviorName tests empty behavior name
+func TestRouteByBehavior_EmptyBehaviorName(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: map[string]common.AgentBehavior{
+			"standard": {IsTerminal: false},
+		},
+	}
+
+	result, err := RouteByBehavior("", routing)
+	if err == nil {
+		t.Fatalf("Expected error for empty behavior name, got none")
+	}
+
+	if result != "" {
+		t.Errorf("Expected empty result for empty behavior, got '%s'", result)
+	}
+
+	if err.Error() != "behavior name is empty" {
+		t.Errorf("Expected 'behavior name is empty' error, got: %v", err)
+	}
+}
+
+// TestRouteByBehavior_NilAgentBehaviors tests nil agent behaviors in routing
+func TestRouteByBehavior_NilAgentBehaviors(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: nil,
+	}
+
+	result, err := RouteByBehavior("standard", routing)
+	if err == nil {
+		t.Fatalf("Expected error for nil agent behaviors, got none")
+	}
+
+	if result != "" {
+		t.Errorf("Expected empty result, got '%s'", result)
+	}
+
+	if err.Error() != "no agent behaviors configured in routing" {
+		t.Errorf("Expected 'no agent behaviors configured' error, got: %v", err)
+	}
+}
+
+// TestRouteByBehavior_EmptyAgentBehaviors tests empty agent behaviors map
+func TestRouteByBehavior_EmptyAgentBehaviors(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: make(map[string]common.AgentBehavior),
+	}
+
+	result, err := RouteByBehavior("standard", routing)
+	if err == nil {
+		t.Fatalf("Expected error for empty agent behaviors, got none")
+	}
+
+	if result != "" {
+		t.Errorf("Expected empty result, got '%s'", result)
+	}
+}
+
+// TestRouteByBehavior_NotFound tests behavior not found in routing
+func TestRouteByBehavior_NotFound(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: map[string]common.AgentBehavior{
+			"standard": {IsTerminal: false},
+		},
+	}
+
+	result, err := RouteByBehavior("nonexistent", routing)
+	if err == nil {
+		t.Fatalf("Expected error for nonexistent behavior, got none")
+	}
+
+	if result != "" {
+		t.Errorf("Expected empty result for nonexistent behavior, got '%s'", result)
+	}
+
+	expectedErr := "behavior 'nonexistent' not found in routing configuration"
+	if err.Error() != expectedErr {
+		t.Errorf("Expected '%s' error, got: %v", expectedErr, err)
+	}
+}
+
+// TestRouteByBehavior_TerminalBehavior tests terminal behavior routing
+func TestRouteByBehavior_TerminalBehavior(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: map[string]common.AgentBehavior{
+			"terminal": {
+				IsTerminal:    true,
+				WaitForSignal: false,
+				AutoRoute:     false,
+				Description:   "Terminal behavior - ends execution",
+			},
+		},
+	}
+
+	result, err := RouteByBehavior("terminal", routing)
+	if err != nil {
+		t.Fatalf("Expected no error for terminal behavior, got %v", err)
+	}
+
+	if result != "terminal" {
+		t.Errorf("Expected 'terminal', got '%s'", result)
+	}
+}
+
+// TestRouteByBehavior_MultipleBehaviors tests routing with multiple behaviors
+func TestRouteByBehavior_MultipleBehaviors(t *testing.T) {
+	routing := &common.RoutingConfig{
+		AgentBehaviors: map[string]common.AgentBehavior{
+			"standard": {
+				AutoRoute:  true,
+				IsTerminal: false,
+			},
+			"signal_wait": {
+				WaitForSignal: true,
+				AutoRoute:     false,
+				IsTerminal:    false,
+			},
+			"terminal": {
+				IsTerminal: true,
+			},
+		},
+	}
+
+	testCases := []struct {
+		behavior string
+		expect   string
+		wantErr  bool
+	}{
+		{"standard", "standard", false},
+		{"signal_wait", "signal_wait", false},
+		{"terminal", "terminal", false},
+		{"unknown", "", true},
+	}
+
+	for _, tc := range testCases {
+		result, err := RouteByBehavior(tc.behavior, routing)
+		if tc.wantErr && err == nil {
+			t.Errorf("Behavior '%s': expected error, got none", tc.behavior)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("Behavior '%s': expected no error, got %v", tc.behavior, err)
+		}
+		if result != tc.expect {
+			t.Errorf("Behavior '%s': expected '%s', got '%s'", tc.behavior, tc.expect, result)
+		}
+	}
+}
