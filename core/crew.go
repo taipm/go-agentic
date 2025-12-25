@@ -10,6 +10,7 @@ import (
 	"github.com/taipm/go-agentic/core/config"
 	"github.com/taipm/go-agentic/core/executor"
 	"github.com/taipm/go-agentic/core/signal"
+	toolsvalidation "github.com/taipm/go-agentic/core/tools"
 	"github.com/taipm/go-agentic/core/validation"
 	"github.com/taipm/go-agentic/core/workflow"
 )
@@ -80,6 +81,16 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 	agentConfigs, err := config.LoadAgentConfigs(agentDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load agent configs: %w", err)
+	}
+
+	// Validate all tools at load time (fail-fast approach)
+	// Convert to common.Tool map for validation
+	commonTools := make(map[string]*common.Tool)
+	for name, tool := range tools {
+		commonTools[name] = (*common.Tool)(tool)
+	}
+	if err := toolsvalidation.ValidateToolMap(commonTools); err != nil {
+		return nil, fmt.Errorf("tool validation failed at startup: %w", err)
 	}
 
 	// Convert tools map from *Tool to interface{}

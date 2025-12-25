@@ -1,7 +1,17 @@
-# Kế Hoạch Hành Động - Khắc Phục Điểm Yếu Core Library
+# Kế Hoạch Hành Động - Cải Thiện go-agentic
 
-## Mục Đích
+## Mục Đích (Dual Focus)
+
+### Primary: Fix Critical Issues
 Khắc phục 3 vấn đề nghiêm trọng gây ra vòng lặp vô hạn trong quiz example.
+
+### Secondary: Improve Developer Experience (DX)
+Cải thiện trải nghiệm phát triển từ **6.5/10 → 8.5+/10** bằng cách:
+- Adopt best practices từ Anthropic SDK, LangChain, FastAPI
+- Loại bỏ boilerplate code
+- Auto-generate schemas từ Go structs
+- Fail-fast validation
+- Clear error messages
 
 ---
 

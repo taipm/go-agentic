@@ -16,17 +16,17 @@ import (
 
 // QuizState tracks the state of the quiz exam
 type QuizState struct {
-	TotalQuestions   int              `json:"total_questions"`
-	CurrentQuestion  int              `json:"current_question"`
-	CorrectAnswers   int              `json:"correct_answers"`
-	WrongAnswers     int              `json:"wrong_answers"`
-	QuestionHistory  []QuestionRecord `json:"question_history"`
-	IsComplete       bool             `json:"is_complete"`
-	StudentName      string           `json:"student_name"`
-	ExamTopic        string           `json:"exam_topic"`
-	StartTime        time.Time        `json:"start_time"`
-	ReportPath       string           `json:"report_path"`
-	mu               sync.RWMutex
+	TotalQuestions  int              `json:"total_questions"`
+	CurrentQuestion int              `json:"current_question"`
+	CorrectAnswers  int              `json:"correct_answers"`
+	WrongAnswers    int              `json:"wrong_answers"`
+	QuestionHistory []QuestionRecord `json:"question_history"`
+	IsComplete      bool             `json:"is_complete"`
+	StudentName     string           `json:"student_name"`
+	ExamTopic       string           `json:"exam_topic"`
+	StartTime       time.Time        `json:"start_time"`
+	ReportPath      string           `json:"report_path"`
+	mu              sync.RWMutex
 }
 
 // QuestionRecord records a single question and its result
@@ -179,13 +179,13 @@ func (qs *QuizState) GetStatus() map[string]interface{} {
 	defer qs.mu.RUnlock()
 
 	return map[string]interface{}{
-		"total_questions":    qs.TotalQuestions,
-		"questions_asked":    qs.CurrentQuestion,
+		"total_questions":     qs.TotalQuestions,
+		"questions_asked":     qs.CurrentQuestion,
 		"questions_remaining": qs.TotalQuestions - qs.CurrentQuestion,
-		"correct_answers":    qs.CorrectAnswers,
-		"wrong_answers":      qs.WrongAnswers,
-		"current_score":      qs.CorrectAnswers,
-		"is_complete":        qs.IsComplete,
+		"correct_answers":     qs.CorrectAnswers,
+		"wrong_answers":       qs.WrongAnswers,
+		"current_score":       qs.CorrectAnswers,
+		"is_complete":         qs.IsComplete,
 	}
 }
 
@@ -347,9 +347,9 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] RecordAnswer() called with args: %v\n", args)
 
-			// ✅ FIX #2: VALIDATION #1 - question must not be empty
-			question, ok := args["question"].(string)
-			if !ok || strings.TrimSpace(question) == "" {
+			// Extract required parameters using new coercion utilities
+			question, err := agentictools.MustGetString(args, "question")
+			if err != nil || strings.TrimSpace(question) == "" {
 				fmt.Printf("\n[VALIDATION ERROR] RecordAnswer FAILED\n")
 				fmt.Printf("  ❌ question parameter cannot be empty or missing\n")
 				fmt.Printf("  Received: %v\n", args["question"])
@@ -365,22 +365,8 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				return string(jsonBytes), nil
 			}
 
-			// ✅ FIX #2: VALIDATION #2 - student_answer must not be empty
-			var studentAnswer string
-			switch v := args["student_answer"].(type) {
-			case string:
-				studentAnswer = v
-			case float64:
-				studentAnswer = fmt.Sprintf("%v", v)
-			case int64:
-				studentAnswer = fmt.Sprintf("%d", v)
-			case int:
-				studentAnswer = fmt.Sprintf("%d", v)
-			default:
-				studentAnswer = fmt.Sprintf("%v", v)
-			}
-
-			if strings.TrimSpace(studentAnswer) == "" {
+			studentAnswer, err := agentictools.MustGetString(args, "student_answer")
+			if err != nil || strings.TrimSpace(studentAnswer) == "" {
 				fmt.Printf("\n[VALIDATION ERROR] RecordAnswer FAILED\n")
 				fmt.Printf("  ❌ student_answer parameter cannot be empty or missing\n")
 				fmt.Printf("  Received: %v\n", args["student_answer"])
@@ -396,9 +382,8 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				return string(jsonBytes), nil
 			}
 
-			// ✅ FIX #2: VALIDATION #3 - is_correct must be explicitly provided
-			isCorrect, exists := args["is_correct"].(bool)
-			if !exists {
+			isCorrect, err := agentictools.MustGetBool(args, "is_correct")
+			if err != nil {
 				fmt.Printf("\n[VALIDATION ERROR] RecordAnswer FAILED\n")
 				fmt.Printf("  ❌ is_correct parameter must be explicitly true or false (not defaults!)\n")
 				fmt.Printf("  Received: %v\n", args["is_correct"])
@@ -414,29 +399,11 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				return string(jsonBytes), nil
 			}
 
-			// ✅ PHASE 3.6: Auto-infer question_number from current state
-			var questionNum int
-
-			if qn, exists := args["question_number"]; exists && qn != nil {
-				// LLM cung cấp question_number - sử dụng giá trị này
-				switch v := qn.(type) {
-				case float64:
-					questionNum = int(v)
-				case int64:
-					questionNum = int(v)
-				case int:
-					questionNum = v
-				default:
-					// Fallback: Suy ra từ state
-					questionNum = 0
-				}
-			} else {
-				// LLM không cung cấp - tự động suy ra từ trạng thái hiện tại
-				questionNum = 0
-			}
+			// Extract optional question_number with auto-inference fallback
+			questionNum := agentictools.OptionalGetInt(args, "question_number", 0)
 
 			// Parse teacher_comment (optional)
-			teacherComment, _ := args["teacher_comment"].(string)
+			teacherComment := agentictools.OptionalGetString(args, "teacher_comment", "")
 
 			fmt.Fprintf(os.Stderr, "[TOOL DEBUG] Before RecordAnswer: CurrentQuestion=%d, TotalQuestions=%d\n", state.CurrentQuestion, state.TotalQuestions)
 			result := state.RecordAnswer(questionNum, question, studentAnswer, isCorrect, teacherComment)
