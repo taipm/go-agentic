@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/taipm/go-agentic/core/common"
 )
 
 // LLMProvider defines the interface for LLM backends
@@ -50,18 +52,22 @@ type ProviderTool struct {
 	Parameters  map[string]interface{} // JSON schema for parameters
 }
 
+// UsageInfo contains token usage information from provider
+type UsageInfo struct {
+	InputTokens  int // Tokens in prompt (aka PromptTokens)
+	OutputTokens int // Tokens in completion (aka CompletionTokens)
+	TotalTokens  int // Total tokens used
+}
+
 // CompletionResponse is provider-agnostic response
 type CompletionResponse struct {
 	Content   string          // Response text from model
-	ToolCalls []ToolCall      // Extracted tool calls
+	ToolCalls []common.ToolCall      // Extracted tool calls
+	Usage     *UsageInfo      // Token usage and cost metadata
 }
 
-// ToolCall represents a tool invocation (matches crewai.ToolCall)
-type ToolCall struct {
-	ID        string                 // Unique ID for this call
-	ToolName  string                 // Name of tool to invoke
-	Arguments map[string]interface{} // Parsed arguments
-}
+// ToolCall is re-exported from common package for backward compatibility
+type ToolCall = common.ToolCall
 
 // ProviderFactory creates and caches LLM provider instances
 type ProviderFactory struct {

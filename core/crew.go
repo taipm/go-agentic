@@ -6,7 +6,12 @@ import (
 	"log"
 	"time"
 
+	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/config"
+	"github.com/taipm/go-agentic/core/executor"
 	"github.com/taipm/go-agentic/core/signal"
+	"github.com/taipm/go-agentic/core/validation"
+	"github.com/taipm/go-agentic/core/workflow"
 )
 
 
@@ -65,28 +70,48 @@ func (ce *CrewExecutor) SetSignalRegistry(registry *signal.SignalRegistry) {
 // tools: map of available tools that can be assigned to agents (can be empty map if no tools needed)
 func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool) (*CrewExecutor, error) {
 	// Load crew configuration (includes routing config)
-	crewConfig, err := LoadCrewConfig(fmt.Sprintf("%s/crew.yaml", configDir))
+	crewConfig, err := config.LoadCrewConfig(fmt.Sprintf("%s/crew.yaml", configDir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load crew config: %w", err)
 	}
 
 	// Load agent configurations
 	agentDir := fmt.Sprintf("%s/agents", configDir)
-	// Extract configMode from crew config for agent loading
-	configMode := PermissiveMode // Default to permissive for backward compatibility
-	if crewConfig.Settings.ConfigMode != "" {
-		configMode = ConfigMode(crewConfig.Settings.ConfigMode)
-	}
-	agentConfigs, err := LoadAgentConfigs(agentDir, configMode)
+	agentConfigs, err := config.LoadAgentConfigs(agentDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load agent configs: %w", err)
+	}
+
+	// Convert tools map from *Tool to interface{}
+	toolsInterface := make(map[string]interface{})
+	for name, tool := range tools {
+		toolsInterface[name] = tool
 	}
 
 	// Create agents from config with provided tools
 	var agents []*Agent
 	for _, agentID := range crewConfig.Agents {
-		if config, exists := agentConfigs[agentID]; exists {
-			agent := CreateAgentFromConfig(config, tools)
+		if agentConfig, exists := agentConfigs[agentID]; exists {
+			agentObj := config.CreateAgentFromConfig(agentConfig, toolsInterface)
+			// Convert from common.Agent back to crewai.Agent (they should be compatible)
+			agent := &Agent{
+				ID:             agentObj.ID,
+				Name:           agentObj.Name,
+				Role:           agentObj.Role,
+				Backstory:      agentObj.Backstory,
+				SystemPrompt:   agentObj.SystemPrompt,
+				PrimaryModel:   agentObj.PrimaryModel,
+				BackupModel:    agentObj.BackupModel,
+				Temperature:    agentObj.Temperature,
+				IsTerminal:     agentObj.IsTerminal,
+				HandoffTargets: agentObj.HandoffTargets,
+				Tools:          agentObj.Tools,
+				Metadata:       agentObj.Metadata,
+				Quota:          agentObj.Quota,
+				CostMetrics:    agentObj.CostMetrics,
+				MemoryMetrics:  agentObj.MemoryMetrics,
+				PerformanceMetrics: agentObj.PerformanceMetrics,
+			}
 			agents = append(agents, agent)
 		}
 	}
@@ -105,6 +130,16 @@ func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool)
 
 	// Create executor
 	executor := NewCrewExecutor(crew, apiKey)
+
+	// Initialize signal registry if routing has signals
+	if crew.Routing != nil && crew.Routing.Signals != nil && len(crew.Routing.Signals) > 0 {
+		executor.signalRegistry = signal.NewSignalRegistry()
+
+		// Register signal handlers from routing config
+		if err := executor.RegisterSignalHandlers(); err != nil {
+			return nil, fmt.Errorf("failed to register signal handlers: %w", err)
+		}
+	}
 
 	// Validate signals at startup (fail-fast approach)
 	if err := executor.ValidateSignals(); err != nil {
@@ -159,11 +194,81 @@ func (ce *CrewExecutor) GetResumeAgentID() string {
 	return ce.ResumeAgentID
 }
 
+// ValidateSignals validates the signal routing configuration
+// Returns error if signals are misconfigured (empty names, unknown targets, invalid format)
+// Uses validation package for signal format and target validation
+func (ce *CrewExecutor) ValidateSignals() error {
+	if ce == nil || ce.crew == nil {
+		return nil // No crew to validate
+	}
+
+	if ce.crew.Routing == nil || ce.crew.Routing.Signals == nil {
+		return nil // No signals configured - this is valid
+	}
+
+	// Build agent map for target validation
+	agentMap := make(map[string]bool)
+	for _, agent := range ce.crew.Agents {
+		agentMap[agent.ID] = true
+	}
+
+	// Convert Routing.Signals to map[string]interface{} for validation
+	signalsMap := make(map[string]interface{})
+	for agentID, signals := range ce.crew.Routing.Signals {
+		signalsMap[agentID] = signals
+	}
+
+	// Use validation package
+	return validation.ValidateSignals(signalsMap, agentMap)
+}
+
+// RegisterSignalHandlers registers signal handlers from routing configuration
+// This method should be called after SetSignalRegistry to register handlers
+// Returns error if registration fails
+func (ce *CrewExecutor) RegisterSignalHandlers() error {
+	if ce == nil || ce.signalRegistry == nil {
+		return nil // No registry to register with
+	}
+
+	if ce.crew == nil || ce.crew.Routing == nil || ce.crew.Routing.Signals == nil {
+		return nil // No signals to register
+	}
+
+	// Register handlers for each signal in routing config
+	for agentID, signals := range ce.crew.Routing.Signals {
+		for _, sig := range signals {
+			// Create handler for this signal
+			handler := &signal.SignalHandler{
+				ID:          fmt.Sprintf("%s-%s", agentID, sig.Signal),
+				Name:        fmt.Sprintf("Handler for %s from %s", sig.Signal, agentID),
+				TargetAgent: sig.Target,
+				Signals:     []string{sig.Signal},
+				OnSignal: func(ctx context.Context, s *signal.Signal) error {
+					// Default handler implementation
+					// Signal routing is handled by the signal registry
+					return nil
+				},
+			}
+
+			if err := ce.signalRegistry.RegisterHandler(handler); err != nil {
+				return fmt.Errorf("failed to register handler for signal %s: %w", sig.Signal, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // appendMessage safely appends a message to history with mutex protection
 // Delegates to HistoryManager for thread-safe operations
 func (ce *CrewExecutor) appendMessage(msg Message) {
 	if ce.history != nil {
-		ce.history.Append(msg)
+		// Convert Message to common.Message for HistoryManager.Add
+		commonMsg := common.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+		ce.history.Add(commonMsg)
 	}
 }
 
@@ -174,7 +279,15 @@ func (ce *CrewExecutor) getHistoryCopy() []Message {
 	if ce.history == nil {
 		return []Message{}
 	}
-	return ce.history.Copy()
+	messages := ce.history.GetMessages()
+	result := make([]Message, len(messages))
+	for i, msg := range messages {
+		result[i] = Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+	return result
 }
 
 // GetHistory returns a copy of the conversation history
@@ -184,24 +297,23 @@ func (ce *CrewExecutor) GetHistory() []Message {
 }
 
 // estimateHistoryTokens estimates total tokens in conversation history
-// Uses approximation: 1 token ≈ TokenDivisor characters (OpenAI convention)
+// Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
 // Delegates to HistoryManager
 func (ce *CrewExecutor) estimateHistoryTokens() int {
 	if ce.history == nil {
 		return 0
 	}
-	return ce.history.EstimateTokens()
+	// Estimate: ~1 token per 4 characters
+	totalSize := ce.history.TotalSize()
+	return (totalSize + 3) / 4 // Round up
 }
 
 // trimHistoryIfNeeded trims conversation history to fit within context window
-// Uses ce.defaults.MaxContextWindow and ce.defaults.ContextTrimPercent
-// Strategy: Keep first + recent messages, remove oldest in middle when over limit
-// Delegates to HistoryManager
+// Note: HistoryManager automatically trims on Add() calls based on configured thresholds
+// This method is kept for API compatibility but trimming happens automatically
 func (ce *CrewExecutor) trimHistoryIfNeeded() {
-	if ce.history == nil || ce.defaults == nil {
-		return
-	}
-	ce.history.TrimIfNeeded(ce.defaults.MaxContextWindow, ce.defaults.ContextTrimPercent)
+	// Automatic trimming happens in HistoryManager.Add()
+	// No explicit action needed here
 }
 
 // ClearHistory clears the conversation history
@@ -310,10 +422,161 @@ func (ce *CrewExecutor) recordAgentExecution(agent *Agent, duration time.Duratio
 	ce.Metrics.RecordAgentExecution(agent.ID, agent.Name, duration, success)
 }
 
+// executeWorkflow executes the crew workflow with signal support
+// This is the core execution method that coordinates multi-agent workflows
+func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handler interface{}) interface{} {
+	if ce == nil || ce.crew == nil {
+		return fmt.Errorf("crew executor not properly initialized")
+	}
+
+	// Determine starting agent
+	startAgent := ce.entryAgent
+	if ce.ResumeAgentID != "" {
+		// Resume from specified agent
+		for _, agent := range ce.crew.Agents {
+			if agent.ID == ce.ResumeAgentID {
+				startAgent = agent
+				break
+			}
+		}
+		// Clear resume agent after using it
+		ce.ResumeAgentID = ""
+	}
+
+	if startAgent == nil {
+		return fmt.Errorf("no entry agent configured")
+	}
+
+	// Add user input to history on first execution
+	if ce.history != nil && ce.history.Length() == 0 {
+		ce.addUserMessageToHistory(input)
+	}
+
+	// Create ExecutionFlow for multi-agent coordination
+	flow := executor.NewExecutionFlow(startAgent, ce.crew.MaxRounds, ce.crew.MaxHandoffs)
+
+	// Convert local Message types to common.Message for executor
+	historyMessages := ce.getHistoryCopy()
+	commonMessages := make([]common.Message, len(historyMessages))
+	for i, msg := range historyMessages {
+		commonMessages[i] = common.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+	flow.History = commonMessages
+
+	// Cast handler to workflow.OutputHandler
+	var workflowHandler workflow.OutputHandler
+	if h, ok := handler.(workflow.OutputHandler); ok {
+		workflowHandler = h
+	}
+
+	// Build agents map for routing
+	agentsMap := make(map[string]*common.Agent)
+	for _, agent := range ce.crew.Agents {
+		agentsMap[agent.ID] = agent
+	}
+
+	// Execute workflow with callbacks - supports multi-turn and handoffs
+	response, err := flow.ExecuteWithCallbacks(
+		ctx,
+		workflowHandler,
+		ce.apiKey,
+		func(step int, agent *common.Agent, agentResponse *common.AgentResponse) error {
+			// Add agent response to history
+			if agentResponse != nil {
+				ce.addAssistantMessageToHistory(agentResponse.Content)
+			}
+			return nil
+		},
+		agentsMap,
+		ce.crew.Routing,
+		ce.signalRegistry,
+	)
+
+	if err != nil {
+		if workflowHandler != nil {
+			_ = workflowHandler.HandleError(err)
+		}
+		return err
+	}
+
+	if response == nil {
+		return fmt.Errorf("workflow completed with no response")
+	}
+
+	// Trim history if needed
+	ce.trimHistoryIfNeeded()
+
+	// Return CrewResponse
+	return &CrewResponse{
+		AgentID:   response.AgentID,
+		AgentName: response.AgentName,
+		Content:   response.Content,
+	}
+}
+
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
-	handler := NewStreamHandler(streamChan)
+	// Create adapter channel for common.StreamEvent
+	workflowStreamChan := make(chan *common.StreamEvent)
+
+	// Create a channel to signal when conversion goroutine is done
+	conversionDone := make(chan struct{})
+
+	// Start goroutine to convert workflow events to crewai events
+	go func() {
+		defer func() {
+			close(conversionDone)
+			// Recover if streamChan is closed while we're sending
+			if r := recover(); r != nil {
+				// Channel closed, exit gracefully
+			}
+		}()
+
+		for event := range workflowStreamChan {
+			if event != nil {
+				streamEvent := &StreamEvent{
+					Type:      event.Type,
+					Agent:     event.Agent,
+					Content:   event.Content,
+					Timestamp: event.Timestamp,
+				}
+
+				// Use select with context to safely send without panicking
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					// Try to send (blocking, with panic recovery)
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								// Channel closed, exit gracefully
+							}
+						}()
+						streamChan <- streamEvent
+					}()
+				}
+			}
+		}
+	}()
+
+	handler := workflow.NewStreamHandler(workflowStreamChan)
 	result := ce.executeWorkflow(ctx, input, handler)
+
+	// Close workflowStreamChan to signal the conversion goroutine to stop reading
+	close(workflowStreamChan)
+
+	// Wait for conversion goroutine to finish sending all events before returning
+	select {
+	case <-conversionDone:
+		// Conversion complete
+	case <-ctx.Done():
+		// Context cancelled
+	}
+
 	if err, ok := result.(error); ok {
 		return err
 	}
@@ -322,7 +585,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 // Execute runs the crew with the given input
 func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewResponse, error) {
-	handler := NewSyncHandler(ce, ce.Verbose)
+	handler := workflow.NewSyncHandler()
 	result := ce.executeWorkflow(ctx, input, handler)
 
 	// Handle the result based on its type

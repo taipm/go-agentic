@@ -1,66 +1,150 @@
+// Package core provides type aliases and backward compatibility re-exports.
+// All core types are defined in the common package to maintain a single source of truth.
+// This file serves as a backward compatibility layer for existing code that imports from crewai.
 package crewai
 
 import (
-	"time"
+	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/executor"
+	"github.com/taipm/go-agentic/core/validation"
 )
 
-// Task represents a task to be executed by an agent
-type Task struct {
-	ID          string
-	Description string
-	Agent       *Agent
-	Expected    string
+// ============================================================================
+// TYPE ALIASES FOR BACKWARD COMPATIBILITY
+// These types are defined in the common package but re-exported here
+// to maintain backward compatibility with existing code in the root crewai package
+// ============================================================================
+
+// Agent - re-export from common package
+type Agent = common.Agent
+
+// ModelConfig - re-export from common package
+type ModelConfig = common.ModelConfig
+
+// CrewConfig - re-export from common package
+type CrewConfig = common.CrewConfig
+
+// AgentConfig - re-export from common package
+type AgentConfig = common.AgentConfig
+
+// RoutingConfig - re-export from common package
+type RoutingConfig = common.RoutingConfig
+
+// RoutingSignal - re-export from common package
+type RoutingSignal = common.RoutingSignal
+
+// AgentBehavior - re-export from common package
+type AgentBehavior = common.AgentBehavior
+
+// ParallelGroupConfig - re-export from common package
+type ParallelGroupConfig = common.ParallelGroupConfig
+
+// ModelConfigYAML - re-export from common package
+type ModelConfigYAML = common.ModelConfigYAML
+
+// CostLimitsConfig - re-export from common package
+type CostLimitsConfig = common.CostLimitsConfig
+
+// AgentQuotaLimits - re-export from common package
+type AgentQuotaLimits = common.AgentQuotaLimits
+
+// AgentMetadata - re-export from common package
+type AgentMetadata = common.AgentMetadata
+
+// MemoryLimitsConfig - re-export from common package
+type MemoryLimitsConfig = common.MemoryLimitsConfig
+
+// ErrorLimitsConfig - re-export from common package
+type ErrorLimitsConfig = common.ErrorLimitsConfig
+
+// LoggingConfig - re-export from common package
+type LoggingConfig = common.LoggingConfig
+
+// AgentCostMetrics - re-export from common package
+type AgentCostMetrics = common.AgentCostMetrics
+
+// AgentMemoryMetrics - re-export from common package
+type AgentMemoryMetrics = common.AgentMemoryMetrics
+
+// AgentPerformanceMetrics - re-export from common package
+type AgentPerformanceMetrics = common.AgentPerformanceMetrics
+
+// StreamEvent - re-export from common package
+type StreamEvent = common.StreamEvent
+
+// Tool - re-export from common package
+type Tool = common.Tool
+
+// ToolTimeoutConfig - re-export from common package
+type ToolTimeoutConfig = common.ToolTimeoutConfig
+
+// Task - re-export from common package
+type Task = common.Task
+
+// Message - re-export from common package
+type Message = common.Message
+
+// ToolCall - re-export from common package
+type ToolCall = common.ToolCall
+
+// AgentResponse - re-export from common package
+type AgentResponse = common.AgentResponse
+
+// CrewResponse - re-export from common package
+type CrewResponse = common.CrewResponse
+
+// Crew - re-export from common package
+type Crew = common.Crew
+
+// HistoryManager - re-export from executor package
+type HistoryManager = executor.HistoryManager
+
+// NewHistoryManager creates a new HistoryManager with default settings
+func NewHistoryManager() *HistoryManager {
+	return executor.NewHistoryManager()
 }
 
-// Message represents a message in the conversation
-type Message struct {
-	Role    string // "user", "assistant", "system"
-	Content string
+// NewToolTimeoutConfig creates a new tool timeout configuration with defaults
+// Delegates to common.NewToolTimeoutConfig()
+func NewToolTimeoutConfig() *ToolTimeoutConfig {
+	return common.NewToolTimeoutConfig()
 }
 
-// ToolCall represents a tool call made by the agent
-type ToolCall struct {
-	ID        string
-	ToolName  string
-	Arguments map[string]interface{}
+// ============================================================================
+// VALIDATION FUNCTION RE-EXPORTS
+// ============================================================================
+
+// ValidateCrewConfig validates a crew configuration
+// Re-exports from validation package for backward compatibility
+func ValidateCrewConfig(cfg *CrewConfig) error {
+	return validation.ValidateCrewConfig(cfg)
 }
 
-// AgentResponse represents a response from an agent
-type AgentResponse struct {
-	AgentID   string
-	AgentName string
-	Content   string
-	ToolCalls []ToolCall
+// ValidateAgentConfig validates an agent configuration
+// Re-exports from validation package for backward compatibility
+func ValidateAgentConfig(cfg *AgentConfig) error {
+	return validation.ValidateAgentConfig(cfg)
 }
 
-// CrewResponse represents the final response from the crew
-type CrewResponse struct {
-	AgentID       string
-	AgentName     string
-	Content       string
-	ToolCalls     []ToolCall
-	IsTerminal    bool
-	PausedAgentID string // Agent ID that paused, used for resume functionality
-}
+// ============================================================================
+// CONSTANTS RE-EXPORTS FROM COMMON PACKAGE
+// ============================================================================
 
-// Crew represents a group of agents working together
-// ✅ FIX #4 & #5: Made ParallelAgentTimeout and MaxToolOutputChars configurable (were hardcoded constants)
-type Crew struct {
-	Agents                  []*Agent
-	Tasks                   []*Task
-	MaxRounds               int
-	MaxHandoffs             int
-	ParallelAgentTimeout    time.Duration  // ✅ FIX #4: Timeout for parallel agent execution (default: 60s)
-	MaxToolOutputChars      int            // ✅ FIX #5: Max characters per tool output (default: 2000)
-	MaxTotalToolOutputChars int            // ✅ FIX: Max TOTAL characters for all tools combined (default: 4000)
-	Routing                 *RoutingConfig // Routing configuration from crew.yaml
-}
+// Token Calculation Constants (re-exported from common)
+const (
+	TokenBaseValue    = common.TokenBaseValue
+	TokenPaddingValue = common.TokenPaddingValue
+	TokenDivisor      = common.TokenDivisor
+)
 
-// StreamEvent represents a streaming event sent to the client
-type StreamEvent struct {
-	Type      string      `json:"type"`      // "agent_start", "agent_response", "tool_start", "tool_result", "pause", "error"
-	Agent     string      `json:"agent"`     // Agent ID/Name
-	Content   string      `json:"content"`   // Main message
-	Timestamp time.Time   `json:"timestamp"` // When this happened
-	Metadata  interface{} `json:"metadata"`  // Extra data (tool results, etc.)
-}
+// Role Constants (re-exported from common)
+const (
+	RoleUser      = common.RoleUser
+	RoleAssistant = common.RoleAssistant
+)
+
+// Event Type Constants (re-exported from common)
+const (
+	EventTypeError      = common.EventTypeError
+	EventTypeToolResult = common.EventTypeToolResult
+)

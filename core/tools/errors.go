@@ -4,15 +4,15 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
-	"github.com/taipm/go-agentic/core/internal"
+	"github.com/taipm/go-agentic/core/common"
 )
 
 // ErrorType classifies tool execution errors for smart recovery decisions
-// Deprecated: Use internal.ErrorType instead
-type ErrorType = internal.ErrorType
+type ErrorType = common.ErrorType
 
 const (
 	ErrorTypeUnknown    ErrorType = iota
@@ -25,24 +25,36 @@ const (
 )
 
 // ClassifyError determines if an error is transient (retryable) or permanent
-// Deprecated: Use internal.ClassifyError instead
 func ClassifyError(err error) ErrorType {
-	return internal.ClassifyError(err)
+	if err == nil {
+		return ErrorTypeUnknown
+	}
+	// Basic classification based on error message patterns
+	errMsg := err.Error()
+	switch {
+	case errMsg == "context deadline exceeded":
+		return ErrorTypeTimeout
+	case errMsg == "context canceled":
+		return ErrorTypeTemporary
+	default:
+		return ErrorTypeUnknown
+	}
 }
 
 // IsRetryable determines if an error type should trigger a retry
-// Deprecated: Use internal.IsRetryable instead
 func IsRetryable(errType ErrorType) bool {
-	return internal.IsRetryable(errType)
+	return common.IsRetryable(errType)
 }
 
 // CalculateBackoffDuration returns exponential backoff duration
-// Deprecated: Use internal.CalculateBackoffDuration instead
 // Start with 100ms, double each attempt: 100ms, 200ms, 400ms, 800ms...
 // Capped at 5 seconds
 func CalculateBackoffDuration(attempt int) time.Duration {
 	baseDelay := time.Duration(100<<uint(attempt)) * time.Millisecond
-	return internal.CalculateBackoffDuration(attempt, baseDelay)
+	if baseDelay > 5*time.Second {
+		return 5 * time.Second
+	}
+	return baseDelay
 }
 
 // ToolHandler is the function signature for tool execution
@@ -113,5 +125,12 @@ func ExecuteWithRetry(ctx context.Context, toolName string, handler ToolHandler,
 
 // executeOnce executes a tool once with panic recovery
 func executeOnce(ctx context.Context, toolName string, handler ToolHandler, args map[string]interface{}) (output string, err error) {
-	return internal.SafeExecuteToolOnce(ctx, toolName, handler, args)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[TOOL PANIC] %s panicked: %v", toolName, r)
+			err = fmt.Errorf("tool %s panicked: %v", toolName, r)
+		}
+	}()
+
+	return handler(ctx, args)
 }

@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	providers "github.com/taipm/go-agentic/core/providers"
+	"github.com/taipm/go-agentic/core/tools"
 )
 
 // OllamaProvider implements LLMProvider interface using Ollama API
@@ -156,9 +156,20 @@ func (p *OllamaProvider) Complete(ctx context.Context, req *providers.Completion
 		}
 	}
 
+	// Extract usage information from response
+	var usage *providers.UsageInfo
+	if ollamaResp.PromptEvalCount > 0 || ollamaResp.EvalCount > 0 {
+		usage = &providers.UsageInfo{
+			InputTokens:  int(ollamaResp.PromptEvalCount),
+			OutputTokens: int(ollamaResp.EvalCount),
+			TotalTokens:  int(ollamaResp.PromptEvalCount + ollamaResp.EvalCount),
+		}
+	}
+
 	return &providers.CompletionResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
+		Usage:     usage,
 	}, nil
 }
 
@@ -306,167 +317,36 @@ func convertToOllamaMessages(messages []providers.ProviderMessage, systemPrompt 
 // extractToolCallsFromText extracts tool calls from response text
 // ⚠️ PRIMARY METHOD for Ollama: Uses text parsing (Ollama doesn't have native tool_calls)
 // Critical for small models like gemma3:1b and deepseek-r1:1.5b
+// Delegates to shared tools.ExtractToolCallsFromText() for unified extraction
 func extractToolCallsFromText(text string) []providers.ToolCall {
+	// Use shared extraction utility
+	extractedCalls := tools.ExtractToolCallsFromText(text)
+
+	// Convert from tools.ExtractedToolCall to providers.ToolCall
 	var calls []providers.ToolCall
-	toolCallPattern := make(map[string]bool) // Track unique tool calls
-
-	// Look for patterns like: ToolName(...)
-	// Match word characters followed by parentheses
-	lines := strings.Split(text, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// Look for function call patterns: Word(...)
-		for i := 0; i < len(line); i++ {
-			if line[i] == '(' {
-				// Found opening paren, look back for function name
-				j := i - 1
-
-				// Skip backwards over alphanumeric and underscore
-				for j >= 0 && isAlphanumeric(rune(line[j])) {
-					j--
-				}
-
-				// Check if we found a valid identifier
-				if j < i-1 {
-					toolName := line[j+1 : i]
-
-					// Validate tool name starts with uppercase (convention for functions)
-					if len(toolName) > 0 && toolName[0] >= 'A' && toolName[0] <= 'Z' {
-						// Look for closing paren
-						endIdx := strings.Index(line[i:], ")")
-						if endIdx != -1 {
-							endIdx += i
-							argsStr := line[i+1 : endIdx]
-
-							// Create tool call entry (avoid duplicates)
-							callKey := fmt.Sprintf("%s:%s", toolName, argsStr)
-							if !toolCallPattern[callKey] {
-								toolCallPattern[callKey] = true
-								calls = append(calls, providers.ToolCall{
-									ID:        fmt.Sprintf("%s_%d", toolName, len(calls)),
-									ToolName:  toolName,
-									Arguments: parseToolArguments(argsStr),
-								})
-							}
-						}
-					}
-				}
-			}
-		}
+	for i, extracted := range extractedCalls {
+		calls = append(calls, providers.ToolCall{
+			ID:        fmt.Sprintf("%s_%d", extracted.ToolName, i),
+			ToolName:  extracted.ToolName,
+			Arguments: extracted.Arguments,
+		})
 	}
 
 	return calls
 }
 
-// parseToolArguments splits tool arguments respecting nested brackets
+// parseToolArguments delegates to shared tools package implementation
+// Supports JSON, key=value, and positional argument formats with type conversion
 func parseToolArguments(argsStr string) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	if argsStr == "" {
-		return result
-	}
-
-	// Simple approach: try to parse as JSON first (handles complex types)
-	// If that fails, treat as simple string arguments
-	var jsonArgs map[string]interface{}
-	if err := json.Unmarshal([]byte("{"+argsStr+"}"), &jsonArgs); err == nil {
-		return jsonArgs
-	}
-
-	// Try to parse key=value format (e.g., question_number=1, question="Q")
-	parts := splitArguments(argsStr)
-	hasKeyValue := false
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if idx := strings.Index(part, "="); idx > 0 {
-			hasKeyValue = true
-			key := strings.TrimSpace(part[:idx])
-			value := strings.TrimSpace(part[idx+1:])
-
-			// Remove quotes from string values
-			value = strings.Trim(value, `"'`)
-
-			// Try to parse as number or boolean
-			if v, err := strconv.ParseInt(value, 10, 64); err == nil {
-				result[key] = v
-			} else if v, err := strconv.ParseFloat(value, 64); err == nil {
-				result[key] = v
-			} else if v, err := strconv.ParseBool(value); err == nil {
-				result[key] = v
-			} else {
-				result[key] = value
-			}
-		}
-	}
-
-	if hasKeyValue {
-		return result
-	}
-
-	// Fallback: parse as comma-separated positional arguments
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.Trim(part, `"'`)
-		result[fmt.Sprintf("arg%d", i)] = part
-	}
-
-	return result
+	return tools.ParseArguments(argsStr)
 }
 
-// splitArguments splits arguments respecting nested brackets and quotes
+// splitArguments delegates to shared tools package implementation
 func splitArguments(argsStr string) []string {
-	var parts []string
-	var current strings.Builder
-	bracketDepth := 0
-	quoteChar := rune(0)
-
-	for _, ch := range argsStr {
-		switch ch {
-		case '"', '\'':
-			if quoteChar == 0 {
-				quoteChar = ch
-			} else if quoteChar == ch {
-				quoteChar = 0
-			}
-			current.WriteRune(ch)
-		case '[', '{':
-			if quoteChar == 0 {
-				bracketDepth++
-			}
-			current.WriteRune(ch)
-		case ']', '}':
-			if quoteChar == 0 {
-				bracketDepth--
-			}
-			current.WriteRune(ch)
-		case ',':
-			if bracketDepth == 0 && quoteChar == 0 {
-				part := strings.TrimSpace(current.String())
-				if part != "" {
-					parts = append(parts, part)
-				}
-				current.Reset()
-			} else {
-				current.WriteRune(ch)
-			}
-		default:
-			current.WriteRune(ch)
-		}
-	}
-
-	if part := strings.TrimSpace(current.String()); part != "" {
-		parts = append(parts, part)
-	}
-
-	return parts
+	return tools.SplitArguments(argsStr)
 }
 
-// isAlphanumeric checks if a rune is alphanumeric or underscore
+// isAlphanumeric delegates to shared tools package implementation
 func isAlphanumeric(ch rune) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+	return tools.IsAlphanumeric(ch)
 }

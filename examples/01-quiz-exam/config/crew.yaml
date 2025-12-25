@@ -15,46 +15,56 @@ agents:
   - reporter
 
 routing:
-  # Parallel routing: Teacher/Student -> [multiple targets]
+  # ✅ PARALLEL ROUTING (Phase 3.1+): Teacher orchestrates parallel tasks
+  # After each action, multiple agents process simultaneously
   signals:
     teacher:
+      # When teacher emits [QUESTION], send to BOTH student AND reporter in parallel
       - signal: "[QUESTION]"
-        target: student  # Question goes to student (not parallel)
-      - signal: "[END_EXAM]"
-        target: ""  # ✅ Terminate workflow immediately when exam ends
-    student:
-      - signal: "[ANSWER]"
-        target: teacher  # Student answers go back to teacher
-    reporter:
-      - signal: "[OK]"
-        target: ""  # Just acknowledge, don't route
-      - signal: "[DONE]"
-        target: ""  # Terminate workflow
-      - signal: "[END_EXAM]"
-        target: ""  # ✅ Terminate if reporter emits end exam signal
+        target: ""  # ✅ Teacher can emit multiple signals - handled by parallel_targets in execution
+        parallel_targets:  # Simultaneous handoffs
+          - student      # Student answers the question
+          - reporter     # Reporter records the question
 
-  # Parallel groups
-  parallel_groups:
-    parallel_question:
-      agents: [student, reporter]
-      wait_for_all: false
-      timeout_seconds: 30
-    parallel_answer:
-      agents: [teacher, reporter]
-      wait_for_all: false
-      timeout_seconds: 30
+      # After receiving answer from student, teacher processes then marks end
+      - signal: "[ANSWER]"
+        target: ""  # Teacher acknowledges, decides if more questions or [END_EXAM]
+
+      # Terminate signal
+      - signal: "[END_EXAM]"
+        target: reporter  # Notify reporter to finalize report
+
+    student:
+      # When student answers, report goes back to teacher (ready for next iteration)
+      - signal: "[ANSWER]"
+        target: teacher
+
+    reporter:
+      # Reporter silently records [QUESTION] and [ANSWER] signals
+      # No routing - just saves and confirms with [OK]
+      - signal: "[QUESTION]"
+        target: ""  # ✅ Reporter receives from parallel_targets, processes, emits [OK]
+
+      - signal: "[ANSWER]"
+        target: ""  # ✅ Reporter receives from parallel_targets, processes, emits [OK]
+
+      - signal: "[END_EXAM]"
+        target: ""  # ✅ Reporter finalizes and terminates
 
   agent_behaviors:
     teacher:
-      wait_for_signal: false
+      wait_for_signal: true   # ✅ Wait for student's [ANSWER] before proceeding
+      parallel_execution: true # Allow simultaneous handoffs to student + reporter
     student:
-      wait_for_signal: false
+      wait_for_signal: true   # Wait for teacher's [QUESTION]
+      parallel_execution: false
     reporter:
-      wait_for_signal: false
+      wait_for_signal: true   # Listen for [QUESTION] and [ANSWER] signals
+      parallel_execution: false
 
 settings:
-  max_rounds: 30      # 10 câu x 2 agents + buffer
-  max_handoffs: 30
+  max_rounds: 100     # ✅ Increased: Allow LLM to adapt to validation errors through feedback loop
+  max_handoffs: 100   # ✅ Prevents infinite loop if [END_EXAM] signal fails
   config_mode: strict
 
   # Timeout parameters

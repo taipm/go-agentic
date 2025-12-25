@@ -1,0 +1,136 @@
+# CURRENT ARCHITECTURE vs FIXED ARCHITECTURE
+
+## CURRENT (BROKEN)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ TEACHER AGENT (teacher.yaml)                                     │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ System Prompt: "Call RecordAnswer(question="...", ...)"         │
+│ ❌ LLM confused by nested quotes                                │
+│ ❌ Doesn't know to extract question into parameter              │
+│                                                                  │
+│ Output:                                                         │
+│   [THINKING] "I should ask 2+2..."                             │
+│   [QUESTION] "Số nào là 2+2?"  ← Question in TEXT only         │
+│   RecordAnswer(...,question="",...)  ← Question NOT in tool!   │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ STREAM EVENT (main.go)                                           │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ Event: type="agent_response", content="Số nào là 2+2?"         │
+│ ❌ Question text received but not forwarded to tool             │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ RECORDANSWER TOOL (tools.go)                                    │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ Input: { question: "",  student_answer: "",  is_correct: true} │
+│ ❌ NO VALIDATION - accepts empty!                              │
+│ ❌ IMMEDIATELY writes incomplete report                         │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ REPORT FILE (reports/exam_*.md)                                  │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ **Câu hỏi:**            ← EMPTY!                               │
+│ **Trả lời:** <nil>      ← NIL!                                 │
+│ **Kết quả:** Đúng       ← PARADOX!                             │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+RESULT: Report useless ❌
+```
+
+---
+
+## FIXED (WORKING)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ TEACHER AGENT (teacher.yaml) ← FIX #1                            │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ System Prompt: 4-STEP WORKFLOW                                 │
+│   STEP 1: Check remaining with QuizExam(action="get_status")   │
+│   STEP 2: Generate and ask question                            │
+│   STEP 3: Call QuizExam(action="record_answer",               │
+│            question="[EXACT QUESTION]",                        │
+│            student_answer="[ANSWER]",                          │
+│            is_correct=true/false)                              │
+│   STEP 4: If remaining > 0, loop                               │
+│                                                                  │
+│ ✅ LLM now EXPLICITLY extracts question into parameter         │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ STREAM EVENT (main.go)                                           │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ Event: Question already in tool call                            │
+│ ✅ Passed through to tool                                       │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ RECORDANSWER TOOL (tools.go) ← FIX #2                            │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ Input: { question: "Số nào là 2+2?",  student_answer: "Số 4"} │
+│                                                                  │
+│ ✅ VALIDATION: question not empty → PASS                       │
+│ ✅ VALIDATION: student_answer not empty → PASS                 │
+│ ✅ VALIDATION: is_correct explicitly provided → PASS           │
+│ ❌ DOES NOT write report (removed auto-save)                   │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                    (Repeat 10 times)
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ REPORT GENERATION (ONCE AT END) ← FIX #3                        │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ ✅ SINGLE authoritative report with:                           │
+│   • All 10 questions with text                                 │
+│   • All 10 student answers                                     │
+│   • All 10 scores                                              │
+│   • Final summary                                              │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────────┐
+│ REPORT FILE (reports/exam_*.md) ← COMPLETE & CORRECT            │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ **Câu hỏi:** Số nào là 2+2?         ← ✅ FILLED!             │
+│ **Trả lời:** Số 4                    ← ✅ FILLED!             │
+│ **Kết quả:** Đúng (+1 điểm)         ← ✅ CONSISTENT!          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+RESULT: Perfect working exam ✅
+```
+
+---
+
+## COMPARISON: BROKEN vs FIXED
+
+| Aspect | BROKEN | FIXED |
+|--------|--------|-------|
+| Agent Prompt | Ambiguous | 4-step explicit |
+| Question Data | question="" | question="Số nào..." |
+| Answer Data | student_answer="" | student_answer="Số 4" |
+| Validation | None | Strict |
+| Auto-Save | After each Q | Once at end |
+| Report Files | 10 partial | 1 complete |
+| Data Quality | Useless | Perfect |
+

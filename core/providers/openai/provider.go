@@ -12,6 +12,7 @@ import (
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	providers "github.com/taipm/go-agentic/core/providers"
+	"github.com/taipm/go-agentic/core/tools"
 )
 
 // clientEntry represents a cached OpenAI client with expiry time
@@ -191,9 +192,20 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.Completion
 	content := message.Content
 	toolCalls := extractToolCallsFromResponse(message, content)
 
+	// Step 5: Extract usage information from response
+	var usage *providers.UsageInfo
+	if completion.Usage.TotalTokens > 0 {
+		usage = &providers.UsageInfo{
+			InputTokens:  int(completion.Usage.PromptTokens),
+			OutputTokens: int(completion.Usage.CompletionTokens),
+			TotalTokens:  int(completion.Usage.TotalTokens),
+		}
+	}
+
 	return &providers.CompletionResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
+		Usage:     usage,
 	}, nil
 }
 
@@ -384,138 +396,35 @@ func extractFromOpenAIToolCalls(toolCalls interface{}) []providers.ToolCall {
 
 // extractToolCallsFromText extracts tool calls from response text
 // ⚠️ FALLBACK METHOD: Uses text parsing (for models without tool_use support)
+// Delegates to shared tools.ExtractToolCallsFromText() for unified extraction
 func extractToolCallsFromText(text string) []providers.ToolCall {
+	// Use shared extraction utility
+	extractedCalls := tools.ExtractToolCallsFromText(text)
+
+	// Convert from tools.ExtractedToolCall to providers.ToolCall
 	var calls []providers.ToolCall
-	toolCallPattern := make(map[string]bool) // Track unique tool calls
-
-	// Look for patterns like: ToolName(...)
-	// Match word characters followed by parentheses
-	lines := strings.Split(text, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// Look for function call patterns: Word(...)
-		for i := 0; i < len(line); i++ {
-			if line[i] == '(' {
-				// Found opening paren, look back for function name
-				j := i - 1
-
-				// Skip backwards over alphanumeric and underscore
-				for j >= 0 && isAlphanumeric(rune(line[j])) {
-					j--
-				}
-
-				// Check if we found a valid identifier
-				if j < i-1 {
-					toolName := line[j+1 : i]
-
-					// Validate tool name starts with uppercase (convention for functions)
-					if len(toolName) > 0 && toolName[0] >= 'A' && toolName[0] <= 'Z' {
-						// Look for closing paren
-						endIdx := strings.Index(line[i:], ")")
-						if endIdx != -1 {
-							endIdx += i
-							argsStr := line[i+1 : endIdx]
-
-							// Create tool call entry (avoid duplicates)
-							callKey := fmt.Sprintf("%s:%s", toolName, argsStr)
-							if !toolCallPattern[callKey] {
-								toolCallPattern[callKey] = true
-								calls = append(calls, providers.ToolCall{
-									ID:        fmt.Sprintf("%s_%d", toolName, len(calls)),
-									ToolName:  toolName,
-									Arguments: parseToolArguments(argsStr),
-								})
-							}
-						}
-					}
-				}
-			}
-		}
+	for i, extracted := range extractedCalls {
+		calls = append(calls, providers.ToolCall{
+			ID:        fmt.Sprintf("%s_%d", extracted.ToolName, i),
+			ToolName:  extracted.ToolName,
+			Arguments: extracted.Arguments,
+		})
 	}
 
 	return calls
 }
 
-// parseToolArguments splits tool arguments respecting nested brackets
+// parseToolArguments delegates to shared tools package implementation
 func parseToolArguments(argsStr string) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	if argsStr == "" {
-		return result
-	}
-
-	// Simple approach: try to parse as JSON first (handles complex types)
-	// If that fails, treat as simple string arguments
-	var jsonArgs map[string]interface{}
-	if err := json.Unmarshal([]byte("{"+argsStr+"}"), &jsonArgs); err == nil {
-		return jsonArgs
-	}
-
-	// Fallback: parse as comma-separated positional arguments
-	parts := splitArguments(argsStr)
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.Trim(part, `"'`)
-		result[fmt.Sprintf("arg%d", i)] = part
-	}
-
-	return result
+	return tools.ParseArguments(argsStr)
 }
 
-// splitArguments splits arguments respecting nested brackets and quotes
+// splitArguments delegates to shared tools package implementation
 func splitArguments(argsStr string) []string {
-	var parts []string
-	var current strings.Builder
-	bracketDepth := 0
-	quoteChar := rune(0)
-
-	for _, ch := range argsStr {
-		switch ch {
-		case '"', '\'':
-			if quoteChar == 0 {
-				quoteChar = ch
-			} else if quoteChar == ch {
-				quoteChar = 0
-			}
-			current.WriteRune(ch)
-		case '[', '{':
-			if quoteChar == 0 {
-				bracketDepth++
-			}
-			current.WriteRune(ch)
-		case ']', '}':
-			if quoteChar == 0 {
-				bracketDepth--
-			}
-			current.WriteRune(ch)
-		case ',':
-			if bracketDepth == 0 && quoteChar == 0 {
-				part := strings.TrimSpace(current.String())
-				if part != "" {
-					parts = append(parts, part)
-				}
-				current.Reset()
-			} else {
-				current.WriteRune(ch)
-			}
-		default:
-			current.WriteRune(ch)
-		}
-	}
-
-	if part := strings.TrimSpace(current.String()); part != "" {
-		parts = append(parts, part)
-	}
-
-	return parts
+	return tools.SplitArguments(argsStr)
 }
 
-// isAlphanumeric checks if a rune is alphanumeric or underscore
+// isAlphanumeric delegates to shared tools package implementation
 func isAlphanumeric(ch rune) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+	return tools.IsAlphanumeric(ch)
 }

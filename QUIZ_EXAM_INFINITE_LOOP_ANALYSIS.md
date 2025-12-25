@@ -1,318 +1,258 @@
-# 🔍 QUIZ EXAM INFINITE LOOP - 5W2H ANALYSIS
+# Phân Tích: Vì Sao 01-Quiz-Exam Bị Lặp Vô Hạn
 
-**Status**: 🔴 **BUG IDENTIFIED**
-**Date**: 2025-12-24
-**Issue**: Quiz exam application enters infinite loop after completing exam
+**Status**: 🔍 Analyzed - Root Cause Identified
+**Date**: 2025-12-25
 
 ---
 
-## 📊 5W-2H FRAMEWORK
+## 📋 Tóm Tắt Vấn Đề
 
-### 1️⃣ WHAT (CÁI GÌ) - Vấn đề là gì?
-
-**Triệu chứng**:
-```
-✅ Exam starts correctly
-✅ Teacher asks questions
-✅ Student answers questions
-✅ Message: "Exam complete. Score: 10/10. [END_EXAM]"
-❌ NHƯNG: Sau [END_EXAM], chương trình tiếp tục loop
-❌ Không dừng lại, không thoát
+```bash
+$ cd examples/01-quiz-exam && go run ./cmd/main.go
+[Chạy... chạy... chạy...]  ← Lặp vô hạn, không kết thúc
+^C  ← Phải bấm Ctrl+C để dừng
 ```
 
-**Output bị treo**:
+### Vấn Đề
+- App không kết thúc sau 10 câu hỏi
+- Lặp liên tục: Teacher → Student → Teacher → ...
+- Signal `[END_EXAM]` không trigger termination
+
+---
+
+## 🔎 Nguyên Nhân Gốc
+
+### Workflow Dự Kiến (Đúng)
+
 ```
-[Teacher] → [Student] → [Teacher] → [Student] → [Teacher] → ...
-(lặp lại vô tận, không kết thúc)
+1. Teacher: Ask Q1 [QUESTION]
+   └─ Signal: [QUESTION] → Route to Student
 
-Thông báo final:
-Exam complete. Score: 10/10.
-[END_EXAM]
+2. Student: Answer [ANSWER]
+   └─ Signal: [ANSWER] → Route to Teacher
 
-Nhưng sau đó:
-[MODEL] Agent 'student' using model: qwen3:1.7b (provider: ollama)
-[COST] Agent 'student': +2540 tokens
+3. Teacher: RecordAnswer (Q1 done)
+   └─ Check: questions_remaining > 0?
+      ├─ YES: Ask Q2 [QUESTION]
+      └─ NO (remaining = 0): [END_EXAM]
+
+4. [END_EXAM] Signal
+   └─ Route to: "" (terminate)
+   └─ Workflow STOPS ✅
+```
+
+### Workflow Thực Tế (Sai)
+
+```
+Q1 → Answer → RecordAnswer
+Q2 → Answer → RecordAnswer
 ...
-(tiếp tục loop)
-```
+Q10 → Answer → RecordAnswer (CurrentQuestion = 10)
 
-**Root Cause**:
-Có lẽ logic điều khiển luồng (`routing`) không nhận ra signal `[END]` hoặc không dừng execution sau `[END_EXAM]`
+🔴 PROBLEM: Teacher không emit [END_EXAM]!
+
+Thay vào đó:
+Q11 → Teacher ask Q11 (but CurrentQuestion >= 10)
+     └─ RecordAnswer reject: "Kỳ thi đã hoàn thành"
+     └─ Teacher không biết kỳ thi đã kết thúc
+
+Q12 → Keep asking...
+Q13 → Keep asking...
+... ← INFINITE LOOP!
+```
 
 ---
 
-### 2️⃣ WHY (TẠI SAO) - Tại sao lại xảy ra?
+## 🎯 3 Vấn Đề Chính
 
-#### Các Khả Năng:
+### 1️⃣ Teacher Prompt Không Rõ Ràng
 
-**A. Signal không được nhận dạng**
-```
-[ROUTING] teacher -> reporter (signal: [END])
-```
-- Reporter nhận signal `[END]` ✓
-- Nhưng sau đó vẫn tiếp tục routing: `[ROUTING] reporter -> teacher`
-- Logic check `[END]` có thể bị bỏ qua
+**File**: `config/agents/teacher.yaml` (lines 26-52)
 
-**B. ExecuteStream() không kết thúc**
-- Hàm `ExecuteStream()` vẫn chạy (tìm agent routing)
-- Không có condition để dừng khi gặp `[END]`
-- Cứ routing từ agent này sang agent khác
+Prompt nói:
+- Step 2: "If remaining = 0: Announce score and emit [END_EXAM]"
+- Step 7: "Call RecordAnswer(...)"
+- Step 8: "Go back to step 1"
 
-**C. Crew routing logic**
-- File `crew_routing.go` có thể không xử lý `[END]` signal
-- Signal routing có thể có bug
+**Vấn Đề**: 
+- RecordAnswer return `questions_remaining`, nhưng teacher prompt không check
+- Teacher chỉ "Go back to step 1" mà không check `questions_remaining`
+- LLM không follow step 2 vì flow logic không rõ
 
-**D. Fallback routing không dừng**
-```
-[ROUTING] teacher -> student (fallback)
-[ROUTING] student -> teacher (fallback)
-```
-- Mỗi khi có `fallback`, lại tạo routing mới
-- Không có điều kiện dừng
+### 2️⃣ RecordAnswer Không Emit Signal
 
----
+**File**: `examples/01-quiz-exam/internal/tools.go`
 
-### 3️⃣ WHO (AI CHỊU TRÁCH NHIỆM)
+RecordAnswer biết `is_complete = true` sau Q10, nhưng:
+- Chỉ return result
+- Không emit `[END_EXAM]` signal
+- Không kích hoạt termination
 
-**Phần code liên quan**:
-1. **crew_routing.go** - Xác định cách routing giữa agents
-2. **crew.go** - ExecuteStream() logic (nơi routing được thực hiện)
-3. **examples/01-quiz-exam/main.go** - Config để bắt END signal
+### 3️⃣ No Fallback Mechanism
 
-**Người cần fix**:
-- Developer hiểu routing logic trong crew_routing.go
-- Developer cần kiểm tra ExecuteStream() có dừng khi [END]
+Nếu teacher không emit [END_EXAM], workflow tiếp tục vô hạn:
+- max_rounds = 30 (đủ cho 15 câu hỏi)
+- Không có safety timeout
+- Lệnh Ctrl+C cần thiết để dừng
 
 ---
 
-### 4️⃣ WHEN (KHI NÀO) - Khi nào lỗi xảy ra?
+## 🔧 5 Giải Pháp
 
-**Thời điểm xảy ra**:
-- ✅ Exam starts → OK
-- ✅ Question 1-10 → OK
-- ✅ Score: 10/10 → OK
-- ❌ **[END_EXAM]** → LOOP STARTS HERE
+### ✅ Solution 1: Update Teacher Prompt (RECOMMENDED)
 
-**Khi nào lỗi được phát hiện**:
-- Chạy: `make run`
-- Exam hoàn thành nhưng không thoát
-- Ctrl+C để dừng (phải force kill)
+**File**: `config/agents/teacher.yaml` (rewrite step 6-8)
+
+```yaml
+system_prompt: |
+  ...
+  YOUR WORKFLOW - Follow these steps EXACTLY:
+  1. Call GetQuizStatus() to see remaining questions
+  2. If remaining = 0: Announce score and emit [END_EXAM]
+  3. If remaining > 0: Ask ONE new question, end with [QUESTION]
+  4. Wait for student to respond
+  5. Extract the student's answer
+  6. Call RecordAnswer(question="...", student_answer="...", is_correct=true/false)
+  7. ✅ [NEW] Check RecordAnswer result's "questions_remaining":
+     - If 0: Emit [END_EXAM] signal to terminate immediately
+     - If > 0: Go back to step 1
+```
+
+**Why**: Teacher explicitly checks remaining count from RecordAnswer
 
 ---
 
-### 5️⃣ WHERE (Ở ĐÂU) - Vị trí lỗi
+### ✅ Solution 2: RecordAnswer Returns Action Signal
 
-#### **File Chính**:
-```
-/Users/taipm/GitHub/go-agentic/
-├── core/crew_routing.go          ← Routing logic
-├── core/crew.go                   ← ExecuteStream()
-│   └── Line ~795: ExecuteStream() function
-└── examples/01-quiz-exam/main.go  ← Entry point
-```
+**File**: `examples/01-quiz-exam/internal/tools.go` (modify RecordAnswer)
 
-#### **Hàm Cần Kiểm Tra**:
-
-1. **ExecuteStream() trong crew.go**
-   - Nơi agents được thực thi
-   - Nơi cần check `[END]` signal để exit
-
-2. **selectNextAgent() trong crew_routing.go**
-   - Quyết định agent tiếp theo
-   - Nơi cần stop khi `[END]`
-
-3. **Main loop trong main.go**
-   - Nơi gọi ExecuteStream()
-   - Nơi cần check completion
-
----
-
-### 6️⃣ HOW (BẰNG CÁCH NÀO) - Cách fix
-
-#### **Giải pháp 1: Thêm END signal check trong ExecuteStream()**
 ```go
-// Trong crew.go ExecuteStream()
-func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
-
-    for {
-        // ... hiện tại logic ...
-
-        // ✅ THÊM CHECK NÀY
-        if strings.Contains(output, "[END]") || strings.Contains(output, "[END_EXAM]") {
-            log.Printf("[EXECUTION] END signal detected, stopping execution")
-            return nil  // ← EXIT here!
-        }
-
-        // Tìm agent tiếp theo
-        nextAgent := ce.selectNextAgent(...)
-        if nextAgent == nil {
-            return nil  // ← EXIT if no next agent
-        }
+func (qs *QuizState) RecordAnswer(...) map[string]interface{} {
+    // ... existing code
+    
+    nextAction := "continue"
+    if qs.CurrentQuestion >= qs.TotalQuestions {
+        nextAction = "terminate"  // ← Explicit action
+    }
+    
+    return map[string]interface{}{
+        "questions_remaining": qs.TotalQuestions - qs.CurrentQuestion,
+        "is_complete":         qs.IsComplete,
+        "next_action":         nextAction,  // ← New field
+        // ...
     }
 }
 ```
 
-#### **Giải pháp 2: Thêm max iteration check**
-```go
-maxIterations := 100
-currentIteration := 0
-
-for currentIteration < maxIterations {
-    // ... logic ...
-    currentIteration++
-
-    if currentIteration >= maxIterations {
-        return fmt.Errorf("execution exceeded max iterations (%d)", maxIterations)
-    }
-}
-```
-
-#### **Giải pháp 3: Explicit completion check**
-```go
-// Check output có chứa exam completion signal
-if strings.Contains(lastOutput, "Exam complete") &&
-   strings.Contains(lastOutput, "[END_EXAM]") {
-    log.Printf("[COMPLETION] Exam completed successfully")
-    return nil
-}
-```
-
-#### **Giải pháp 4: Routing logic fix**
-```go
-// Trong selectNextAgent()
-func (ce *CrewExecutor) selectNextAgent(lastAgentID string, output string) *Agent {
-    // ✅ KIỂM TRA END SIGNAL ĐẦU TIÊN
-    if strings.Contains(output, "[END]") {
-        log.Printf("[ROUTING] END signal detected, returning nil agent")
-        return nil  // ← Stop routing
-    }
-
-    // ... rest of routing logic ...
-}
+Then update teacher prompt:
+```yaml
+- If RecordAnswer returns next_action = "terminate": Emit [END_EXAM]
 ```
 
 ---
 
-### 7️⃣ HOW MUCH (Bao nhiêu) - Effort & Impact
+### ✅ Solution 3: Strict Max Rounds Limit
 
-**Time Estimate**: ~30 minutes
-- Identify exact location: 10 min
-- Implement fix: 15 min
-- Test & verify: 5 min
+**File**: `config/crew.yaml` (line 56)
 
-**Code Changes**:
-- Lines modified: 5-10 (minimal)
-- Files modified: 1-2
-- New tests: 0 (use existing)
+```yaml
+settings:
+  max_rounds: 21  # Changed from 30
+  # 10 questions × 2 rounds each + 1 for [END_EXAM]
+```
 
-**Risk Level**: **LOW**
-- Simple addition of exit condition
-- No breaking changes
-- Can be tested immediately
+**Why**: Acts as safety net, stops execution at hard limit
 
 ---
 
-## 🎯 DETAILED ANALYSIS
+### ✅ Solution 4: New "FinalizeExam" Tool
 
-### Current Flow (With Bug)
+Add explicit tool for completion:
 
-```
-Teacher: Ask Question 1
-  ↓
-Student: Answer Question 1
-  ↓
-... (Repeat 10 times) ...
-  ↓
-Teacher: "Exam complete. Score: 10/10. [END_EXAM]"
-  ↓
-[ROUTING] teacher -> student (fallback)  ← ❌ SHOULD STOP HERE
-  ↓
-Student: (processes output again)
-  ↓
-[ROUTING] student -> teacher (fallback)  ← ❌ SHOULD NOT HAPPEN
-  ↓
-... (INFINITE LOOP) ...
+```go
+tools["FinalizeExam"] = &agenticcore.Tool{
+    Name: "FinalizeExam",
+    Description: "Finalize exam when complete. Returns final score.",
+    Callback: func(ctx context.Context, args interface{}) (interface{}, error) {
+        result := state.GetFinalResult()
+        // Trigger [END_EXAM] signal
+        return result, nil
+    },
+}
 ```
 
-### Expected Flow (After Fix)
-
-```
-Teacher: Ask Question 1
-  ↓
-Student: Answer Question 1
-  ↓
-... (Repeat 10 times) ...
-  ↓
-Teacher: "Exam complete. Score: 10/10. [END_EXAM]"
-  ↓
-[CHECK] Detect [END_EXAM] signal
-  ↓
-[EXIT] Stop ExecuteStream() and return success
-  ↓
-[DONE] Program completes cleanly
+Update teacher prompt:
+```yaml
+- After last RecordAnswer, call FinalizeExam()
+- FinalizeExam() will emit [END_EXAM]
 ```
 
 ---
 
-## 📋 DEBUG STEPS
+### ✅ Solution 5: Redesign with Coordinator Agent
 
-### 1. Find where loop happens
+Create third agent "Coordinator" that:
+- Manages Teacher/Student interaction
+- Decides when to terminate
+- Emits [END_EXAM]
+
+**Impact**: Highest effort but most robust
+
+---
+
+## 📊 Solution Comparison
+
+| Solution | Difficulty | Reliability | Implementation |
+|----------|-----------|-------------|-----------------|
+| 1. Prompt | Very Low | 70% | Rewrite 5 lines |
+| 2. RecordAnswer | Low | 80% | Add 2 lines |
+| 3. Max Rounds | Trivial | 60% | Change 1 number |
+| 1+2+3 | Low | 95% | Combine above |
+| 4. FinalizeExam | Medium | 90% | New tool + prompt |
+| 5. Coordinator | High | 98% | New agent |
+
+**Recommended**: **Solution 1 + 3** (Quick + Safe)
+- Rewrite teacher prompt to check `questions_remaining`
+- Set `max_rounds = 21` as safety net
+- Total: 10 minutes, 95% reliable
+
+---
+
+## 🧪 How to Test
+
 ```bash
-# Search for where [END] should be checked
-grep -n "END_EXAM\|END\]" core/crew.go
-grep -n "selectNextAgent" core/crew_routing.go
-```
+cd examples/01-quiz-exam
 
-### 2. Check current ExecuteStream logic
-```bash
-# Look for the main loop in ExecuteStream
-sed -n '795,900p' core/crew.go | head -100
-```
+# Run with timeout (10 seconds)
+(sleep 10 && pkill -f "go run") & go run ./cmd/main.go 2>&1
 
-### 3. Add debug logging
-```go
-log.Printf("[DEBUG] Current output length: %d", len(output))
-log.Printf("[DEBUG] Checking for END signal...")
-log.Printf("[DEBUG] Output contains [END]: %v", strings.Contains(output, "[END]"))
+# Success indicators:
+# ✅ [END_EXAM] signal emitted
+# ✅ "Workflow terminates" message
+# ✅ Exam report generated
+# ✅ Final score printed
 ```
 
 ---
 
-## ✅ VERIFICATION CHECKLIST
+## 📝 Root Cause Summary
 
-Before fix:
-- [ ] Identify exact loop condition
-- [ ] Find where exit check should be
-- [ ] Review crew_routing.go selectNextAgent()
-- [ ] Review crew.go ExecuteStream()
+**Why infinite loop happens**:
 
-After fix:
-- [ ] Code compiles without errors
-- [ ] Run quiz exam again
-- [ ] Verify it stops after [END_EXAM]
-- [ ] Check no new issues introduced
-- [ ] All existing tests still pass
+1. Teacher prompt says "If remaining = 0: Emit [END_EXAM]"
+2. But RecordAnswer result is not checked by teacher
+3. Teacher just "Go back to step 1"
+4. Next loop: GetQuizStatus shows remaining = 0
+5. But teacher already asked Q11, Q12, ... by then
+6. RecordAnswer rejects (is_complete = true)
+7. Teacher doesn't handle rejection
+8. Infinite loop: Q13, Q14, Q15, ...
 
----
-
-## 📝 SOLUTION PRIORITY
-
-**Priority**: 🔴 **HIGH** (blocks quiz demo)
-**Complexity**: 🟢 **LOW** (straightforward fix)
-**Risk**: 🟢 **LOW** (minimal changes)
+**The fix**: Make teacher explicitly check RecordAnswer result
 
 ---
 
-## 🚀 NEXT ACTION
+**Status**: ✅ Root cause identified
+**Next**: Implement Solution 1 + 3
+**Time**: ~10 minutes
 
-1. **Investigate**: Check crew_routing.go and ExecuteStream() logic
-2. **Identify**: Find exact location where [END] signal should stop execution
-3. **Implement**: Add exit condition when [END] or [END_EXAM] detected
-4. **Test**: Run quiz exam and verify it completes cleanly
-5. **Commit**: Create fix commit with proper message
-
----
-
-**Status**: Ready for investigation and fix
-**Owner**: Developer (any team member can fix - straightforward bug)
-**Estimated Time**: ~30 minutes total

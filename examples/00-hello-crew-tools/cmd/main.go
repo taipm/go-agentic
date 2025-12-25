@@ -74,7 +74,7 @@ func createTools() map[string]*agenticcore.Tool {
 			"type": "object",
 			"properties": map[string]interface{}{},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			// Note: In a real implementation, the tool would have access to conversation history
 			// For now, this demonstrates the tool structure
 			fmt.Printf("[TOOL EXECUTION] GetMessageCount() called\n")
@@ -101,7 +101,7 @@ func createTools() map[string]*agenticcore.Tool {
 			"type": "object",
 			"properties": map[string]interface{}{},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Printf("[TOOL EXECUTION] GetConversationSummary() called\n")
 			result := map[string]interface{}{
 				"total_messages":  0,
@@ -135,7 +135,7 @@ func createTools() map[string]*agenticcore.Tool {
 			},
 			"required": []string{"query"},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Printf("[TOOL EXECUTION] SearchMessages() called with args: %v\n", args)
 			result := map[string]interface{}{
 				"query":   "",
@@ -168,7 +168,7 @@ func createTools() map[string]*agenticcore.Tool {
 			},
 			"required": []string{"filter_by", "filter_value"},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Printf("[TOOL EXECUTION] CountMessagesBy() called with args: %v\n", args)
 			result := map[string]interface{}{
 				"filter_by":    "",
@@ -191,7 +191,7 @@ func createTools() map[string]*agenticcore.Tool {
 			"type": "object",
 			"properties": map[string]interface{}{},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			now := time.Now()
 			fmt.Printf("[TOOL EXECUTION] GetCurrentTime() called at %v\n", now)
 			result := map[string]interface{}{

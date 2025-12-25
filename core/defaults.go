@@ -2,20 +2,24 @@ package crewai
 
 import (
 	"fmt"
+	"log"
 	"time"
+
+	"github.com/taipm/go-agentic/core/config"
 )
 
-// ConfigMode defines how the system handles missing configuration values
-type ConfigMode string
+// ConfigMode re-exports from config package for backward compatibility
+type ConfigMode = config.ConfigMode
 
+// ConfigMode constants - re-exported from config package
 const (
 	// PermissiveMode allows missing config values and uses defaults
 	// System runs smoothly, no errors for missing config
-	PermissiveMode ConfigMode = "permissive"
+	PermissiveMode ConfigMode = config.ConfigModePermissive
 
 	// StrictMode requires all config values to be explicitly set
 	// System fails with clear error messages if values are missing
-	StrictMode ConfigMode = "strict"
+	StrictMode ConfigMode = config.ConfigModeStrict
 
 	// DefaultConfigMode is PermissiveMode for backward compatibility
 	DefaultConfigMode ConfigMode = PermissiveMode
@@ -523,4 +527,185 @@ func (d *HardcodedDefaults) Validate() error {
 	}
 
 	return nil
+}
+
+// ConfigToHardcodedDefaults converts CrewConfig settings to HardcodedDefaults struct
+// ✅ Phase 4: Extended Configuration - Maps YAML values to runtime defaults
+// Returns defaults with YAML overrides applied; validation is performed after conversion
+// ✅ Phase 5.1: In STRICT MODE, missing values are NOT defaulted and remain 0, causing validation to fail
+func ConfigToHardcodedDefaults(config *CrewConfig) *HardcodedDefaults {
+	// In PERMISSIVE MODE: Start with all defaults
+	// In STRICT MODE: Start with all 0 values (except mode), require explicit YAML config
+	var defaults *HardcodedDefaults
+
+	// ✅ Phase 5.1: Check config mode FIRST
+	configMode := PermissiveMode
+	if config.Settings.ConfigMode != "" {
+		configMode = ConfigMode(config.Settings.ConfigMode)
+	}
+
+	// In STRICT MODE, don't use defaults - start with empty values
+	if configMode == StrictMode {
+		defaults = &HardcodedDefaults{
+			Mode: StrictMode,
+			// All timeout/int fields default to 0
+			// All duration fields default to 0 (0 seconds)
+			// All float fields default to 0
+			// Validation will catch these as errors
+		}
+	} else {
+		// In PERMISSIVE MODE, start with defaults
+		defaults = DefaultHardcodedDefaults()
+		defaults.Mode = PermissiveMode
+	}
+
+	// Phase 1 configurations
+	if config.Settings.ParallelTimeoutSeconds > 0 {
+		defaults.ParallelAgentTimeout = time.Duration(config.Settings.ParallelTimeoutSeconds) * time.Second
+	}
+	if config.Settings.MaxToolOutputChars > 0 {
+		defaults.MaxToolOutputChars = config.Settings.MaxToolOutputChars
+	}
+	if config.Settings.MaxTotalToolOutputChars > 0 {
+		defaults.MaxTotalToolOutputChars = config.Settings.MaxTotalToolOutputChars
+	}
+
+	// Phase 4 timeout configurations
+	if config.Settings.ToolExecutionTimeoutSeconds > 0 {
+		defaults.ToolExecutionTimeout = time.Duration(config.Settings.ToolExecutionTimeoutSeconds) * time.Second
+	}
+	if config.Settings.ToolResultTimeoutSeconds > 0 {
+		defaults.ToolResultTimeout = time.Duration(config.Settings.ToolResultTimeoutSeconds) * time.Second
+	}
+	if config.Settings.MinToolTimeoutMillis > 0 {
+		defaults.MinToolTimeout = time.Duration(config.Settings.MinToolTimeoutMillis) * time.Millisecond
+	}
+	if config.Settings.StreamChunkTimeoutMillis > 0 {
+		defaults.StreamChunkTimeout = time.Duration(config.Settings.StreamChunkTimeoutMillis) * time.Millisecond
+	}
+	if config.Settings.SSEKeepAliveSeconds > 0 {
+		defaults.SSEKeepAliveInterval = time.Duration(config.Settings.SSEKeepAliveSeconds) * time.Second
+	}
+	if config.Settings.RequestStoreCleanupMinutes > 0 {
+		defaults.RequestStoreCleanupInterval = time.Duration(config.Settings.RequestStoreCleanupMinutes) * time.Minute
+	}
+
+	// Phase 4 retry and backoff configurations
+	if config.Settings.RetryBackoffMinMillis > 0 {
+		defaults.RetryBackoffMinDuration = time.Duration(config.Settings.RetryBackoffMinMillis) * time.Millisecond
+	}
+	if config.Settings.RetryBackoffMaxSeconds > 0 {
+		defaults.RetryBackoffMaxDuration = time.Duration(config.Settings.RetryBackoffMaxSeconds) * time.Second
+	}
+
+	// Phase 4 input validation limits
+	if config.Settings.MaxInputSizeKB > 0 {
+		defaults.MaxInputSize = config.Settings.MaxInputSizeKB * 1024
+	}
+	if config.Settings.MinAgentIDLength > 0 {
+		defaults.MinAgentIDLength = config.Settings.MinAgentIDLength
+	}
+	if config.Settings.MaxAgentIDLength > 0 {
+		defaults.MaxAgentIDLength = config.Settings.MaxAgentIDLength
+	}
+	if config.Settings.MaxRequestBodySizeKB > 0 {
+		defaults.MaxRequestBodySize = config.Settings.MaxRequestBodySizeKB * 1024
+	}
+
+	// Phase 4 output and storage
+	if config.Settings.StreamBufferSize > 0 {
+		defaults.StreamBufferSize = config.Settings.StreamBufferSize
+	}
+	if config.Settings.MaxStoredRequests > 0 {
+		defaults.MaxStoredRequests = config.Settings.MaxStoredRequests
+	}
+
+	// Phase 4 client cache
+	if config.Settings.ClientCacheTTLMinutes > 0 {
+		defaults.ClientCacheTTL = time.Duration(config.Settings.ClientCacheTTLMinutes) * time.Minute
+	}
+
+	// Phase 4 graceful shutdown
+	if config.Settings.GracefulShutdownCheckMillis > 0 {
+		defaults.GracefulShutdownCheckInterval = time.Duration(config.Settings.GracefulShutdownCheckMillis) * time.Millisecond
+	}
+	if config.Settings.TimeoutWarningThresholdPct > 0 && config.Settings.TimeoutWarningThresholdPct <= 100 {
+		defaults.TimeoutWarningThreshold = float64(config.Settings.TimeoutWarningThresholdPct) / 100.0
+	}
+
+	// ✅ WEEK 1: Cost Control configurations
+	if config.Settings.MaxTokensPerCall > 0 {
+		defaults.MaxTokensPerCall = config.Settings.MaxTokensPerCall
+	}
+	if config.Settings.MaxTokensPerDay > 0 {
+		defaults.MaxTokensPerDay = config.Settings.MaxTokensPerDay
+	}
+	if config.Settings.MaxCostPerDay > 0 {
+		defaults.MaxCostPerDay = config.Settings.MaxCostPerDay
+	}
+	if config.Settings.CostAlertThreshold > 0 {
+		defaults.CostAlertThreshold = config.Settings.CostAlertThreshold
+	}
+
+	// ✅ WEEK 2: Memory Management configurations
+	if config.Settings.MaxMemoryMB > 0 {
+		defaults.MaxMemoryMB = config.Settings.MaxMemoryMB
+	}
+	if config.Settings.MaxDailyMemoryGB > 0 {
+		defaults.MaxDailyMemoryGB = config.Settings.MaxDailyMemoryGB
+	}
+	if config.Settings.MemoryAlertPercent > 0 {
+		defaults.MemoryAlertPercent = config.Settings.MemoryAlertPercent
+	}
+	if config.Settings.MaxContextWindow > 0 {
+		defaults.MaxContextWindow = config.Settings.MaxContextWindow
+	}
+	if config.Settings.ContextTrimPercent > 0 {
+		defaults.ContextTrimPercent = config.Settings.ContextTrimPercent
+	}
+	if config.Settings.SlowCallThresholdSec > 0 {
+		defaults.SlowCallThreshold = time.Duration(config.Settings.SlowCallThresholdSec) * time.Second
+	}
+
+	// ✅ WEEK 2: Performance & Reliability configurations
+	if config.Settings.MaxErrorsPerHour > 0 {
+		defaults.MaxErrorsPerHour = config.Settings.MaxErrorsPerHour
+	}
+	if config.Settings.MaxErrorsPerDay > 0 {
+		defaults.MaxErrorsPerDay = config.Settings.MaxErrorsPerDay
+	}
+	if config.Settings.MaxConsecutiveErrors > 0 {
+		defaults.MaxConsecutiveErrors = config.Settings.MaxConsecutiveErrors
+	}
+
+	// ✅ WEEK 2: Rate Limiting & Quotas configurations
+	if config.Settings.MaxCallsPerMinute > 0 {
+		defaults.MaxCallsPerMinute = config.Settings.MaxCallsPerMinute
+	}
+	if config.Settings.MaxCallsPerHour > 0 {
+		defaults.MaxCallsPerHour = config.Settings.MaxCallsPerHour
+	}
+	if config.Settings.MaxCallsPerDay > 0 {
+		defaults.MaxCallsPerDay = config.Settings.MaxCallsPerDay
+	}
+	// BlockOnQuotaExceed: true=BLOCK requests when quota exceeded, false=WARN only
+	// Default is true (production-safe), only override if explicitly set in YAML
+	if config.Settings.BlockOnQuotaExceed {
+		defaults.BlockOnQuotaExceed = true
+	}
+
+	// Validate all converted values
+	if err := defaults.Validate(); err != nil {
+		// ✅ Phase 5.1: In STRICT MODE, validation errors are FATAL - no fallback
+		if defaults.Mode == StrictMode {
+			log.Printf("[CONFIG ERROR] STRICT MODE validation failed: %v", err)
+			// Return nil will be caught by caller
+			return nil
+		}
+		// In PERMISSIVE MODE, fallback to defaults
+		log.Printf("[CONFIG WARNING] Failed to validate defaults after conversion: %v - using fallback defaults", err)
+		return DefaultHardcodedDefaults()
+	}
+
+	return defaults
 }

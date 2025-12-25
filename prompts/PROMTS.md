@@ -1376,3 +1376,13 @@ Sử dụng Prompt #5 (Tạo Agent Configuration):
 **Document Status**: READY FOR PRODUCTION  
 **Last Updated**: 2025-12-23  
 **Maintainer**: go-agentic team
+
+
+
+Sửa lại cấu hình các agent cho hợp lý hơn:
+1) Entry là teacher
+2) Teacher sinh ra câu hỏi xong thì báo cho (đồng thời) student (để trả lời), report (để ghi tài liệu)
+3) Student trả lời xong thì báo cho giáo viên (để ra câu hỏi tiếp) và report (để ghi tài liệu)
+4) Lặp lại cho đến 10 câu hỏi thì xong
+
+Cách làm này sẽ giải quyết vấn đề song song, llm nhỏ thực hiện nhiệm vụ phù hợp
