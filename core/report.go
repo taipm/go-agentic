@@ -45,14 +45,19 @@ func (r *HTMLReport) ToHTML() string {
 	return sb.String()
 }
 
-func (r *HTMLReport) htmlHeader() string {
+// htmlMeta returns HTML meta tags and document header
+func htmlMeta() string {
 	return `<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>go-crewai Test Report</title>
-    <style>
+    <title>go-crewai Test Report</title>`
+}
+
+// htmlStyles returns the complete CSS stylesheet for the report
+func htmlStyles() string {
+	return `    <style>
         * {
             margin: 0;
             padding: 0;
@@ -396,11 +401,19 @@ func (r *HTMLReport) htmlHeader() string {
         .toggle-all:hover {
             background: #5568d3;
         }
-    </style>
-</head>
+    </style>`
+}
+
+// htmlBodyStart returns opening body tags and container
+func htmlBodyStart() string {
+	return `</head>
 <body>
-    <div class="container">
-`
+    <div class="container">`
+}
+
+// htmlHeader returns complete HTML header with meta, styles, and body opening
+func (r *HTMLReport) htmlHeader() string {
+	return htmlMeta() + "\n" + htmlStyles() + "\n" + htmlBodyStart() + "\n"
 }
 
 func (r *HTMLReport) htmlSummary() string {

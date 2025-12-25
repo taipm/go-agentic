@@ -388,11 +388,56 @@ func convertToolCallsFromProvider(providerCalls []providers.ToolCall) []ToolCall
 	return calls
 }
 
+// buildCustomPrompt processes custom system prompt with template variable replacement
+func buildCustomPrompt(agent *Agent) string {
+	prompt := agent.SystemPrompt
+	prompt = strings.ReplaceAll(prompt, "{{name}}", agent.Name)
+	prompt = strings.ReplaceAll(prompt, "{{role}}", agent.Role)
+	prompt = strings.ReplaceAll(prompt, "{{description}}", agent.Name+" - "+agent.Role)
+	prompt = strings.ReplaceAll(prompt, "{{backstory}}", agent.Backstory)
+	return prompt
+}
+
+// buildGenericPrompt creates a default prompt with agent role and tools
+func buildGenericPrompt(agent *Agent) string {
+	var prompt strings.Builder
+
+	prompt.WriteString(fmt.Sprintf("You are %s.\n", agent.Name))
+	prompt.WriteString(fmt.Sprintf("Role: %s\n", agent.Role))
+	prompt.WriteString(fmt.Sprintf("Backstory: %s\n\n", agent.Backstory))
+
+	if len(agent.Tools) > 0 {
+		prompt.WriteString("You have access to the following tools:\n\n")
+		for i, tool := range agent.Tools {
+			prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
+		}
+
+		prompt.WriteString("\nWhen you need to use a tool, write it exactly like this (on its own line):\n")
+		prompt.WriteString("ToolName(param1, param2)\n\n")
+		prompt.WriteString("Examples of tool calls:\n")
+		prompt.WriteString("  GetCPUUsage()\n")
+		prompt.WriteString("  PingHost(192.168.1.100)\n")
+		prompt.WriteString("  CheckServiceStatus(nginx)\n\n")
+	}
+
+	prompt.WriteString("Instructions:\n")
+	prompt.WriteString("1. Analyze the input and determine what tools you need\n")
+	prompt.WriteString("2. Use tools to gather information\n")
+	prompt.WriteString("3. Analyze tool results and provide recommendations\n")
+	prompt.WriteString("4. If you need more information, use additional tools\n")
+
+	if agent.IsTerminal {
+		prompt.WriteString("5. You are the FINAL agent in the workflow - after you respond, the conversation ends\n")
+	}
+
+	return prompt.String()
+}
+
 // buildSystemPrompt creates the system prompt for the agent
 // ✅ FIX for HIGH Issue #2: Now uses caching to prevent repeated token cost
 // The system prompt is built once and cached for subsequent calls
 func buildSystemPrompt(agent *Agent) string {
-	// Check cache first (thread-safe read)
+	// Step 1: Check cache first (thread-safe read)
 	agent.systemPromptMutex.RLock()
 	if agent.cachedSystemPrompt != "" {
 		cached := agent.cachedSystemPrompt
@@ -401,54 +446,15 @@ func buildSystemPrompt(agent *Agent) string {
 	}
 	agent.systemPromptMutex.RUnlock()
 
-	// Build the prompt (cache miss)
+	// Step 2: Build the prompt (cache miss)
 	var builtPrompt string
-
-	// If agent has a custom system prompt, use it (with template variable replacement)
 	if agent.SystemPrompt != "" {
-		prompt := agent.SystemPrompt
-		// Replace template variables
-		prompt = strings.ReplaceAll(prompt, "{{name}}", agent.Name)
-		prompt = strings.ReplaceAll(prompt, "{{role}}", agent.Role)
-		prompt = strings.ReplaceAll(prompt, "{{description}}", agent.Name+" - "+agent.Role)
-		prompt = strings.ReplaceAll(prompt, "{{backstory}}", agent.Backstory)
-		builtPrompt = prompt
+		builtPrompt = buildCustomPrompt(agent)
 	} else {
-		// Otherwise, build a generic prompt
-		var prompt strings.Builder
-
-		prompt.WriteString(fmt.Sprintf("You are %s.\n", agent.Name))
-		prompt.WriteString(fmt.Sprintf("Role: %s\n", agent.Role))
-		prompt.WriteString(fmt.Sprintf("Backstory: %s\n\n", agent.Backstory))
-
-		if len(agent.Tools) > 0 {
-			prompt.WriteString("You have access to the following tools:\n\n")
-			for i, tool := range agent.Tools {
-				prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
-			}
-
-			prompt.WriteString("\nWhen you need to use a tool, write it exactly like this (on its own line):\n")
-			prompt.WriteString("ToolName(param1, param2)\n\n")
-			prompt.WriteString("Examples of tool calls:\n")
-			prompt.WriteString("  GetCPUUsage()\n")
-			prompt.WriteString("  PingHost(192.168.1.100)\n")
-			prompt.WriteString("  CheckServiceStatus(nginx)\n\n")
-		}
-
-		prompt.WriteString("Instructions:\n")
-		prompt.WriteString("1. Analyze the input and determine what tools you need\n")
-		prompt.WriteString("2. Use tools to gather information\n")
-		prompt.WriteString("3. Analyze tool results and provide recommendations\n")
-		prompt.WriteString("4. If you need more information, use additional tools\n")
-
-		if agent.IsTerminal {
-			prompt.WriteString("5. You are the FINAL agent in the workflow - after you respond, the conversation ends\n")
-		}
-
-		builtPrompt = prompt.String()
+		builtPrompt = buildGenericPrompt(agent)
 	}
 
-	// Cache the built prompt (thread-safe write)
+	// Step 3: Cache the built prompt (thread-safe write)
 	agent.systemPromptMutex.Lock()
 	agent.cachedSystemPrompt = builtPrompt
 	agent.systemPromptMutex.Unlock()
