@@ -44,22 +44,28 @@ func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Age
 
 	// Priority 1: Check signals in response using routing configuration
 	if response != nil && response.Signals != nil && len(response.Signals) > 0 {
+		fmt.Printf("[ROUTE] Agent=%s, Signals=%v\n", currentAgent.ID, response.Signals)
 		// Check if routing is configured
 		if routing != nil && routing.Signals != nil {
+			fmt.Printf("[ROUTE] Routing exists with %d agent entries\n", len(routing.Signals))
 			// Get signal routing rules for current agent
 			if agentSignals, exists := routing.Signals[currentAgent.ID]; exists {
+				fmt.Printf("[ROUTE] Found %d signal rules for %s\n", len(agentSignals), currentAgent.ID)
 				// Look for matching signal in routing rules
 				for _, sigName := range response.Signals {
+					fmt.Printf("[ROUTE]   Checking signal: %s\n", sigName)
 					for _, routingSignal := range agentSignals {
 						if routingSignal.Signal == sigName {
 							// Check for terminal signal
 							if routingSignal.Target == "" {
+								fmt.Printf("[ROUTE]   Signal %s → TERMINAL\n", sigName)
 								return &common.RoutingDecision{
 									IsTerminal: sigName == "[END_EXAM]",
 									Reason:     fmt.Sprintf("signal '%s' marks terminal", sigName),
 								}, nil
 							}
 							// Return the target agent
+							fmt.Printf("[ROUTE]   Signal %s → %s\n", sigName, routingSignal.Target)
 							return &common.RoutingDecision{
 								NextAgentID: routingSignal.Target,
 								Reason:      fmt.Sprintf("routed by signal '%s'", sigName),
@@ -68,27 +74,33 @@ func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Age
 						}
 					}
 				}
+			} else {
+				fmt.Printf("[ROUTE] No routing rules for agent %s\n", currentAgent.ID)
 			}
+		} else {
+			fmt.Printf("[ROUTE] No routing configured\n")
 		}
+	} else {
+		fmt.Printf("[ROUTE] No signals in response\n")
+	}
 
-		// Fallback: Use signal registry if available
-		if signalRegistry != nil {
-			for _, sigName := range response.Signals {
-				sig := &signal.Signal{
-					Name:    sigName,
-					AgentID: currentAgent.ID,
-				}
+	// Fallback: Use signal registry if available
+	if response != nil && response.Signals != nil && len(response.Signals) > 0 && signalRegistry != nil {
+		for _, sigName := range response.Signals {
+			sig := &signal.Signal{
+				Name:    sigName,
+				AgentID: currentAgent.ID,
+			}
 
-				decision, err := signalRegistry.ProcessSignal(ctx, sig)
-				if err == nil && decision != nil {
-					if decision.IsTerminal || decision.NextAgentID != "" {
-						return &common.RoutingDecision{
-							NextAgentID: decision.NextAgentID,
-							Reason:      decision.Reason,
-							IsTerminal:  decision.IsTerminal,
-							Metadata:    decision.Metadata,
-						}, nil
-					}
+			decision, err := signalRegistry.ProcessSignal(ctx, sig)
+			if err == nil && decision != nil {
+				if decision.IsTerminal || decision.NextAgentID != "" {
+					return &common.RoutingDecision{
+						NextAgentID: decision.NextAgentID,
+						Reason:      decision.Reason,
+						IsTerminal:  decision.IsTerminal,
+						Metadata:    decision.Metadata,
+					}, nil
 				}
 			}
 		}
