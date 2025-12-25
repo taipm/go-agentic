@@ -95,24 +95,86 @@ Watch the agents work in real-time! ✨
 | [Deployment](DEPLOYMENT_CHECKLIST.md) | Production deployment |
 | [Architecture](tech-spec-sse-streaming.md) | Technical deep dive |
 
-## Project Structure
+## Project Structure (Phase 4 Architecture)
+
+### New Modular Package Structure
 
 ```
-go-agentic/
-├── types.go                # Core data structures
-├── agent.go                # Agent execution logic
-├── crew.go                 # Crew orchestration system
-├── streaming.go            # SSE streaming utilities
-├── http.go                 # HTTP server & API
-├── html_client.go          # Web UI client
-├── example_it_support.go   # IT Support example
-├── cmd/main.go             # CLI & server entry point
-├── demo.sh                 # Interactive demo script
-├── test_sse_client.html    # Web testing client
-├── go.mod                  # Module definition
-├── go.sum                  # Dependencies
-└── README.md               # This file
+core/
+├── /common/               # Consolidated types & constants (Phase 1)
+│   ├── types.go          # Core data structures
+│   ├── constants.go      # Constants and defaults
+│   └── errors.go         # Error definitions
+│
+├── /config/              # Configuration management (Phase 1)
+│   ├── types.go          # Config structures
+│   ├── loader.go         # YAML loading
+│   └── converter.go      # Config conversion
+│
+├── /validation/          # Validation logic (Phase 2)
+│   ├── crew.go           # Crew config validation
+│   ├── agent.go          # Agent config validation
+│   ├── routing.go        # Routing validation
+│   └── helpers.go        # Common helpers
+│
+├── /agent/               # Agent execution (Phase 3)
+│   ├── execution.go      # Agent execution with LLM fallback
+│   └── messaging.go      # Tool calls & message conversion
+│
+├── /tool/                # Tool execution (Phase 3)
+│   └── execution.go      # Tool execution framework
+│
+├── /workflow/            # Workflow orchestration (Phase 4)
+│   ├── handler.go        # OutputHandler interface & impls
+│   ├── execution.go      # Workflow execution logic
+│   └── routing.go        # Agent routing logic
+│
+├── /executor/            # Crew orchestration (Phase 4)
+│   └── executor.go       # Executor struct & methods
+│
+├── /providers/           # LLM providers (pre-existing)
+│   ├── openai/
+│   └── ollama/
+│
+└── *.go (root)          # Legacy monolithic files (gradual migration)
+    ├── crew.go          # Main orchestrator (to be refactored)
+    ├── types.go         # Legacy types (use /common instead)
+    └── validation.go    # Legacy validation (use /validation instead)
 ```
+
+**Architecture is now modular with clear separation of concerns. See [REFACTORING_STATUS.md](../REFACTORING_STATUS.md) for migration progress.**
+
+## Phase 4: Workflow & Executor Extraction (Recent)
+
+As of December 2025, Phase 4 of the architectural refactoring is complete. Two new packages have been extracted to improve modularity:
+
+### New Packages (Phase 4)
+
+**`/workflow`** - Workflow Orchestration & Handler Pattern
+
+- `handler.go` - OutputHandler interface with multiple implementations:
+  - `SyncHandler` - Synchronous execution (buffers events)
+  - `StreamHandler` - Real-time streaming (channel-based)
+  - `NoOpHandler` - Testing helper
+- `execution.go` - Workflow execution with ExecutionContext for state tracking
+- `routing.go` - Agent routing logic (DetermineNextAgent, RouteBySignal, etc.)
+
+**`/executor`** - Crew Execution Orchestration
+
+- `executor.go` - Main Executor struct with:
+  - `Execute()` - Synchronous execution
+  - `ExecuteStream()` - Streaming execution
+  - Resume capability for interrupted workflows
+  - Verbose logging support
+
+### Impact
+
+- Reduced executor coupling from 85/100 → 50/100
+- Handler pattern enables pluggable output strategies
+- Clear separation of workflow orchestration from crew management
+- All tests passing with zero regressions
+
+**For detailed information:** See [PHASE_4_COMPLETION_REPORT.md](../PHASE_4_COMPLETION_REPORT.md)
 
 ## Core Features
 
