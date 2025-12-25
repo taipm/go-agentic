@@ -26,6 +26,21 @@ type ExecutionContext struct {
 	SignalRegistry  *signal.SignalRegistry
 }
 
+// emitSignal emits a signal with the given name and metadata
+func (execCtx *ExecutionContext) emitSignal(signalName string, metadata map[string]interface{}) {
+	if execCtx.SignalRegistry == nil {
+		return
+	}
+
+	if err := execCtx.SignalRegistry.Emit(&signal.Signal{
+		Name:     signalName,
+		AgentID:  execCtx.CurrentAgent.ID,
+		Metadata: metadata,
+	}); err != nil {
+		fmt.Printf("[WARN] Failed to emit signal '%s': %v\n", signalName, err)
+	}
+}
+
 // ExecuteWorkflow executes the workflow starting from an entry agent
 func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, handler OutputHandler, signalRegistry *signal.SignalRegistry, apiKey string) (*common.AgentResponse, error) {
 	if entryAgent == nil {
@@ -66,16 +81,10 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	}
 
 	// SIGNAL 1: Emit agent:start
-	if execCtx.SignalRegistry != nil {
-		_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-			Name:    signal.SignalAgentStart,
-			AgentID: execCtx.CurrentAgent.ID,
-			Metadata: map[string]interface{}{
-				"round": execCtx.RoundCount,
-				"input": input,
-			},
-		})
-	}
+	execCtx.emitSignal(signal.SignalAgentStart, map[string]interface{}{
+		"round": execCtx.RoundCount,
+		"input": input,
+	})
 
 	// Execute current agent
 	startTime := time.Now()
@@ -84,15 +93,9 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 
 	if err != nil {
 		// SIGNAL 2: Emit agent:error
-		if execCtx.SignalRegistry != nil {
-			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-				Name:    signal.SignalAgentError,
-				AgentID: execCtx.CurrentAgent.ID,
-				Metadata: map[string]interface{}{
-					"error": err.Error(),
-				},
-			})
-		}
+		execCtx.emitSignal(signal.SignalAgentError, map[string]interface{}{
+			"error": err.Error(),
+		})
 
 		handler := execCtx.handler
 		if handler != nil {
@@ -113,18 +116,12 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	}
 
 	// SIGNAL 3: Emit agent:end
-	if execCtx.SignalRegistry != nil {
-		_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-			Name:    signal.SignalAgentEnd,
-			AgentID: execCtx.CurrentAgent.ID,
-			Metadata: map[string]interface{}{
-				"duration_ms": execCtx.LastAgentTime.Milliseconds(),
-			},
-		})
-	}
+	execCtx.emitSignal(signal.SignalAgentEnd, map[string]interface{}{
+		"duration_ms": execCtx.LastAgentTime.Milliseconds(),
+	})
 
 	// SIGNAL 4: Process custom signals from agent response
-	var routingDecision *signal.RoutingDecision
+	var routingDecision *common.RoutingDecision
 	if execCtx.SignalRegistry != nil && response.Signals != nil && len(response.Signals) > 0 {
 		for _, sigName := range response.Signals {
 			sig := &signal.Signal{
@@ -161,18 +158,12 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	// Priority 1: Signal routing takes precedence
 	if routingDecision != nil && routingDecision.NextAgentID != "" {
 		// SIGNAL 5: Emit route:handoff
-		if execCtx.SignalRegistry != nil {
-			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-				Name:    signal.SignalHandoff,
-				AgentID: execCtx.CurrentAgent.ID,
-				Metadata: map[string]interface{}{
-					"from_agent":     execCtx.CurrentAgent.ID,
-					"to_agent":       routingDecision.NextAgentID,
-					"routing_type":   "signal",
-					"routing_reason": routingDecision.Reason,
-				},
-			})
-		}
+		execCtx.emitSignal(signal.SignalHandoff, map[string]interface{}{
+			"from_agent":     execCtx.CurrentAgent.ID,
+			"to_agent":       routingDecision.NextAgentID,
+			"routing_type":   "signal",
+			"routing_reason": routingDecision.Reason,
+		})
 
 		// TODO: Look up next agent by ID and continue execution
 		// For now, return (will be implemented in crew.go integration)
@@ -182,15 +173,9 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	// Priority 2: Check if agent is terminal
 	if execCtx.CurrentAgent.IsTerminal {
 		// SIGNAL 6: Emit route:terminal
-		if execCtx.SignalRegistry != nil {
-			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-				Name:    signal.SignalTerminal,
-				AgentID: execCtx.CurrentAgent.ID,
-				Metadata: map[string]interface{}{
-					"reason": "agent marked as terminal",
-				},
-			})
-		}
+		execCtx.emitSignal(signal.SignalTerminal, map[string]interface{}{
+			"reason": "agent marked as terminal",
+		})
 		return response, nil
 	}
 
@@ -199,17 +184,11 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		nextAgentID := execCtx.CurrentAgent.HandoffTargets[0].ID
 
 		// SIGNAL 7: Emit route:handoff
-		if execCtx.SignalRegistry != nil {
-			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-				Name:    signal.SignalHandoff,
-				AgentID: execCtx.CurrentAgent.ID,
-				Metadata: map[string]interface{}{
-					"from_agent":   execCtx.CurrentAgent.ID,
-					"to_agent":     nextAgentID,
-					"routing_type": "handoff_target",
-				},
-			})
-		}
+		execCtx.emitSignal(signal.SignalHandoff, map[string]interface{}{
+			"from_agent":   execCtx.CurrentAgent.ID,
+			"to_agent":     nextAgentID,
+			"routing_type": "handoff_target",
+		})
 
 		// TODO: Look up next agent by ID and continue execution
 		// For now, return response
@@ -217,15 +196,9 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	}
 
 	// No routing found - terminal
-	if execCtx.SignalRegistry != nil {
-		_ = execCtx.SignalRegistry.Emit(&signal.Signal{
-			Name:    signal.SignalTerminal,
-			AgentID: execCtx.CurrentAgent.ID,
-			Metadata: map[string]interface{}{
-				"reason": "no handoff targets configured",
-			},
-		})
-	}
+	execCtx.emitSignal(signal.SignalTerminal, map[string]interface{}{
+		"reason": "no handoff targets configured",
+	})
 
 	return response, nil
 }

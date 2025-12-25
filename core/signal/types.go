@@ -36,14 +36,6 @@ type SignalMatch struct {
 	MatchedAt    time.Time
 }
 
-// RoutingDecision represents the decision to route to next agent
-type RoutingDecision struct {
-	NextAgentID string
-	Reason      string
-	IsTerminal  bool
-	Metadata    map[string]interface{}
-}
-
 // SignalConfig defines configuration for signal handling
 type SignalConfig struct {
 	Enabled            bool
@@ -94,76 +86,47 @@ const (
 // PredefinedHandlers provides factory methods for common handlers
 type PredefinedHandlers struct{}
 
-// NewAgentStartHandler creates a handler for agent start signals
-func (ph *PredefinedHandlers) NewAgentStartHandler(targetAgent string) *SignalHandler {
+// NewSignalHandler creates a generic signal handler with the specified parameters
+func (ph *PredefinedHandlers) NewSignalHandler(handlerID, handlerName, description string,
+	signalName string, targetAgent string) *SignalHandler {
+
 	return &SignalHandler{
-		ID:          "handler-agent-start",
-		Name:        "Agent Start Handler",
-		Description: "Handles agent start signals",
+		ID:          handlerID,
+		Name:        handlerName,
+		Description: description,
 		TargetAgent: targetAgent,
-		Signals:     []string{SignalAgentStart},
+		Signals:     []string{signalName},
 		Condition: func(signal *Signal) bool {
-			return signal.Name == SignalAgentStart
+			return signal.Name == signalName
 		},
 		OnSignal: func(ctx context.Context, signal *Signal) error {
-			// Default implementation: just log the signal
 			return nil
 		},
 	}
+}
+
+// NewAgentStartHandler creates a handler for agent start signals
+func (ph *PredefinedHandlers) NewAgentStartHandler(targetAgent string) *SignalHandler {
+	return ph.NewSignalHandler("handler-agent-start", "Agent Start Handler",
+		"Handles agent start signals", SignalAgentStart, targetAgent)
 }
 
 // NewAgentErrorHandler creates a handler for agent error signals
 func (ph *PredefinedHandlers) NewAgentErrorHandler(targetAgent string) *SignalHandler {
-	return &SignalHandler{
-		ID:          "handler-agent-error",
-		Name:        "Agent Error Handler",
-		Description: "Handles agent error signals",
-		TargetAgent: targetAgent,
-		Signals:     []string{SignalAgentError},
-		Condition: func(signal *Signal) bool {
-			return signal.Name == SignalAgentError
-		},
-		OnSignal: func(ctx context.Context, signal *Signal) error {
-			// Default implementation: propagate error handling to target agent
-			return nil
-		},
-	}
+	return ph.NewSignalHandler("handler-agent-error", "Agent Error Handler",
+		"Handles agent error signals", SignalAgentError, targetAgent)
 }
 
 // NewToolErrorHandler creates a handler for tool error signals
 func (ph *PredefinedHandlers) NewToolErrorHandler(targetAgent string) *SignalHandler {
-	return &SignalHandler{
-		ID:          "handler-tool-error",
-		Name:        "Tool Error Handler",
-		Description: "Handles tool error signals",
-		TargetAgent: targetAgent,
-		Signals:     []string{SignalToolError},
-		Condition: func(signal *Signal) bool {
-			return signal.Name == SignalToolError
-		},
-		OnSignal: func(ctx context.Context, signal *Signal) error {
-			// Default implementation: error recovery
-			return nil
-		},
-	}
+	return ph.NewSignalHandler("handler-tool-error", "Tool Error Handler",
+		"Handles tool error signals", SignalToolError, targetAgent)
 }
 
 // NewHandoffHandler creates a handler for explicit handoff signals
 func (ph *PredefinedHandlers) NewHandoffHandler(targetAgent string) *SignalHandler {
-	return &SignalHandler{
-		ID:          "handler-handoff",
-		Name:        "Handoff Handler",
-		Description: "Handles explicit handoff signals",
-		TargetAgent: targetAgent,
-		Signals:     []string{SignalHandoff},
-		Condition: func(signal *Signal) bool {
-			return signal.Name == SignalHandoff
-		},
-		OnSignal: func(ctx context.Context, signal *Signal) error {
-			// Default implementation: route to target agent
-			return nil
-		},
-	}
+	return ph.NewSignalHandler("handler-handoff", "Handoff Handler",
+		"Handles explicit handoff signals", SignalHandoff, targetAgent)
 }
 
 // SignalEmitter defines the interface for objects that can emit signals

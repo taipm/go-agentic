@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/taipm/go-agentic/core/common"
 )
+
+// Error message constant to avoid duplication
+const errSignalsDisabled = "Signal handling is disabled"
 
 // SignalRegistry manages signal emission, registration, and routing
 type SignalRegistry struct {
@@ -26,16 +31,20 @@ type AgentSignalInfo struct {
 	LastSignalTime time.Time
 }
 
-// NewSignalRegistry creates a new signal registry
-func NewSignalRegistry() *SignalRegistry {
-	config := DefaultSignalConfig()
-	return &SignalRegistry{
-		handler:       NewHandlerWithConfig(config),
-		signals:       make(chan *Signal, config.BufferSize),
-		listeners:     make(map[string][]func(*Signal)),
-		config:        config,
-		agentRegistry: make(map[string]AgentSignalInfo),
+// checkEnabled validates if signal handling is enabled
+func (sr *SignalRegistry) checkEnabled() error {
+	if !sr.config.Enabled {
+		return &SignalError{
+			Code:    "SIGNALS_DISABLED",
+			Message: errSignalsDisabled,
+		}
 	}
+	return nil
+}
+
+// NewSignalRegistry creates a new signal registry with default configuration
+func NewSignalRegistry() *SignalRegistry {
+	return NewSignalRegistryWithConfig(nil)
 }
 
 // NewSignalRegistryWithConfig creates a registry with custom configuration
@@ -55,13 +64,9 @@ func NewSignalRegistryWithConfig(config *SignalConfig) *SignalRegistry {
 
 // RegisterHandler registers a signal handler
 func (sr *SignalRegistry) RegisterHandler(handler *SignalHandler) error {
-	if !sr.config.Enabled {
-		return &SignalError{
-			Code:    "SIGNALS_DISABLED",
-			Message: "Signal handling is disabled",
-		}
+	if err := sr.checkEnabled(); err != nil {
+		return err
 	}
-
 	return sr.handler.Register(handler)
 }
 
@@ -81,11 +86,8 @@ func (sr *SignalRegistry) Emit(signal *Signal) error {
 		return ErrInvalidSignal
 	}
 
-	if !sr.config.Enabled {
-		return &SignalError{
-			Code:    "SIGNALS_DISABLED",
-			Message: "Signal handling is disabled",
-		}
+	if err := sr.checkEnabled(); err != nil {
+		return err
 	}
 
 	sr.mu.RLock()
@@ -144,26 +146,18 @@ func (sr *SignalRegistry) notifyListeners(signal *Signal) {
 }
 
 // ProcessSignal processes a signal through registered handlers
-func (sr *SignalRegistry) ProcessSignal(ctx context.Context, signal *Signal) (*RoutingDecision, error) {
-	if !sr.config.Enabled {
-		return nil, &SignalError{
-			Code:    "SIGNALS_DISABLED",
-			Message: "Signal handling is disabled",
-		}
+func (sr *SignalRegistry) ProcessSignal(ctx context.Context, signal *Signal) (*common.RoutingDecision, error) {
+	if err := sr.checkEnabled(); err != nil {
+		return nil, err
 	}
-
 	return sr.handler.ProcessSignal(ctx, signal)
 }
 
 // ProcessSignalWithPriority processes signal with priority handling
-func (sr *SignalRegistry) ProcessSignalWithPriority(ctx context.Context, signal *Signal, priority []string) (*RoutingDecision, error) {
-	if !sr.config.Enabled {
-		return nil, &SignalError{
-			Code:    "SIGNALS_DISABLED",
-			Message: "Signal handling is disabled",
-		}
+func (sr *SignalRegistry) ProcessSignalWithPriority(ctx context.Context, signal *Signal, priority []string) (*common.RoutingDecision, error) {
+	if err := sr.checkEnabled(); err != nil {
+		return nil, err
 	}
-
 	return sr.handler.ProcessSignalWithPriority(ctx, signal, priority)
 }
 

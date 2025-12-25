@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/taipm/go-agentic/core/common"
 )
 
 // Handler provides core signal handling functionality
@@ -94,9 +96,9 @@ func (h *Handler) FindHandlers(signal *Signal) []*SignalHandler {
 
 // handlerMatchesSignal checks if a handler matches a signal
 func (h *Handler) handlerMatchesSignal(handler *SignalHandler, signal *Signal) bool {
-	// Check if handler is listening for this signal
 	for _, s := range handler.Signals {
-		if s == signal.Name {
+		// Check exact match OR wildcard "*"
+		if s == signal.Name || s == "*" {
 			// If handler has a condition, check it
 			if handler.Condition != nil {
 				return handler.Condition(signal)
@@ -104,22 +106,11 @@ func (h *Handler) handlerMatchesSignal(handler *SignalHandler, signal *Signal) b
 			return true
 		}
 	}
-
-	// If handler says "*", it matches any signal
-	for _, s := range handler.Signals {
-		if s == "*" {
-			if handler.Condition != nil {
-				return handler.Condition(signal)
-			}
-			return true
-		}
-	}
-
 	return false
 }
 
 // ProcessSignal processes a signal and returns routing decision
-func (h *Handler) ProcessSignal(ctx context.Context, signal *Signal) (*RoutingDecision, error) {
+func (h *Handler) ProcessSignal(ctx context.Context, signal *Signal) (*common.RoutingDecision, error) {
 	if signal == nil {
 		return nil, ErrInvalidSignal
 	}
@@ -149,7 +140,7 @@ func (h *Handler) ProcessSignal(ctx context.Context, signal *Signal) (*RoutingDe
 	})
 
 	// Return routing decision
-	return &RoutingDecision{
+	return &common.RoutingDecision{
 		NextAgentID: handler.TargetAgent,
 		Reason:      fmt.Sprintf("Signal '%s' matched handler '%s'", signal.Name, handler.Name),
 		IsTerminal:  signal.Name == SignalTerminal,
@@ -162,7 +153,7 @@ func (h *Handler) ProcessSignal(ctx context.Context, signal *Signal) (*RoutingDe
 }
 
 // ProcessSignalWithPriority processes signal using priority-based handler selection
-func (h *Handler) ProcessSignalWithPriority(ctx context.Context, signal *Signal, priority []string) (*RoutingDecision, error) {
+func (h *Handler) ProcessSignalWithPriority(ctx context.Context, signal *Signal, priority []string) (*common.RoutingDecision, error) {
 	if signal == nil {
 		return nil, ErrInvalidSignal
 	}
@@ -215,7 +206,7 @@ func (h *Handler) ProcessSignalWithPriority(ctx context.Context, signal *Signal,
 	})
 
 	// Return routing decision
-	return &RoutingDecision{
+	return &common.RoutingDecision{
 		NextAgentID: selectedHandler.TargetAgent,
 		Reason:      fmt.Sprintf("Signal '%s' matched handler '%s' (priority)", signal.Name, selectedHandler.Name),
 		IsTerminal:  signal.Name == SignalTerminal,
@@ -318,8 +309,8 @@ func (h *Handler) ValidateHandlers() error {
 }
 
 // WithTimeout wraps signal processing with timeout
-func (h *Handler) WithTimeout(duration time.Duration) func(context.Context, *Signal) (*RoutingDecision, error) {
-	return func(baseCtx context.Context, signal *Signal) (*RoutingDecision, error) {
+func (h *Handler) WithTimeout(duration time.Duration) func(context.Context, *Signal) (*common.RoutingDecision, error) {
+	return func(baseCtx context.Context, signal *Signal) (*common.RoutingDecision, error) {
 		ctx, cancel := context.WithTimeout(baseCtx, duration)
 		defer cancel()
 
