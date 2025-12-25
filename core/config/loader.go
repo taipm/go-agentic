@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/validation"
 )
 
 // LoadCrewConfig loads the crew configuration from a YAML file
@@ -35,6 +36,11 @@ func LoadCrewConfig(path string) (*common.CrewConfig, error) {
 	}
 	if config.Settings.Language == "" {
 		config.Settings.Language = "en"
+	}
+
+	// Validate crew configuration
+	if err := validation.ValidateCrewConfig(&config); err != nil {
+		return nil, fmt.Errorf("crew config validation failed: %w", err)
 	}
 
 	log.Printf("[CONFIG SUCCESS] Crew config loaded: version=%s, agents=%d, entry=%s",
@@ -118,6 +124,11 @@ func LoadAgentConfig(path string) (*common.AgentConfig, error) {
 			EnableQuotaWarnings:      true,
 			LogLevel:                 "info",
 		}
+	}
+
+	// Validate agent configuration
+	if err := validation.ValidateAgentConfig(&config); err != nil {
+		return nil, fmt.Errorf("agent config validation failed: %w", err)
 	}
 
 	return &config, nil

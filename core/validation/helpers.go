@@ -71,3 +71,68 @@ func FormatValidationError(err error) string {
 	}
 	return fmt.Sprintf("validation error: %v", err)
 }
+
+// ValidateString validates that a string is not empty
+func ValidateString(val string, fieldName string) error {
+	if val == "" {
+		return &common.ValidationError{
+			Field:   fieldName,
+			Message: "string value cannot be empty",
+		}
+	}
+	return nil
+}
+
+// ValidateStringLength validates string length constraints
+func ValidateStringLength(val string, minLen, maxLen int, fieldName string) error {
+	if len(val) < minLen || len(val) > maxLen {
+		return &common.ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("string length must be between %d and %d characters, got %d", minLen, maxLen, len(val)),
+		}
+	}
+	return nil
+}
+
+// ValidatePositiveInt validates that an integer is positive
+func ValidatePositiveInt(val int, fieldName string) error {
+	if val <= 0 {
+		return &common.ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("value must be positive, got %d", val),
+		}
+	}
+	return nil
+}
+
+// ValidateNonNegativeInt validates that an integer is non-negative
+func ValidateNonNegativeInt(val int, fieldName string) error {
+	if val < 0 {
+		return &common.ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("value must be non-negative, got %d", val),
+		}
+	}
+	return nil
+}
+
+// ValidateSliceNotEmpty validates that a slice is not empty
+func ValidateSliceNotEmpty(slice interface{}, fieldName string) error {
+	switch s := slice.(type) {
+	case []string:
+		if len(s) == 0 {
+			return &common.ValidationError{
+				Field:   fieldName,
+				Message: "slice cannot be empty",
+			}
+		}
+	case []interface{}:
+		if len(s) == 0 {
+			return &common.ValidationError{
+				Field:   fieldName,
+				Message: "slice cannot be empty",
+			}
+		}
+	}
+	return nil
+}
