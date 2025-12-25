@@ -157,3 +157,82 @@ func TestBuildSystemPromptWithTools(t *testing.T) {
 		t.Error("Expected tool access message in prompt")
 	}
 }
+
+// TestConvertAgentToolsToProviderTools verifies tool conversion from agent to provider format
+func TestConvertAgentToolsToProviderTools(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       []interface{}
+		expectedLen int
+	}{
+		{
+			name:        "Empty tools",
+			input:       []interface{}{},
+			expectedLen: 0,
+		},
+		{
+			name:        "Nil in tools",
+			input:       []interface{}{nil, nil},
+			expectedLen: 0,
+		},
+		{
+			name: "Common Tool pointer",
+			input: []interface{}{
+				&common.Tool{
+					Name:        "TestTool",
+					Description: "A test tool",
+					Parameters: map[string]interface{}{
+						"param1": "value1",
+					},
+				},
+			},
+			expectedLen: 1,
+		},
+		{
+			name: "Common Tool by value",
+			input: []interface{}{
+				common.Tool{
+					Name:        "AnotherTool",
+					Description: "Another test tool",
+					Parameters: map[string]interface{}{
+						"param2": "value2",
+					},
+				},
+			},
+			expectedLen: 1,
+		},
+		{
+			name: "Mixed valid and nil tools",
+			input: []interface{}{
+				&common.Tool{
+					Name:        "Tool1",
+					Description: "First tool",
+					Parameters:  nil,
+				},
+				nil,
+				&common.Tool{
+					Name:        "Tool2",
+					Description: "Second tool",
+					Parameters: map[string]interface{}{"key": "value"},
+				},
+			},
+			expectedLen: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ConvertAgentToolsToProviderTools(tt.input)
+			if len(result) != tt.expectedLen {
+				t.Errorf("Expected %d tools, got %d", tt.expectedLen, len(result))
+			}
+
+			// Verify tool names are preserved
+			for i, tool := range result {
+				if tool.Name == "" {
+					t.Errorf("Tool %d has empty name", i)
+				}
+			}
+		})
+	}
+}

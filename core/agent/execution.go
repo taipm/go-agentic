@@ -128,7 +128,7 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
-		Tools:        nil, // TODO: Implement proper tool conversion from agent.Tools
+		Tools:        ConvertAgentToolsToProviderTools(agent.Tools),
 	}
 
 	// Step 3: Execute provider call
@@ -157,6 +157,68 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 	}, nil
 }
 
+// ConvertAgentToolsToProviderTools converts agent tools to provider format
+// Handles various tool formats: Tool struct, map[string]interface{}, etc.
+func ConvertAgentToolsToProviderTools(agentTools []interface{}) []providers.ProviderTool {
+	var providerTools []providers.ProviderTool
+
+	for _, tool := range agentTools {
+		if tool == nil {
+			continue
+		}
+
+		providerTool := convertSingleTool(tool)
+		if providerTool != nil {
+			providerTools = append(providerTools, *providerTool)
+		}
+	}
+
+	return providerTools
+}
+
+// convertSingleTool converts a single tool to provider format
+func convertSingleTool(tool interface{}) *providers.ProviderTool {
+	// Handle *common.Tool
+	if toolPtr, ok := tool.(*common.Tool); ok {
+		return &providers.ProviderTool{
+			Name:        toolPtr.Name,
+			Description: toolPtr.Description,
+			Parameters:  extractToolParameters(toolPtr.Parameters),
+		}
+	}
+
+	// Handle common.Tool (by value)
+	if toolVal, ok := tool.(common.Tool); ok {
+		return &providers.ProviderTool{
+			Name:        toolVal.Name,
+			Description: toolVal.Description,
+			Parameters:  extractToolParameters(toolVal.Parameters),
+		}
+	}
+
+	// Handle providers.ProviderTool
+	if providerTool, ok := tool.(providers.ProviderTool); ok {
+		return &providerTool
+	}
+
+	// Unknown type - log warning
+	fmt.Printf("[WARN] Unknown tool type in ConvertAgentToolsToProviderTools: %T\n", tool)
+	return nil
+}
+
+// extractToolParameters safely extracts parameters from tool definition
+func extractToolParameters(params interface{}) map[string]interface{} {
+	if params == nil {
+		return make(map[string]interface{})
+	}
+
+	if paramMap, ok := params.(map[string]interface{}); ok {
+		return paramMap
+	}
+
+	return make(map[string]interface{})
+}
+
 // executeWithModelConfigStream executes an agent with streaming using a specific model configuration
 func executeWithModelConfigStream(ctx context.Context, agent *common.Agent, systemPrompt string, messages []providers.ProviderMessage, modelConfig *common.ModelConfig, apiKey string, streamChan chan<- providers.StreamChunk) error {
 	// Estimate tokens BEFORE execution
@@ -178,7 +240,7 @@ func executeWithModelConfigStream(ctx context.Context, agent *common.Agent, syst
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
-		Tools:        nil, // TODO: Implement proper tool conversion from agent.Tools
+		Tools:        ConvertAgentToolsToProviderTools(agent.Tools),
 	}
 
 	// Call provider with streaming
