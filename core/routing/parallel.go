@@ -3,7 +3,6 @@ package routing
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -50,7 +49,7 @@ func (pge *ParallelGroupExecutor) ExecuteParallel(
 ) ([]ParallelResult, error) {
 
 	if len(agents) == 0 {
-		return nil, fmt.Errorf("no agents provided for parallel execution")
+		return nil, common.NewValidationError("agents", "no agents provided for parallel execution")
 	}
 
 	// Create context with timeout
@@ -118,7 +117,7 @@ func (pge *ParallelGroupExecutor) ExecuteWithWaitForAll(
 	if pge.Config != nil && pge.Config.WaitForAll {
 		for _, result := range results {
 			if result.Error != nil {
-				return results, fmt.Errorf("agent '%s' failed: %w", result.AgentID, result.Error)
+				return results, common.NewExecutionError(result.AgentID, "failed during parallel execution", common.ErrorTypePermanent, result.Error)
 			}
 		}
 	}
@@ -137,7 +136,7 @@ func (pge *ParallelGroupExecutor) ExecuteWithFirstSuccess(
 ) (*ParallelResult, error) {
 
 	if len(agents) == 0 {
-		return nil, fmt.Errorf("no agents provided for parallel execution")
+		return nil, common.NewValidationError("agents", "no agents provided for parallel execution")
 	}
 
 	// Create context with timeout
@@ -191,10 +190,10 @@ func (pge *ParallelGroupExecutor) ExecuteWithFirstSuccess(
 			return &result, nil
 		}
 	case <-execCtx.Done():
-		return nil, fmt.Errorf("parallel execution timeout after %v", pge.Timeout)
+		return nil, common.NewTimeoutError("parallel execution", pge.Timeout)
 	}
 
-	return nil, fmt.Errorf("all agents failed in parallel execution")
+	return nil, common.NewExecutionError("parallel-executor", "all agents failed in parallel execution", common.ErrorTypePermanent, nil)
 }
 
 // executeAgentConcurrent executes a single agent (concurrent-safe wrapper)
@@ -207,7 +206,7 @@ func executeAgentConcurrent(
 ) (*common.AgentResponse, error) {
 
 	if agent == nil {
-		return nil, fmt.Errorf("agent cannot be nil")
+		return nil, common.NewValidationError("agent", "agent cannot be nil")
 	}
 
 	// Import from agent package to avoid circular imports
@@ -218,7 +217,7 @@ func executeAgentConcurrent(
 	_ = history
 	_ = apiKey
 
-	return nil, fmt.Errorf("agent execution not implemented in this context")
+	return nil, common.NewExecutionError("concurrent-executor", "agent execution not implemented in this context", common.ErrorTypePermanent, nil)
 }
 
 // ExecuteGroupWithStrategy executes agents based on the parallel group strategy
@@ -233,7 +232,7 @@ func (pge *ParallelGroupExecutor) ExecuteGroupWithStrategy(
 ) (interface{}, error) {
 
 	if pge.Config == nil {
-		return nil, fmt.Errorf("parallel group config is nil")
+		return nil, common.NewValidationError("config", "parallel group config is nil")
 	}
 
 	if pge.Config.WaitForAll {
@@ -248,27 +247,27 @@ func (pge *ParallelGroupExecutor) ExecuteGroupWithStrategy(
 // ValidateParallelGroup validates parallel group configuration
 func ValidateParallelGroup(group *common.ParallelGroupConfig, agents map[string]*common.Agent) error {
 	if group == nil {
-		return fmt.Errorf("parallel group config is nil")
+		return common.NewValidationError("config", "parallel group config is nil")
 	}
 
 	if len(group.Agents) == 0 {
-		return fmt.Errorf("parallel group must have at least one agent")
+		return common.NewValidationError("agents", "parallel group must have at least one agent")
 	}
 
 	// Validate all agents exist
 	for _, agentID := range group.Agents {
 		if agentID == "" {
-			return fmt.Errorf("parallel group contains empty agent ID")
+			return common.NewValidationError("agent_id", "parallel group contains empty agent ID")
 		}
 
 		if _, exists := agents[agentID]; !exists {
-			return fmt.Errorf("agent '%s' in parallel group not found", agentID)
+			return common.NewAgentNotFoundError(agentID)
 		}
 	}
 
 	// Validate timeout is reasonable (at least 1 second)
 	if group.TimeoutSeconds > 0 && group.TimeoutSeconds < 1 {
-		return fmt.Errorf("parallel group timeout must be at least 1 second, got %d", group.TimeoutSeconds)
+		return common.NewValidationErrorf("timeout", "parallel group timeout must be at least 1 second, got %d", group.TimeoutSeconds)
 	}
 
 	return nil
@@ -277,7 +276,7 @@ func ValidateParallelGroup(group *common.ParallelGroupConfig, agents map[string]
 // GetAgentsForParallelGroup returns agent pointers for a parallel group
 func GetAgentsForParallelGroup(group *common.ParallelGroupConfig, agents map[string]*common.Agent) ([]*common.Agent, error) {
 	if group == nil {
-		return nil, fmt.Errorf("parallel group config is nil")
+		return nil, common.NewValidationError("config", "parallel group config is nil")
 	}
 
 	result := make([]*common.Agent, 0, len(group.Agents))
@@ -285,7 +284,7 @@ func GetAgentsForParallelGroup(group *common.ParallelGroupConfig, agents map[str
 	for _, agentID := range group.Agents {
 		agent, exists := agents[agentID]
 		if !exists {
-			return nil, fmt.Errorf("agent '%s' not found in agents map", agentID)
+			return nil, common.NewValidationErrorf("agent_id", "agent '%s' not found in agents map", agentID)
 		}
 		result = append(result, agent)
 	}

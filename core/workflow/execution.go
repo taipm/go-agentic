@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/taipm/go-agentic/core/agent"
 	"github.com/taipm/go-agentic/core/common"
 	"github.com/taipm/go-agentic/core/signal"
@@ -29,6 +30,7 @@ type ExecutionContext struct {
 	StartTime       time.Time
 	LastAgentTime   time.Duration
 	TotalTime       time.Duration
+	CorrelationID   string // For distributed request tracing across agent handoffs
 	handler         OutputHandler
 	SignalRegistry  *signal.SignalRegistry
 }
@@ -57,11 +59,7 @@ func lookupNextAgent(agents map[string]*common.Agent, agentID string, currentAge
 
 	nextAgent, exists := agents[agentID]
 	if !exists {
-		return nil, &common.ExecutionError{
-			AgentID:   currentAgentID,
-			ErrorType: common.ErrorTypeValidation,
-			Err:       fmt.Errorf(ErrTargetAgentNotFound, agentID),
-		}
+		return nil, common.NewAgentNotFoundError(agentID)
 	}
 	return nextAgent, nil
 }
@@ -70,7 +68,7 @@ func lookupNextAgent(agents map[string]*common.Agent, agentID string, currentAge
 // agents: map of all available agents for handoff lookup (can be nil if no handoffs needed)
 func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, handler OutputHandler, signalRegistry *signal.SignalRegistry, apiKey string, agents map[string]*common.Agent) (*common.AgentResponse, error) {
 	if entryAgent == nil {
-		return nil, fmt.Errorf("entry agent cannot be nil")
+		return nil, common.NewValidationError("agent", "entry agent cannot be nil")
 	}
 
 	if handler == nil {
@@ -83,6 +81,7 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 		MaxHandoffs:    DefaultMaxHandoffs,
 		MaxRounds:      DefaultMaxRounds,
 		StartTime:      time.Now(),
+		CorrelationID:  uuid.New().String(), // Generate unique correlation ID for request tracing
 		handler:        handler,
 		SignalRegistry: signalRegistry,
 	}
@@ -94,7 +93,7 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 // agents: map of all available agents for handoff lookup (can be nil)
 func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, apiKey string, agents map[string]*common.Agent) (*common.AgentResponse, error) {
 	if execCtx.RoundCount >= execCtx.MaxRounds {
-		return nil, fmt.Errorf("max rounds (%d) exceeded", execCtx.MaxRounds)
+		return nil, common.NewQuotaExceededError("max_rounds", execCtx.MaxRounds, execCtx.RoundCount)
 	}
 
 	execCtx.RoundCount++
@@ -270,7 +269,7 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 // ExecuteWorkflowStream executes the workflow with streaming output
 func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, streamChan chan *common.StreamEvent, signalRegistry *signal.SignalRegistry, apiKey string) error {
 	if entryAgent == nil {
-		return fmt.Errorf("entry agent cannot be nil")
+		return common.NewValidationError("agent", "entry agent cannot be nil")
 	}
 
 	handler := NewStreamHandler(streamChan)

@@ -2,10 +2,13 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/taipm/go-agentic/core/common"
 )
+
+const expectedValidationErrorFormat = "Expected ValidationError, got %T"
 
 // TestDetermineNextAgent_Terminal tests terminal agent detection
 func TestDetermineNextAgent_Terminal(t *testing.T) {
@@ -206,8 +209,13 @@ func TestRouteByBehavior_NilRouting(t *testing.T) {
 		t.Errorf("Expected empty result for nil routing, got '%s'", result)
 	}
 
-	if err.Error() != "routing configuration is nil" {
-		t.Errorf("Expected 'routing configuration is nil' error, got: %v", err)
+	// Check error type instead of exact message (which now includes context)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf(expectedValidationErrorFormat, err)
+	}
+	if validationErr.Field != "routing" {
+		t.Errorf("Expected field 'routing', got '%s'", validationErr.Field)
 	}
 }
 
@@ -228,8 +236,13 @@ func TestRouteByBehavior_EmptyBehaviorName(t *testing.T) {
 		t.Errorf("Expected empty result for empty behavior, got '%s'", result)
 	}
 
-	if err.Error() != "behavior name is empty" {
-		t.Errorf("Expected 'behavior name is empty' error, got: %v", err)
+	// Check error type instead of exact message (which now includes context)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf(expectedValidationErrorFormat, err)
+	}
+	if validationErr.Field != "behavior" {
+		t.Errorf("Expected field 'behavior', got '%s'", validationErr.Field)
 	}
 }
 
@@ -248,8 +261,13 @@ func TestRouteByBehavior_NilAgentBehaviors(t *testing.T) {
 		t.Errorf("Expected empty result, got '%s'", result)
 	}
 
-	if err.Error() != "no agent behaviors configured in routing" {
-		t.Errorf("Expected 'no agent behaviors configured' error, got: %v", err)
+	// Check error type instead of exact message (which now includes context)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf(expectedValidationErrorFormat, err)
+	}
+	if validationErr.Field != "routing" {
+		t.Errorf("Expected field 'routing', got '%s'", validationErr.Field)
 	}
 }
 
@@ -286,9 +304,13 @@ func TestRouteByBehavior_NotFound(t *testing.T) {
 		t.Errorf("Expected empty result for nonexistent behavior, got '%s'", result)
 	}
 
-	expectedErr := "behavior 'nonexistent' not found in routing configuration"
-	if err.Error() != expectedErr {
-		t.Errorf("Expected '%s' error, got: %v", expectedErr, err)
+	// Check error type instead of exact message (which now includes context)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf(expectedValidationErrorFormat, err)
+	}
+	if validationErr.Field != "behavior" {
+		t.Errorf("Expected field 'behavior', got '%s'", validationErr.Field)
 	}
 }
 

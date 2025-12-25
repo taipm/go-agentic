@@ -3,7 +3,6 @@ package executor
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/taipm/go-agentic/core/common"
@@ -22,11 +21,11 @@ type Executor struct {
 // NewExecutor creates a new executor for a crew
 func NewExecutor(crew *common.Crew, apiKey string) (*Executor, error) {
 	if crew == nil {
-		return nil, fmt.Errorf("crew cannot be nil")
+		return nil, common.NewValidationError("crew", "crew cannot be nil")
 	}
 
 	if len(crew.Agents) == 0 {
-		return nil, fmt.Errorf("crew must have at least one agent")
+		return nil, common.NewValidationError("agents", "crew must have at least one agent")
 	}
 
 	// Find entry agent (default to first agent)
@@ -74,7 +73,7 @@ func (e *Executor) GetResumeAgentID() string {
 // Execute runs the executor synchronously
 func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewResponse, error) {
 	if e == nil {
-		return nil, fmt.Errorf("executor is nil")
+		return nil, common.NewValidationError("executor", "executor is nil")
 	}
 
 	if ctx == nil {
@@ -103,7 +102,7 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 		if e.verbose {
 			log.Printf("[EXECUTOR ERROR] %v", err)
 		}
-		return nil, fmt.Errorf("workflow execution failed: %w", err)
+		return nil, common.NewExecutionError(entryAgent.ID, "workflow execution failed", common.ErrorTypePermanent, err)
 	}
 
 	if e.verbose {
@@ -123,7 +122,7 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 // ExecuteStream runs the executor with streaming output
 func (e *Executor) ExecuteStream(ctx context.Context, input string, streamChan chan *common.StreamEvent) error {
 	if e == nil {
-		return fmt.Errorf("executor is nil")
+		return common.NewValidationError("executor", "executor is nil")
 	}
 
 	if ctx == nil {
@@ -131,7 +130,7 @@ func (e *Executor) ExecuteStream(ctx context.Context, input string, streamChan c
 	}
 
 	if streamChan == nil {
-		return fmt.Errorf("stream channel cannot be nil")
+		return common.NewValidationError("stream_channel", "stream channel cannot be nil")
 	}
 
 	// Determine entry agent
@@ -153,7 +152,7 @@ func (e *Executor) ExecuteStream(ctx context.Context, input string, streamChan c
 		if e.verbose {
 			log.Printf("[EXECUTOR ERROR] %v", err)
 		}
-		return fmt.Errorf("workflow streaming failed: %w", err)
+		return common.NewExecutionError(entryAgent.ID, "workflow streaming failed", common.ErrorTypePermanent, err)
 	}
 
 	return nil

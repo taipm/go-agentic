@@ -12,7 +12,7 @@ import (
 // DetermineNextAgent determines the next agent based on routing configuration
 func DetermineNextAgent(currentAgent *common.Agent, response *common.AgentResponse, routing *common.RoutingConfig) (*common.RoutingDecision, error) {
 	if currentAgent == nil {
-		return nil, fmt.Errorf("current agent cannot be nil")
+		return nil, common.NewValidationError("agent", "current agent cannot be nil")
 	}
 
 	// Check if current agent is terminal
@@ -39,7 +39,7 @@ func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Age
 	routing *common.RoutingConfig, signalRegistry *signal.SignalRegistry) (*common.RoutingDecision, error) {
 
 	if currentAgent == nil {
-		return nil, fmt.Errorf("current agent cannot be nil")
+		return nil, common.NewValidationError("agent", "current agent cannot be nil")
 	}
 
 	// Priority 1: Check signals in response using routing configuration

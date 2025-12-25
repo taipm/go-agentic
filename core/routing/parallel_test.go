@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -134,8 +135,9 @@ func TestValidateParallelGroup_NilConfig(t *testing.T) {
 		t.Fatalf("Expected error for nil config")
 	}
 
-	if err.Error() != "parallel group config is nil" {
-		t.Errorf("Expected 'config is nil' error, got: %v", err)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf("Expected ValidationError, got: %T", err)
 	}
 }
 
@@ -150,8 +152,9 @@ func TestValidateParallelGroup_NoAgents(t *testing.T) {
 		t.Fatalf("Expected error for no agents")
 	}
 
-	if err.Error() != "parallel group must have at least one agent" {
-		t.Errorf("Expected 'no agents' error, got: %v", err)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf("Expected ValidationError, got: %T", err)
 	}
 }
 
@@ -171,8 +174,9 @@ func TestValidateParallelGroup_EmptyAgentID(t *testing.T) {
 		t.Fatalf("Expected error for empty agent ID")
 	}
 
-	if err.Error() != "parallel group contains empty agent ID" {
-		t.Errorf("Expected 'empty agent ID' error, got: %v", err)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf("Expected ValidationError, got: %T", err)
 	}
 }
 
@@ -191,9 +195,9 @@ func TestValidateParallelGroup_MissingAgent(t *testing.T) {
 		t.Fatalf("Expected error for missing agent")
 	}
 
-	expectedErr := "agent 'agent_missing' in parallel group not found"
-	if err.Error() != expectedErr {
-		t.Errorf("Expected '%s' error, got: %v", expectedErr, err)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf("Expected ValidationError, got: %T", err)
 	}
 }
 
@@ -284,9 +288,9 @@ func TestGetAgentsForParallelGroup_MissingAgent(t *testing.T) {
 		t.Errorf("Expected nil result for error case")
 	}
 
-	expectedErr := "agent 'agent_missing' not found in agents map"
-	if err.Error() != expectedErr {
-		t.Errorf("Expected '%s' error, got: %v", expectedErr, err)
+	var validationErr *common.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf("Expected ValidationError, got: %T", err)
 	}
 }
 
