@@ -14,6 +14,43 @@ import (
 // CORE DOMAIN TYPES
 // ============================================================================
 
+// Tool represents an executable tool that can be used by agents
+type Tool struct {
+	ID          string
+	Name        string
+	Description string
+	Func        interface{} // The actual function to execute
+	Input       interface{} // Input schema or parameters
+	Parameters  interface{} // Parameters schema (can be JSON schema, map, etc.)
+	Output      interface{} // Output schema or return type
+}
+
+// ToolTimeoutConfig manages timeout settings for tool execution
+type ToolTimeoutConfig struct {
+	DefaultToolTimeout time.Duration         // Default timeout for tool execution (default: 5s)
+	SequenceTimeout    time.Duration         // Timeout for entire tool execution sequence (default: 30s)
+	PerToolTimeout     map[string]time.Duration // Per-tool timeout overrides
+	CollectMetrics     bool                  // Whether to collect timeout metrics
+}
+
+// NewToolTimeoutConfig creates a new tool timeout configuration with defaults
+func NewToolTimeoutConfig() *ToolTimeoutConfig {
+	return &ToolTimeoutConfig{
+		DefaultToolTimeout: 5 * time.Second,
+		SequenceTimeout:    30 * time.Second,
+		PerToolTimeout:     make(map[string]time.Duration),
+		CollectMetrics:     true,
+	}
+}
+
+// GetToolTimeout returns the timeout for a specific tool
+func (ttc *ToolTimeoutConfig) GetToolTimeout(toolName string) time.Duration {
+	if timeout, exists := ttc.PerToolTimeout[toolName]; exists {
+		return timeout
+	}
+	return ttc.DefaultToolTimeout
+}
+
 // Task represents a task to be executed by an agent
 type Task struct {
 	ID          string

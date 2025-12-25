@@ -33,7 +33,7 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 	}
 
 	if handler == nil {
-		handler = &NoOpHandler{}
+		handler = NewNoOpHandler()
 	}
 
 	execCtx := &ExecutionContext{

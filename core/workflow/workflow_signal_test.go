@@ -270,7 +270,7 @@ func TestExecuteWorkflowStreamWithSignalRegistry(t *testing.T) {
 	}
 
 	registry := signal.NewSignalRegistry()
-	streamChan := make(chan *StreamEvent, 10)
+	streamChan := make(chan *common.StreamEvent, 10)
 
 	defer func() {
 		// Expected panic from missing agent configuration

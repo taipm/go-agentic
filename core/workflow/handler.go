@@ -20,97 +20,91 @@ type OutputHandler interface {
 	GetFinalResponse() interface{}
 }
 
-// SyncHandler handles synchronous execution
-type SyncHandler struct {
+// Handler is the unified implementation for all output handling strategies
+type Handler struct {
 	finalResponse interface{}
 	lastError     error
-}
-
-// NewSyncHandler creates a new synchronous handler
-func NewSyncHandler() *SyncHandler {
-	return &SyncHandler{}
-}
-
-// HandleStreamEvent processes a stream event synchronously
-func (sh *SyncHandler) HandleStreamEvent(event *common.StreamEvent) error {
-	if event == nil {
-		return nil
-	}
-
-	// Store the event for retrieval
-	sh.finalResponse = event
-	return nil
-}
-
-// HandleAgentResponse processes an agent response synchronously
-func (sh *SyncHandler) HandleAgentResponse(response *common.AgentResponse) error {
-	if response == nil {
-		return nil
-	}
-
-	sh.finalResponse = response
-	return nil
-}
-
-// HandleError processes an error synchronously
-func (sh *SyncHandler) HandleError(err error) error {
-	sh.lastError = err
-	return err
-}
-
-// GetFinalResponse returns the final response
-func (sh *SyncHandler) GetFinalResponse() interface{} {
-	return sh.finalResponse
-}
-
-// StreamHandler handles streaming execution with a channel
-type StreamHandler struct {
 	streamChan    chan *common.StreamEvent
-	finalResponse interface{}
-	lastError     error
+	strategy      handlerStrategy
 }
 
-// NewStreamHandler creates a new streaming handler
-func NewStreamHandler(streamChan chan *common.StreamEvent) *StreamHandler {
-	return &StreamHandler{
-		streamChan: streamChan,
-	}
+// handlerStrategy defines how to handle stream events
+type handlerStrategy interface {
+	handleStreamEvent(*Handler, *common.StreamEvent) error
 }
 
-// HandleStreamEvent sends a stream event to the channel
-func (sh *StreamHandler) HandleStreamEvent(event *common.StreamEvent) error {
-	if sh.streamChan == nil {
+// syncStrategy stores events in memory
+type syncStrategy struct{}
+
+func (s *syncStrategy) handleStreamEvent(h *Handler, event *common.StreamEvent) error {
+	h.finalResponse = event
+	return nil
+}
+
+// streamStrategy sends events to a channel
+type streamStrategy struct{}
+
+func (s *streamStrategy) handleStreamEvent(h *Handler, event *common.StreamEvent) error {
+	if h.streamChan == nil {
 		return nil
 	}
-
 	select {
-	case sh.streamChan <- event:
+	case h.streamChan <- event:
 		return nil
 	default:
 		return nil // Non-blocking send
 	}
 }
 
-// HandleAgentResponse sends an agent response as a stream event
-func (sh *StreamHandler) HandleAgentResponse(response *common.AgentResponse) error {
+// noOpStrategy ignores all events
+type noOpStrategy struct{}
+
+func (s *noOpStrategy) handleStreamEvent(h *Handler, event *common.StreamEvent) error {
+	return nil
+}
+
+// HandleStreamEvent processes a stream event
+func (h *Handler) HandleStreamEvent(event *common.StreamEvent) error {
+	if event == nil {
+		return nil
+	}
+	return h.strategy.handleStreamEvent(h, event)
+}
+
+// HandleAgentResponse processes an agent response
+func (h *Handler) HandleAgentResponse(response *common.AgentResponse) error {
 	if response == nil {
 		return nil
 	}
 
-	event := &common.StreamEvent{
-		Type:    "agent_response",
-		Agent:   response.AgentName,
-		Content: response.Content,
+	// For memory-based handlers, store the response
+	if _, ok := h.strategy.(*syncStrategy); ok || h.strategy == nil {
+		h.finalResponse = response
 	}
 
-	return sh.HandleStreamEvent(event)
+	// For stream-based handlers, convert to stream event
+	if _, ok := h.strategy.(*streamStrategy); ok {
+		event := &common.StreamEvent{
+			Type:    "agent_response",
+			Agent:   response.AgentName,
+			Content: response.Content,
+		}
+		return h.HandleStreamEvent(event)
+	}
+
+	return nil
 }
 
-// HandleError sends an error as a stream event
-func (sh *StreamHandler) HandleError(err error) error {
-	sh.lastError = err
+// HandleError processes an error
+func (h *Handler) HandleError(err error) error {
+	h.lastError = err
 
 	if err == nil {
+		return nil
+	}
+
+	// For noOp handler, do nothing
+	if _, ok := h.strategy.(*noOpStrategy); ok {
 		return nil
 	}
 
@@ -119,33 +113,32 @@ func (sh *StreamHandler) HandleError(err error) error {
 		Content: err.Error(),
 	}
 
-	return sh.HandleStreamEvent(event)
+	return h.HandleStreamEvent(event)
 }
 
 // GetFinalResponse returns the final response
-func (sh *StreamHandler) GetFinalResponse() interface{} {
-	return sh.finalResponse
+func (h *Handler) GetFinalResponse() interface{} {
+	return h.finalResponse
 }
 
-// NoOpHandler is a handler that does nothing (for testing)
-type NoOpHandler struct{}
-
-// HandleStreamEvent does nothing
-func (nh *NoOpHandler) HandleStreamEvent(event *common.StreamEvent) error {
-	return nil
+// NewSyncHandler creates a new synchronous handler that stores responses in memory
+func NewSyncHandler() OutputHandler {
+	return &Handler{
+		strategy: &syncStrategy{},
+	}
 }
 
-// HandleAgentResponse does nothing
-func (nh *NoOpHandler) HandleAgentResponse(response *common.AgentResponse) error {
-	return nil
+// NewStreamHandler creates a new streaming handler that sends events to a channel
+func NewStreamHandler(streamChan chan *common.StreamEvent) OutputHandler {
+	return &Handler{
+		streamChan: streamChan,
+		strategy:   &streamStrategy{},
+	}
 }
 
-// HandleError does nothing
-func (nh *NoOpHandler) HandleError(err error) error {
-	return nil
-}
-
-// GetFinalResponse returns nil
-func (nh *NoOpHandler) GetFinalResponse() interface{} {
-	return nil
+// NewNoOpHandler creates a handler that discards all output (for testing)
+func NewNoOpHandler() OutputHandler {
+	return &Handler{
+		strategy: &noOpStrategy{},
+	}
 }

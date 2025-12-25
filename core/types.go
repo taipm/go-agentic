@@ -1,10 +1,12 @@
+// Package core provides type aliases and backward compatibility re-exports.
+// All core types are defined in the common package to maintain a single source of truth.
+// This file serves as a backward compatibility layer for existing code that imports from crewai.
 package crewai
 
 import (
-	"time"
-
 	"github.com/taipm/go-agentic/core/common"
 	"github.com/taipm/go-agentic/core/executor"
+	"github.com/taipm/go-agentic/core/validation"
 )
 
 // ============================================================================
@@ -13,69 +15,115 @@ import (
 // to maintain backward compatibility with existing code in the root crewai package
 // ============================================================================
 
-// Agent - re-export from common package for backward compatibility
+// Agent - re-export from common package
 type Agent = common.Agent
 
-// ModelConfig - re-export from common package for backward compatibility
+// ModelConfig - re-export from common package
 type ModelConfig = common.ModelConfig
 
-// CrewConfig - re-export from common package for backward compatibility
+// CrewConfig - re-export from common package
 type CrewConfig = common.CrewConfig
 
-// AgentConfig - re-export from common package for backward compatibility
+// AgentConfig - re-export from common package
 type AgentConfig = common.AgentConfig
 
-// RoutingConfig - re-export from common package for backward compatibility
+// RoutingConfig - re-export from common package
 type RoutingConfig = common.RoutingConfig
 
-// RoutingSignal - re-export from common package for backward compatibility
+// RoutingSignal - re-export from common package
 type RoutingSignal = common.RoutingSignal
 
-// AgentBehavior - re-export from common package for backward compatibility
+// AgentBehavior - re-export from common package
 type AgentBehavior = common.AgentBehavior
 
-// ParallelGroupConfig - re-export from common package for backward compatibility
+// ParallelGroupConfig - re-export from common package
 type ParallelGroupConfig = common.ParallelGroupConfig
 
-// ModelConfigYAML - re-export from common package for backward compatibility
+// ModelConfigYAML - re-export from common package
 type ModelConfigYAML = common.ModelConfigYAML
 
-// CostLimitsConfig - re-export from common package for backward compatibility
+// CostLimitsConfig - re-export from common package
 type CostLimitsConfig = common.CostLimitsConfig
 
-// AgentQuotaLimits - re-export from common package for backward compatibility
+// AgentQuotaLimits - re-export from common package
 type AgentQuotaLimits = common.AgentQuotaLimits
 
-// AgentMetadata - re-export from common package for backward compatibility
+// AgentMetadata - re-export from common package
 type AgentMetadata = common.AgentMetadata
 
-// MemoryLimitsConfig - re-export from common package for backward compatibility
+// MemoryLimitsConfig - re-export from common package
 type MemoryLimitsConfig = common.MemoryLimitsConfig
 
-// ErrorLimitsConfig - re-export from common package for backward compatibility
+// ErrorLimitsConfig - re-export from common package
 type ErrorLimitsConfig = common.ErrorLimitsConfig
 
-// LoggingConfig - re-export from common package for backward compatibility
+// LoggingConfig - re-export from common package
 type LoggingConfig = common.LoggingConfig
 
-// AgentCostMetrics - re-export from common package for backward compatibility
+// AgentCostMetrics - re-export from common package
 type AgentCostMetrics = common.AgentCostMetrics
 
-// AgentMemoryMetrics - re-export from common package for backward compatibility
+// AgentMemoryMetrics - re-export from common package
 type AgentMemoryMetrics = common.AgentMemoryMetrics
 
-// AgentPerformanceMetrics - re-export from common package for backward compatibility
+// AgentPerformanceMetrics - re-export from common package
 type AgentPerformanceMetrics = common.AgentPerformanceMetrics
 
-// StreamEvent - re-export from common package for backward compatibility
+// StreamEvent - re-export from common package
 type StreamEvent = common.StreamEvent
 
-// HistoryManager - re-export from executor package for backward compatibility
+// Tool - re-export from common package
+type Tool = common.Tool
+
+// ToolTimeoutConfig - re-export from common package
+type ToolTimeoutConfig = common.ToolTimeoutConfig
+
+// Task - re-export from common package
+type Task = common.Task
+
+// Message - re-export from common package
+type Message = common.Message
+
+// ToolCall - re-export from common package
+type ToolCall = common.ToolCall
+
+// AgentResponse - re-export from common package
+type AgentResponse = common.AgentResponse
+
+// CrewResponse - re-export from common package
+type CrewResponse = common.CrewResponse
+
+// Crew - re-export from common package
+type Crew = common.Crew
+
+// HistoryManager - re-export from executor package
 type HistoryManager = executor.HistoryManager
 
 // NewHistoryManager creates a new HistoryManager with default settings
 func NewHistoryManager() *HistoryManager {
 	return executor.NewHistoryManager()
+}
+
+// NewToolTimeoutConfig creates a new tool timeout configuration with defaults
+// Delegates to common.NewToolTimeoutConfig()
+func NewToolTimeoutConfig() *ToolTimeoutConfig {
+	return common.NewToolTimeoutConfig()
+}
+
+// ============================================================================
+// VALIDATION FUNCTION RE-EXPORTS
+// ============================================================================
+
+// ValidateCrewConfig validates a crew configuration
+// Re-exports from validation package for backward compatibility
+func ValidateCrewConfig(cfg *CrewConfig) error {
+	return validation.ValidateCrewConfig(cfg)
+}
+
+// ValidateAgentConfig validates an agent configuration
+// Re-exports from validation package for backward compatibility
+func ValidateAgentConfig(cfg *AgentConfig) error {
+	return validation.ValidateAgentConfig(cfg)
 }
 
 // ============================================================================
@@ -84,9 +132,9 @@ func NewHistoryManager() *HistoryManager {
 
 // Token Calculation Constants (re-exported from common)
 const (
-	TokenBaseValue   = common.TokenBaseValue
+	TokenBaseValue    = common.TokenBaseValue
 	TokenPaddingValue = common.TokenPaddingValue
-	TokenDivisor    = common.TokenDivisor
+	TokenDivisor      = common.TokenDivisor
 )
 
 // Role Constants (re-exported from common)
@@ -100,96 +148,3 @@ const (
 	EventTypeError      = common.EventTypeError
 	EventTypeToolResult = common.EventTypeToolResult
 )
-
-// ============================================================================
-// CORE DOMAIN TYPES (DEFINED LOCALLY)
-// ============================================================================
-
-// ToolTimeoutConfig manages timeout settings for tool execution
-type ToolTimeoutConfig struct {
-	DefaultToolTimeout time.Duration         // Default timeout for tool execution (default: 5s)
-	SequenceTimeout    time.Duration         // Timeout for entire tool execution sequence (default: 30s)
-	PerToolTimeout     map[string]time.Duration // Per-tool timeout overrides
-	CollectMetrics     bool                  // Whether to collect timeout metrics
-}
-
-// NewToolTimeoutConfig creates a new tool timeout configuration with defaults
-func NewToolTimeoutConfig() *ToolTimeoutConfig {
-	return &ToolTimeoutConfig{
-		DefaultToolTimeout: 5 * time.Second,
-		SequenceTimeout:    30 * time.Second,
-		PerToolTimeout:     make(map[string]time.Duration),
-		CollectMetrics:     true,
-	}
-}
-
-// GetToolTimeout returns the timeout for a specific tool
-func (ttc *ToolTimeoutConfig) GetToolTimeout(toolName string) time.Duration {
-	if timeout, exists := ttc.PerToolTimeout[toolName]; exists {
-		return timeout
-	}
-	return ttc.DefaultToolTimeout
-}
-
-// Tool represents an executable tool that can be used by agents
-type Tool struct {
-	ID          string
-	Name        string
-	Description string
-	Func        interface{} // The actual function to execute
-	Input       interface{} // Input schema or parameters
-	Parameters  interface{} // ✅ PHASE 10a: Parameters schema (can be JSON schema, map, etc.)
-	Output      interface{} // Output schema or return type
-}
-
-// Task represents a task to be executed by an agent
-type Task struct {
-	ID          string
-	Description string
-	Agent       *Agent
-	Expected    string
-}
-
-// Message represents a message in the conversation
-type Message struct {
-	Role    string // "user", "assistant", "system"
-	Content string
-}
-
-// ToolCall represents a tool call made by the agent
-type ToolCall struct {
-	ID        string
-	ToolName  string
-	Arguments map[string]interface{}
-}
-
-// AgentResponse represents a response from an agent
-type AgentResponse struct {
-	AgentID   string
-	AgentName string
-	Content   string
-	ToolCalls []ToolCall
-}
-
-// CrewResponse represents the final response from the crew
-type CrewResponse struct {
-	AgentID       string
-	AgentName     string
-	Content       string
-	ToolCalls     []ToolCall
-	IsTerminal    bool
-	PausedAgentID string // Agent ID that paused, used for resume functionality
-}
-
-// Crew represents a group of agents working together
-// ✅ FIX #4 & #5: Made ParallelAgentTimeout and MaxToolOutputChars configurable (were hardcoded constants)
-type Crew struct {
-	Agents                  []*Agent
-	Tasks                   []*Task
-	MaxRounds               int
-	MaxHandoffs             int
-	ParallelAgentTimeout    time.Duration  // ✅ FIX #4: Timeout for parallel agent execution (default: 60s)
-	MaxToolOutputChars      int            // ✅ FIX #5: Max characters per tool output (default: 2000)
-	MaxTotalToolOutputChars int            // ✅ FIX: Max TOTAL characters for all tools combined (default: 4000)
-	Routing                 *RoutingConfig // Routing configuration from crew.yaml
-}

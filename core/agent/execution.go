@@ -104,7 +104,7 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
-		Tools:        ConvertToolsToProvider(agent.Tools),
+		Tools:        nil, // TODO: Implement proper tool conversion from agent.Tools
 	}
 
 	// Step 3: Execute provider call
@@ -150,7 +150,7 @@ func executeWithModelConfigStream(ctx context.Context, agent *common.Agent, syst
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
-		Tools:        ConvertToolsToProvider(agent.Tools),
+		Tools:        nil, // TODO: Implement proper tool conversion from agent.Tools
 	}
 
 	// Call provider with streaming
@@ -172,18 +172,6 @@ func ConvertToProviderMessages(history []common.Message) []providers.ProviderMes
 		}
 	}
 	return messages
-}
-
-// ConvertToolsToProvider converts internal Tool format to provider-agnostic format
-func ConvertToolsToProvider(toolsObj interface{}) []providers.ProviderTool {
-	// Handle nil case
-	if toolsObj == nil {
-		return []providers.ProviderTool{}
-	}
-
-	// For now, return empty list since agent.Tools are interface{}
-	// Full implementation would iterate and extract tool metadata
-	return []providers.ProviderTool{}
 }
 
 // ConvertToolCallsFromProvider converts provider tool calls back to internal format
