@@ -331,19 +331,8 @@ func TestExecutionFlow_ValidateFlow(t *testing.T) {
 }
 
 // TestHistoryManager_TrimConfig tests updating trim configuration
-func TestHistoryManager_TrimConfig(t *testing.T) {
-	hm := NewHistoryManager()
-
-	hm.SetTrimConfig(5000, 0.5)
-
-	if hm.trimThreshold != 5000 {
-		t.Errorf("Expected trim threshold 5000, got %d", hm.trimThreshold)
-	}
-
-	if hm.trimPercentage != 0.5 {
-		t.Errorf("Expected trim percentage 0.5, got %f", hm.trimPercentage)
-	}
-}
+// Note: Moved to core/state-management/state_management_test.go
+// This is kept as documentation that the test has been migrated
 
 // TestExecutionState_TotalSize tests total character count
 func TestExecutionState_GetLastAgentTime(t *testing.T) {

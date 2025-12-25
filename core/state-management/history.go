@@ -1,4 +1,5 @@
-package executor
+// Package statemanagement provides state tracking for workflow execution.
+package statemanagement
 
 import (
 	"sync"

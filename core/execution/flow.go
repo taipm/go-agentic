@@ -1,4 +1,5 @@
-package executor
+// Package execution provides workflow execution coordination for multi-agent systems.
+package execution
 
 import (
 	"context"
@@ -7,20 +8,22 @@ import (
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/routing"
 	"github.com/taipm/go-agentic/core/signal"
+	"github.com/taipm/go-agentic/core/state-management"
 	"github.com/taipm/go-agentic/core/tools"
 	"github.com/taipm/go-agentic/core/workflow"
 )
 
 // ExecutionFlow represents the state of workflow execution.
 type ExecutionFlow struct {
-	CurrentAgent  *common.Agent
-	History       []common.Message
-	RoundCount    int
-	HandoffCount  int
-	MaxRounds     int
-	MaxHandoffs   int
-	State         *ExecutionState
+	CurrentAgent   *common.Agent
+	History        []common.Message
+	RoundCount     int
+	HandoffCount   int
+	MaxRounds      int
+	MaxHandoffs    int
+	State          *statemanagement.ExecutionState
 	SignalRegistry *signal.SignalRegistry
 }
 
@@ -33,7 +36,7 @@ func NewExecutionFlow(entryAgent *common.Agent, maxRounds, maxHandoffs int) *Exe
 		HandoffCount: 0,
 		MaxRounds:    maxRounds,
 		MaxHandoffs:  maxHandoffs,
-		State:        NewExecutionState(),
+		State:        statemanagement.NewExecutionState(),
 	}
 }
 
@@ -136,7 +139,7 @@ func (ef *ExecutionFlow) ExecuteWorkflowStep(
 func (ef *ExecutionFlow) HandleAgentResponse(
 	ctx context.Context,
 	response *common.AgentResponse,
-	routing *common.RoutingConfig,
+	routingConfig *common.RoutingConfig,
 	agentsMap map[string]*common.Agent,
 ) (bool, error) {
 	if response == nil {
@@ -144,26 +147,26 @@ func (ef *ExecutionFlow) HandleAgentResponse(
 	}
 
 	// Check if this is a terminal agent
-	if routing != nil {
+	if routingConfig != nil {
 		// Priority 1: Use signal-based routing if SignalRegistry available
 		var decision *common.RoutingDecision
 		var err error
 
 		if ef.SignalRegistry != nil {
 			// Use signal-aware routing function
-			decision, err = workflow.DetermineNextAgentWithSignals(
+			decision, err = routing.DetermineNextAgentWithSignals(
 				ctx,
 				ef.CurrentAgent,
 				response,
-				routing,
+				routingConfig,
 				ef.SignalRegistry,
 			)
 		} else {
 			// Fallback to simple routing (no signal support)
-			decision, err = workflow.DetermineNextAgent(
+			decision, err = routing.DetermineNextAgent(
 				ef.CurrentAgent,
 				response,
-				routing,
+				routingConfig,
 			)
 		}
 
@@ -232,7 +235,7 @@ func (ef *ExecutionFlow) ExecuteWithCallbacks(
 	apiKey string,
 	onStep WorkflowCallback,
 	agents map[string]*common.Agent,
-	routing *common.RoutingConfig,
+	routingConfig *common.RoutingConfig,
 	signalRegistry *signal.SignalRegistry,
 ) (*common.AgentResponse, error) {
 	// Assign signal registry for routing decisions
@@ -262,7 +265,7 @@ func (ef *ExecutionFlow) ExecuteWithCallbacks(
 		}
 
 		// Check if workflow should continue
-		shouldContinue, err := ef.HandleAgentResponse(ctx, response, routing, agents)
+		shouldContinue, err := ef.HandleAgentResponse(ctx, response, routingConfig, agents)
 		if err != nil {
 			return lastResponse, err
 		}

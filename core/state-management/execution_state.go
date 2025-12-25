@@ -1,4 +1,5 @@
-package executor
+// Package statemanagement provides state tracking for workflow execution.
+package statemanagement
 
 import (
 	"sync"
@@ -85,8 +86,8 @@ func (es *ExecutionState) GetMetrics() *ExecutionMetrics {
 
 	if es.RoundCount == 0 {
 		return &ExecutionMetrics{
-			TotalDuration:   es.TotalDuration,
-			RoundCount:      0,
+			TotalDuration:    es.TotalDuration,
+			RoundCount:       0,
 			SuccessfulRounds: 0,
 		}
 	}
