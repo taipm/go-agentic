@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/config"
 	"github.com/taipm/go-agentic/core/executor"
 	"github.com/taipm/go-agentic/core/signal"
 	"github.com/taipm/go-agentic/core/validation"
@@ -69,28 +70,48 @@ func (ce *CrewExecutor) SetSignalRegistry(registry *signal.SignalRegistry) {
 // tools: map of available tools that can be assigned to agents (can be empty map if no tools needed)
 func NewCrewExecutorFromConfig(apiKey, configDir string, tools map[string]*Tool) (*CrewExecutor, error) {
 	// Load crew configuration (includes routing config)
-	crewConfig, err := LoadCrewConfig(fmt.Sprintf("%s/crew.yaml", configDir))
+	crewConfig, err := config.LoadCrewConfig(fmt.Sprintf("%s/crew.yaml", configDir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load crew config: %w", err)
 	}
 
 	// Load agent configurations
 	agentDir := fmt.Sprintf("%s/agents", configDir)
-	// Extract configMode from crew config for agent loading
-	configMode := PermissiveMode // Default to permissive for backward compatibility
-	if crewConfig.Settings.ConfigMode != "" {
-		configMode = ConfigMode(crewConfig.Settings.ConfigMode)
-	}
-	agentConfigs, err := LoadAgentConfigs(agentDir, configMode)
+	agentConfigs, err := config.LoadAgentConfigs(agentDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load agent configs: %w", err)
+	}
+
+	// Convert tools map from *Tool to interface{}
+	toolsInterface := make(map[string]interface{})
+	for name, tool := range tools {
+		toolsInterface[name] = tool
 	}
 
 	// Create agents from config with provided tools
 	var agents []*Agent
 	for _, agentID := range crewConfig.Agents {
-		if config, exists := agentConfigs[agentID]; exists {
-			agent := CreateAgentFromConfig(config, tools)
+		if agentConfig, exists := agentConfigs[agentID]; exists {
+			agentObj := config.CreateAgentFromConfig(agentConfig, toolsInterface)
+			// Convert from common.Agent back to crewai.Agent (they should be compatible)
+			agent := &Agent{
+				ID:             agentObj.ID,
+				Name:           agentObj.Name,
+				Role:           agentObj.Role,
+				Backstory:      agentObj.Backstory,
+				SystemPrompt:   agentObj.SystemPrompt,
+				PrimaryModel:   agentObj.PrimaryModel,
+				BackupModel:    agentObj.BackupModel,
+				Temperature:    agentObj.Temperature,
+				IsTerminal:     agentObj.IsTerminal,
+				HandoffTargets: agentObj.HandoffTargets,
+				Tools:          agentObj.Tools,
+				Metadata:       agentObj.Metadata,
+				Quota:          agentObj.Quota,
+				CostMetrics:    agentObj.CostMetrics,
+				MemoryMetrics:  agentObj.MemoryMetrics,
+				PerformanceMetrics: agentObj.PerformanceMetrics,
+			}
 			agents = append(agents, agent)
 		}
 	}
