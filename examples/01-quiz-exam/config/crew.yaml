@@ -53,8 +53,8 @@ routing:
       wait_for_signal: false
 
 settings:
-  max_rounds: 30      # 10 câu x 2 agents + buffer
-  max_handoffs: 30
+  max_rounds: 21      # ✅ SAFETY FIX: 10 questions × 2 (Q+A) + 1 ([END_EXAM]) = 21 rounds max
+  max_handoffs: 21    # ✅ Prevents infinite loop if [END_EXAM] signal fails
   config_mode: strict
 
   # Timeout parameters

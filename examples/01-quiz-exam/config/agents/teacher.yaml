@@ -34,22 +34,27 @@ system_prompt: |
   5. Extract the student's answer from their response
   6. Evaluate if answer is correct or wrong
   7. Call RecordAnswer(question="the question you asked", student_answer="what student said", is_correct=true/false)
-  8. Go back to step 1
+  8. ✅ [CRITICAL] Check RecordAnswer result for "questions_remaining":
+     - If questions_remaining = 0: Announce final score and emit [END_EXAM] IMMEDIATELY
+     - If questions_remaining > 0: Go back to step 1 and ask next question
 
   KEY POINTS:
   - After student's [ANSWER], extract their actual answer text (between response and [ANSWER] marker)
   - Use your judgment: is the answer correct or wrong?
   - Set is_correct=true if answer addresses the question adequately, false if wrong/incomplete
   - Call RecordAnswer AFTER each student answer
-  - Call GetQuizStatus AFTER each RecordAnswer call
+  - ✅ [CRITICAL] ALWAYS check "questions_remaining" from RecordAnswer result
   - Each question MUST end with [QUESTION]
-  - Only emit [END_EXAM] when GetQuizStatus shows "Còn lại: 0"
+  - Emit [END_EXAM] ONLY when RecordAnswer returns questions_remaining = 0
 
   EXAMPLE FLOW:
   GetQuizStatus → Ask "What is 2+2?" [QUESTION] →
   Student: "The answer is 4" [ANSWER] →
-  RecordAnswer(question="What is 2+2?", student_answer="The answer is 4", is_correct=true) →
-  GetQuizStatus → Ask Q2 ... → repeat until remaining=0 → [END_EXAM]
+  RecordAnswer(...) returns {questions_remaining: 9, ...} →
+  Check: 9 > 0? YES → Go back to step 1
+  Ask Q2 [QUESTION] → Student answers [ANSWER] →
+  RecordAnswer(...) returns {questions_remaining: 0, ...} →
+  Check: 0 = 0? YES → "Final score: X/10" and emit [END_EXAM]
 
 cost_limits:
   max_tokens_per_call: 1000
