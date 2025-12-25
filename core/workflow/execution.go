@@ -13,8 +13,9 @@ import (
 
 // Workflow execution constants
 const (
-	DefaultMaxHandoffs = 5
-	DefaultMaxRounds   = 10
+	DefaultMaxHandoffs      = 5
+	DefaultMaxRounds        = 10
+	ErrTargetAgentNotFound  = "target agent not found: %s"
 )
 
 // ExecutionContext holds the state during workflow execution
@@ -32,17 +33,6 @@ type ExecutionContext struct {
 	SignalRegistry  *signal.SignalRegistry
 }
 
-// createMetadata creates a metadata map with common fields
-func createMetadata(pairs ...interface{}) map[string]interface{} {
-	metadata := make(map[string]interface{})
-	for i := 0; i < len(pairs)-1; i += 2 {
-		if key, ok := pairs[i].(string); ok {
-			metadata[key] = pairs[i+1]
-		}
-	}
-	return metadata
-}
-
 // emitSignal emits a signal with the given name and metadata
 func (execCtx *ExecutionContext) emitSignal(signalName string, metadata map[string]interface{}) {
 	if execCtx.SignalRegistry == nil {
@@ -58,8 +48,27 @@ func (execCtx *ExecutionContext) emitSignal(signalName string, metadata map[stri
 	}
 }
 
+// lookupNextAgent looks up an agent in the agents map and returns it
+// Returns ExecutionError if agent not found
+func lookupNextAgent(agents map[string]*common.Agent, agentID string, currentAgentID string) (*common.Agent, error) {
+	if agents == nil {
+		return nil, nil
+	}
+
+	nextAgent, exists := agents[agentID]
+	if !exists {
+		return nil, &common.ExecutionError{
+			AgentID:   currentAgentID,
+			ErrorType: common.ErrorTypeValidation,
+			Err:       fmt.Errorf(ErrTargetAgentNotFound, agentID),
+		}
+	}
+	return nextAgent, nil
+}
+
 // ExecuteWorkflow executes the workflow starting from an entry agent
-func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, handler OutputHandler, signalRegistry *signal.SignalRegistry, apiKey string) (*common.AgentResponse, error) {
+// agents: map of all available agents for handoff lookup (can be nil if no handoffs needed)
+func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, handler OutputHandler, signalRegistry *signal.SignalRegistry, apiKey string, agents map[string]*common.Agent) (*common.AgentResponse, error) {
 	if entryAgent == nil {
 		return nil, fmt.Errorf("entry agent cannot be nil")
 	}
@@ -78,11 +87,12 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 		SignalRegistry: signalRegistry,
 	}
 
-	return executeAgent(ctx, execCtx, input, apiKey)
+	return executeAgent(ctx, execCtx, input, apiKey, agents)
 }
 
 // executeAgent executes the current agent and handles routing
-func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, apiKey string) (*common.AgentResponse, error) {
+// agents: map of all available agents for handoff lookup (can be nil)
+func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, apiKey string, agents map[string]*common.Agent) (*common.AgentResponse, error) {
 	if execCtx.RoundCount >= execCtx.MaxRounds {
 		return nil, fmt.Errorf("max rounds (%d) exceeded", execCtx.MaxRounds)
 	}
@@ -190,8 +200,23 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 			"routing_reason": routingDecision.Reason,
 		})
 
-		// TODO: Look up next agent by ID and continue execution
-		// For now, return (will be implemented in crew.go integration)
+		// Phase 5 Implementation: Look up next agent and continue execution
+		nextAgent, err := lookupNextAgent(agents, routingDecision.NextAgentID, execCtx.CurrentAgent.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if nextAgent != nil {
+			// Update execution context for next agent
+			execCtx.CurrentAgent = nextAgent
+			execCtx.HandoffCount++
+
+			// Recursively execute next agent with remaining input from response
+			// Use agent's response content as input for next agent
+			return executeAgent(ctx, execCtx, "", apiKey, agents)
+		}
+
+		// If agents map not provided, cannot continue (backward compatibility)
 		return response, nil
 	}
 
@@ -215,8 +240,22 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 			"routing_type": "handoff_target",
 		})
 
-		// TODO: Look up next agent by ID and continue execution
-		// For now, return response
+		// Phase 5 Implementation: Look up next agent and continue execution
+		nextAgent, err := lookupNextAgent(agents, nextAgentID, execCtx.CurrentAgent.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if nextAgent != nil {
+			// Update execution context for next agent
+			execCtx.CurrentAgent = nextAgent
+			execCtx.HandoffCount++
+
+			// Recursively execute next agent
+			return executeAgent(ctx, execCtx, "", apiKey, agents)
+		}
+
+		// If agents map not provided, cannot continue (backward compatibility)
 		return response, nil
 	}
 
@@ -246,27 +285,11 @@ func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input 
 		SignalRegistry: signalRegistry,
 	}
 
-	_, err := executeAgent(ctx, execCtx, input, apiKey)
+	_, err := executeAgent(ctx, execCtx, input, apiKey, nil)
 	if err != nil {
 		_ = handler.HandleError(err)
 		return err
 	}
 
 	return nil
-}
-
-// ExecuteAgentWithMetrics executes an agent and updates metrics
-func ExecuteAgentWithMetrics(ctx context.Context, agentObj *common.Agent, input string, history []common.Message, apiKey string) (*common.AgentResponse, error) {
-	if agentObj == nil {
-		return nil, fmt.Errorf("agent cannot be nil")
-	}
-
-	startTime := time.Now()
-	response, err := agent.ExecuteAgent(ctx, agentObj, input, history, apiKey)
-	duration := time.Since(startTime)
-
-	// Update metrics (placeholder for full implementation)
-	_ = duration
-
-	return response, err
 }

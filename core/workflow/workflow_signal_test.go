@@ -34,8 +34,8 @@ func TestExecuteWorkflowWithSignalRegistry(t *testing.T) {
 		recover()
 	}()
 
-	// Function signature verification - accepts signalRegistry parameter
-	ExecuteWorkflow(context.Background(), agent, testInput, []common.Message{}, handler, registry, testKey)
+	// Function signature verification - accepts signalRegistry and agents parameters
+	ExecuteWorkflow(context.Background(), agent, testInput, []common.Message{}, handler, registry, testKey, nil)
 }
 
 // TestRouteBySignalFound verifies signal routing finds signal

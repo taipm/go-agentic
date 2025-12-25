@@ -88,6 +88,7 @@ func (ef *ExecutionFlow) ExecuteWorkflowStep(
 		handler,
 		ef.SignalRegistry,
 		apiKey,
+		nil, // agents map - handled by higher-level HandleAgentResponse
 	)
 
 	// Record metrics

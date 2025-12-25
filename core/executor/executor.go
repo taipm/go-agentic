@@ -97,7 +97,7 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 
 	// Execute workflow
 	history := []common.Message{}
-	response, err := workflow.ExecuteWorkflow(ctx, entryAgent, input, history, handler, nil, e.apiKey)
+	response, err := workflow.ExecuteWorkflow(ctx, entryAgent, input, history, handler, nil, e.apiKey, nil)
 
 	if err != nil {
 		if e.verbose {
