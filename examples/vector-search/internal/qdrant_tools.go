@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	agenticcore "github.com/taipm/go-agentic/core"
+	agentictools "github.com/taipm/go-agentic/core/tools"
 	"github.com/sashabaranov/go-openai"
 )
 
@@ -83,31 +83,20 @@ func createGenerateEmbeddingTool(openaiKey string) *agenticcore.Tool {
 // searchCollectionHandler performs vector similarity search using Qdrant REST API
 func searchCollectionHandler(qc *QdrantClient) func(context.Context, map[string]interface{}) (string, error) {
 	return func(ctx context.Context, args map[string]interface{}) (string, error) {
-		collectionName, ok := args["collection_name"].(string)
-		if !ok {
-			return "", fmt.Errorf("collection_name parameter required and must be a string")
+		pe := agentictools.NewParameterExtractor(args).WithTool("SearchCollection")
+		collectionName := pe.RequireString("collection_name")
+		queryVectorJSON := pe.RequireString("query_vector")
+		limit := pe.OptionalInt("limit", 5)
+
+		if err := pe.Errors(); err != nil {
+			return "", err
 		}
 
 		// Parse query vector (JSON array)
-		queryVectorJSON, ok := args["query_vector"].(string)
-		if !ok {
-			return "", fmt.Errorf("query_vector parameter required and must be a JSON string")
-		}
-
 		var queryVector []float32
 		err := json.Unmarshal([]byte(queryVectorJSON), &queryVector)
 		if err != nil {
 			return "", fmt.Errorf("failed to parse query_vector: %w", err)
-		}
-
-		// Get limit (optional, default 5)
-		limit := 5
-		if limitVal, ok := args["limit"]; ok {
-			if limitStr, ok := limitVal.(string); ok {
-				if l, err := strconv.Atoi(limitStr); err == nil {
-					limit = l
-				}
-			}
 		}
 
 		// Call Qdrant REST API for real search results
@@ -218,9 +207,11 @@ func createListCollectionsTool(qc *QdrantClient) *agenticcore.Tool {
 // getCollectionInfoHandler gets detailed info about a collection
 func getCollectionInfoHandler(qc *QdrantClient) func(context.Context, map[string]interface{}) (string, error) {
 	return func(ctx context.Context, args map[string]interface{}) (string, error) {
-		collectionName, ok := args["collection_name"].(string)
-		if !ok {
-			return "", fmt.Errorf("collection_name parameter required and must be a string")
+		pe := agentictools.NewParameterExtractor(args).WithTool("GetCollectionInfo")
+		collectionName := pe.RequireString("collection_name")
+
+		if err := pe.Errors(); err != nil {
+			return "", err
 		}
 
 		info, err := qc.GetCollectionInfo(ctx, collectionName)

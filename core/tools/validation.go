@@ -2,160 +2,227 @@ package tools
 
 import (
 	"fmt"
-
-	"github.com/taipm/go-agentic/core/common"
+	"regexp"
+	"strings"
 )
 
-// ValidateToolSchema performs comprehensive validation of a tool definition.
-// Checks:
-// - Name is not empty
-// - Description is not empty
-// - Handler function is not nil
-// - Parameters structure (if defined) is valid
-func ValidateToolSchema(tool *common.Tool) error {
-	if tool == nil {
-		return fmt.Errorf("tool cannot be nil")
-	}
+// ValidationRule định nghĩa một rule validation có thể tái sử dụng
+type ValidationRule struct {
+	Name        string
+	Description string
+	Validate    func(interface{}) error
+}
 
-	if tool.Name == "" {
-		return fmt.Errorf("tool name cannot be empty")
-	}
+// ValidationRules quản lý tập hợp các validation rules
+type ValidationRules struct {
+	rules map[string]*ValidationRule
+}
 
-	if tool.Description == "" {
-		return fmt.Errorf("tool %q: description cannot be empty", tool.Name)
+// NewValidationRules tạo một tập hợp validation rules rỗng
+func NewValidationRules() *ValidationRules {
+	return &ValidationRules{
+		rules: make(map[string]*ValidationRule),
 	}
+}
 
-	if tool.Func == nil {
-		return fmt.Errorf("tool %q: handler function cannot be nil", tool.Name)
+// AddRule thêm một validation rule
+func (vr *ValidationRules) AddRule(name string, validator func(interface{}) error) *ValidationRules {
+	vr.rules[name] = &ValidationRule{
+		Name:     name,
+		Validate: validator,
 	}
+	return vr
+}
 
-	// Validate Parameters structure if defined
-	if tool.Parameters != nil {
-		params, ok := tool.Parameters.(map[string]interface{})
-		if ok {
-			if err := validateParameters(tool.Name, params); err != nil {
+// AddRuleWithDescription thêm rule với description
+func (vr *ValidationRules) AddRuleWithDescription(name, description string, validator func(interface{}) error) *ValidationRules {
+	vr.rules[name] = &ValidationRule{
+		Name:        name,
+		Description: description,
+		Validate:    validator,
+	}
+	return vr
+}
+
+// GetRule lấy một validation rule
+func (vr *ValidationRules) GetRule(name string) *ValidationRule {
+	return vr.rules[name]
+}
+
+// HasRule kiểm tra rule có tồn tại không
+func (vr *ValidationRules) HasRule(name string) bool {
+	_, exists := vr.rules[name]
+	return exists
+}
+
+// ============================================================================
+// BUILT-IN VALIDATORS
+// ============================================================================
+
+// NotEmpty kiểm tra string không rỗng
+func NotEmpty(v interface{}) error {
+	if s, ok := v.(string); ok {
+		if strings.TrimSpace(s) == "" {
+			return fmt.Errorf("cannot be empty")
+		}
+		return nil
+	}
+	return fmt.Errorf("must be a string")
+}
+
+// Email kiểm tra format email
+func Email(v interface{}) error {
+	if s, ok := v.(string); ok {
+		// Simple email regex
+		emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+		if !emailRegex.MatchString(s) {
+			return fmt.Errorf("invalid email format")
+		}
+		return nil
+	}
+	return fmt.Errorf("must be a string")
+}
+
+// URLValidator kiểm tra format URL (validator function)
+// Lưu ý: URL type định nghĩa trong type_converters.go, đây là validator
+func URLValidator(v interface{}) error {
+	if s, ok := v.(string); ok {
+		urlRegex := regexp.MustCompile(`^https?://`)
+		if !urlRegex.MatchString(s) {
+			return fmt.Errorf("must be a valid URL (http:// or https://)")
+		}
+		return nil
+	}
+	return fmt.Errorf("must be a string")
+}
+
+// Phone kiểm tra format phone (10-15 digits hoặc +)
+func Phone(v interface{}) error {
+	if s, ok := v.(string); ok {
+		phoneRegex := regexp.MustCompile(`^[+]?[0-9]{10,15}$`)
+		if !phoneRegex.MatchString(s) {
+			return fmt.Errorf("invalid phone format (10-15 digits)")
+		}
+		return nil
+	}
+	return fmt.Errorf("must be a string")
+}
+
+// MinLength kiểm tra độ dài tối thiểu
+func MinLength(min int) func(interface{}) error {
+	return func(v interface{}) error {
+		if s, ok := v.(string); ok {
+			if len(s) < min {
+				return fmt.Errorf("must be at least %d characters", min)
+			}
+			return nil
+		}
+		return fmt.Errorf("must be a string")
+	}
+}
+
+// MaxLength kiểm tra độ dài tối đa
+func MaxLength(max int) func(interface{}) error {
+	return func(v interface{}) error {
+		if s, ok := v.(string); ok {
+			if len(s) > max {
+				return fmt.Errorf("must be at most %d characters", max)
+			}
+			return nil
+		}
+		return fmt.Errorf("must be a string")
+	}
+}
+
+// Range kiểm tra số nằm trong khoảng
+func Range(min, max int) func(interface{}) error {
+	return func(v interface{}) error {
+		i, err := CoerceToInt(v)
+		if err != nil {
+			return fmt.Errorf("must be an integer")
+		}
+		if i < min || i > max {
+			return fmt.Errorf("must be between %d and %d", min, max)
+		}
+		return nil
+	}
+}
+
+// MinValue kiểm tra giá trị tối thiểu
+func MinValue(min int) func(interface{}) error {
+	return func(v interface{}) error {
+		i, err := CoerceToInt(v)
+		if err != nil {
+			return fmt.Errorf("must be an integer")
+		}
+		if i < min {
+			return fmt.Errorf("must be at least %d", min)
+		}
+		return nil
+	}
+}
+
+// MaxValue kiểm tra giá trị tối đa
+func MaxValue(max int) func(interface{}) error {
+	return func(v interface{}) error {
+		i, err := CoerceToInt(v)
+		if err != nil {
+			return fmt.Errorf("must be an integer")
+		}
+		if i > max {
+			return fmt.Errorf("must be at most %d", max)
+		}
+		return nil
+	}
+}
+
+// OneOf kiểm tra giá trị nằm trong danh sách cho phép
+func OneOf(allowed ...string) func(interface{}) error {
+	return func(v interface{}) error {
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("must be a string")
+		}
+		for _, a := range allowed {
+			if s == a {
+				return nil
+			}
+		}
+		return fmt.Errorf("must be one of: %v", allowed)
+	}
+}
+
+// Regex kiểm tra format theo regex pattern
+func Regex(pattern, description string) func(interface{}) error {
+	return func(v interface{}) error {
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("must be a string")
+		}
+		regex, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("invalid pattern: %w", err)
+		}
+		if !regex.MatchString(s) {
+			return fmt.Errorf("invalid format: %s", description)
+		}
+		return nil
+	}
+}
+
+// Custom tạo validator custom từ function
+func Custom(validator func(interface{}) error) func(interface{}) error {
+	return validator
+}
+
+// Combine gộp nhiều validators (tất cả phải pass)
+func Combine(validators ...func(interface{}) error) func(interface{}) error {
+	return func(v interface{}) error {
+		for _, validate := range validators {
+			if err := validate(v); err != nil {
 				return err
 			}
 		}
-	}
-
-	return nil
-}
-
-// validateParameters validates the structure of a tool's Parameters field.
-func validateParameters(toolName string, params map[string]interface{}) error {
-	// Check that Parameters has a "type" field
-	paramType, exists := params["type"].(string)
-	if !exists {
-		return fmt.Errorf("tool %q: Parameters.type field missing (should be 'object')", toolName)
-	}
-
-	if paramType != "object" {
-		return fmt.Errorf(
-			"tool %q: Parameters.type must be 'object', got %q",
-			toolName, paramType,
-		)
-	}
-
-	// Get properties if defined
-	props, hasProps := params["properties"].(map[string]interface{})
-	if !hasProps {
-		// No properties defined - that's OK for tools with no parameters
 		return nil
 	}
-
-	// If there are required fields, validate them
-	required, hasRequired := params["required"].([]interface{})
-	if hasRequired {
-		for _, field := range required {
-			fieldName, ok := field.(string)
-			if !ok {
-				return fmt.Errorf(
-					"tool %q: 'required' field must contain strings, got %T",
-					toolName, field,
-				)
-			}
-
-			// Verify required field exists in properties
-			if _, exists := props[fieldName]; !exists {
-				return fmt.Errorf(
-					"tool %q: required parameter %q not found in properties",
-					toolName, fieldName,
-				)
-			}
-		}
-	}
-
-	return nil
-}
-
-// ValidateToolCallArgs validates that provided arguments match the tool's schema.
-// Checks:
-// - All required parameters are provided
-// - Parameter types match schema (basic type checking)
-func ValidateToolCallArgs(tool *common.Tool, args map[string]interface{}) error {
-	if tool == nil || tool.Parameters == nil {
-		// No schema to validate against
-		return nil
-	}
-
-	// Convert Parameters to map[string]interface{}
-	params, ok := tool.Parameters.(map[string]interface{})
-	if !ok {
-		// Parameters is not a map, skip validation
-		return nil
-	}
-
-	// Get required fields from schema
-	required, hasRequired := params["required"].([]interface{})
-	if !hasRequired {
-		// No required fields specified
-		return nil
-	}
-
-	// Verify all required arguments are provided
-	for _, field := range required {
-		fieldName, _ := field.(string)
-		if _, exists := args[fieldName]; !exists {
-			return fmt.Errorf(
-				"tool %q: required parameter %q is missing",
-				tool.Name, fieldName,
-			)
-		}
-	}
-
-	return nil
-}
-
-// ValidateToolMap validates all tools in a map.
-// Returns first error found, or nil if all tools are valid.
-func ValidateToolMap(toolsMap map[string]*common.Tool) error {
-	for name, tool := range toolsMap {
-		// Check key matches tool name
-		if name != tool.Name {
-			return fmt.Errorf(
-				"tool map key %q does not match tool.Name %q",
-				name, tool.Name,
-			)
-		}
-
-		// Validate the tool
-		if err := ValidateToolSchema(tool); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ValidateToolReferences validates that all tool references in a list exist in the tool map.
-// Useful for validating that agents reference only defined tools.
-func ValidateToolReferences(toolsMap map[string]*common.Tool, toolNames []string) error {
-	for _, toolName := range toolNames {
-		if _, exists := toolsMap[toolName]; !exists {
-			return fmt.Errorf("referenced tool %q not found in tool map", toolName)
-		}
-	}
-
-	return nil
 }

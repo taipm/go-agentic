@@ -369,3 +369,215 @@ func TestOptionalGetFloat(t *testing.T) {
 		})
 	}
 }
+
+// TestCoerceToStringSlice tests string slice coercion
+func TestCoerceToStringSlice(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     interface{}
+		expected  []string
+		wantError bool
+	}{
+		{
+			name:     "string_slice_direct",
+			input:    []string{"a", "b", "c"},
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "interface_slice",
+			input:    []interface{}{"x", "y", "z"},
+			expected: []string{"x", "y", "z"},
+		},
+		{
+			name:     "single_string",
+			input:    "hello",
+			expected: []string{"hello"},
+		},
+		{
+			name:     "nil_input",
+			input:    nil,
+			expected: []string{},
+		},
+		{
+			name:     "interface_slice_with_int",
+			input:    []interface{}{"a", 123, "c"},
+			expected: []string{"a", "123", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := CoerceToStringSlice(tt.input)
+			if (err != nil) != tt.wantError {
+				t.Errorf("Expected error=%v, got %v", tt.wantError, err)
+			}
+			if !tt.wantError {
+				if len(result) != len(tt.expected) {
+					t.Errorf("Expected length %d, got %d", len(tt.expected), len(result))
+				}
+				for i, v := range result {
+					if v != tt.expected[i] {
+						t.Errorf("Element %d: expected %q, got %q", i, tt.expected[i], v)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestCoerceToIntSlice tests int slice coercion
+func TestCoerceToIntSlice(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     interface{}
+		expected  []int
+		wantError bool
+	}{
+		{
+			name:     "int_slice_direct",
+			input:    []int{1, 2, 3},
+			expected: []int{1, 2, 3},
+		},
+		{
+			name:     "interface_slice",
+			input:    []interface{}{1, 2, 3},
+			expected: []int{1, 2, 3},
+		},
+		{
+			name:     "interface_slice_with_floats",
+			input:    []interface{}{1.0, 2.0, 3.0},
+			expected: []int{1, 2, 3},
+		},
+		{
+			name:     "single_int",
+			input:    42,
+			expected: []int{42},
+		},
+		{
+			name:     "nil_input",
+			input:    nil,
+			expected: []int{},
+		},
+		{
+			name:      "invalid_type_in_slice",
+			input:     []interface{}{1, "not_int", 3},
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := CoerceToIntSlice(tt.input)
+			if (err != nil) != tt.wantError {
+				t.Errorf("Expected error=%v, got %v", tt.wantError, err)
+			}
+			if !tt.wantError {
+				if len(result) != len(tt.expected) {
+					t.Errorf("Expected length %d, got %d", len(tt.expected), len(result))
+				}
+				for i, v := range result {
+					if v != tt.expected[i] {
+						t.Errorf("Element %d: expected %d, got %d", i, tt.expected[i], v)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestCoerceToFloatSlice tests float slice coercion
+func TestCoerceToFloatSlice(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     interface{}
+		expected  []float64
+		wantError bool
+	}{
+		{
+			name:     "float_slice_direct",
+			input:    []float64{1.1, 2.2, 3.3},
+			expected: []float64{1.1, 2.2, 3.3},
+		},
+		{
+			name:     "interface_slice",
+			input:    []interface{}{1.1, 2.2, 3.3},
+			expected: []float64{1.1, 2.2, 3.3},
+		},
+		{
+			name:     "interface_slice_with_ints",
+			input:    []interface{}{1, 2, 3},
+			expected: []float64{1.0, 2.0, 3.0},
+		},
+		{
+			name:     "single_float",
+			input:    3.14,
+			expected: []float64{3.14},
+		},
+		{
+			name:     "nil_input",
+			input:    nil,
+			expected: []float64{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := CoerceToFloatSlice(tt.input)
+			if (err != nil) != tt.wantError {
+				t.Errorf("Expected error=%v, got %v", tt.wantError, err)
+			}
+			if !tt.wantError {
+				if len(result) != len(tt.expected) {
+					t.Errorf("Expected length %d, got %d", len(tt.expected), len(result))
+				}
+				for i, v := range result {
+					if v != tt.expected[i] {
+						t.Errorf("Element %d: expected %f, got %f", i, tt.expected[i], v)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestCoerceFromJSON tests JSON unmarshaling
+func TestCoerceFromJSON(t *testing.T) {
+	tests := []struct {
+		name      string
+		jsonStr   string
+		target    interface{}
+		wantError bool
+	}{
+		{
+			name:    "unmarshal_object",
+			jsonStr: `{"name":"John","age":30}`,
+			target:  &map[string]interface{}{},
+		},
+		{
+			name:    "unmarshal_array",
+			jsonStr: `[1,2,3]`,
+			target:  &[]int{},
+		},
+		{
+			name:      "empty_string",
+			jsonStr:   "",
+			target:    &map[string]interface{}{},
+			wantError: true,
+		},
+		{
+			name:      "invalid_json",
+			jsonStr:   `{invalid}`,
+			target:    &map[string]interface{}{},
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CoerceFromJSON(tt.jsonStr, tt.target)
+			if (err != nil) != tt.wantError {
+				t.Errorf("Expected error=%v, got %v", tt.wantError, err)
+			}
+		})
+	}
+}

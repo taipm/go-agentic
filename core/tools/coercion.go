@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -217,4 +218,101 @@ func OptionalGetFloat(args map[string]interface{}, key string, defaultVal float6
 		return defaultVal
 	}
 	return result
+}
+
+// CoerceToStringSlice converts a value to a []string.
+// Handles: []interface{}, []string, single string
+func CoerceToStringSlice(v interface{}) ([]string, error) {
+	if v == nil {
+		return []string{}, nil
+	}
+
+	switch val := v.(type) {
+	case []string:
+		return val, nil
+	case string:
+		// Single string becomes single-element slice
+		return []string{val}, nil
+	case []interface{}:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			str, err := CoerceToString(item)
+			if err != nil {
+				return nil, fmt.Errorf("failed to coerce array element to string: %w", err)
+			}
+			result = append(result, str)
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("cannot coerce %T to []string", v)
+	}
+}
+
+// CoerceToIntSlice converts a value to a []int.
+// Handles: []interface{}, []int, single int
+func CoerceToIntSlice(v interface{}) ([]int, error) {
+	if v == nil {
+		return []int{}, nil
+	}
+
+	switch val := v.(type) {
+	case []int:
+		return val, nil
+	case []interface{}:
+		result := make([]int, 0, len(val))
+		for _, item := range val {
+			i, err := CoerceToInt(item)
+			if err != nil {
+				return nil, fmt.Errorf("failed to coerce array element to int: %w", err)
+			}
+			result = append(result, i)
+		}
+		return result, nil
+	default:
+		// Try to coerce single value
+		i, err := CoerceToInt(val)
+		if err != nil {
+			return nil, fmt.Errorf("cannot coerce %T to []int: %w", v, err)
+		}
+		return []int{i}, nil
+	}
+}
+
+// CoerceToFloatSlice converts a value to a []float64.
+// Handles: []interface{}, []float64, []int, single number
+func CoerceToFloatSlice(v interface{}) ([]float64, error) {
+	if v == nil {
+		return []float64{}, nil
+	}
+
+	switch val := v.(type) {
+	case []float64:
+		return val, nil
+	case []interface{}:
+		result := make([]float64, 0, len(val))
+		for _, item := range val {
+			f, err := CoerceToFloat(item)
+			if err != nil {
+				return nil, fmt.Errorf("failed to coerce array element to float: %w", err)
+			}
+			result = append(result, f)
+		}
+		return result, nil
+	default:
+		// Try to coerce single value
+		f, err := CoerceToFloat(val)
+		if err != nil {
+			return nil, fmt.Errorf("cannot coerce %T to []float64: %w", v, err)
+		}
+		return []float64{f}, nil
+	}
+}
+
+// CoerceFromJSON unmarshals a JSON string into a target type.
+// Useful for complex nested structures passed as JSON strings.
+func CoerceFromJSON(jsonStr string, target interface{}) error {
+	if jsonStr == "" {
+		return fmt.Errorf("empty JSON string")
+	}
+	return json.Unmarshal([]byte(jsonStr), target)
 }
