@@ -161,18 +161,25 @@ func (sr *SignalRegistry) ProcessSignalWithPriority(ctx context.Context, signal 
 	return sr.handler.ProcessSignalWithPriority(ctx, signal, priority)
 }
 
-// recordAgentSignal records signal emission by agent
-func (sr *SignalRegistry) recordAgentSignal(agentID, signalName string) {
-	sr.mu.Lock()
-	defer sr.mu.Unlock()
-
+// getOrCreateAgentInfo retrieves or creates agent signal info
+func (sr *SignalRegistry) getOrCreateAgentInfo(agentID string) AgentSignalInfo {
 	info, exists := sr.agentRegistry[agentID]
 	if !exists {
 		info = AgentSignalInfo{
 			AgentID:        agentID,
 			EmittedSignals: []string{},
+			AllowedSignals: []string{},
 		}
 	}
+	return info
+}
+
+// recordAgentSignal records signal emission by agent
+func (sr *SignalRegistry) recordAgentSignal(agentID, signalName string) {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+
+	info := sr.getOrCreateAgentInfo(agentID)
 
 	info.EmittedSignals = append(info.EmittedSignals, signalName)
 	info.LastSignalTime = time.Now()
@@ -213,14 +220,7 @@ func (sr *SignalRegistry) AllowAgentSignal(agentID, signalName string) error {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	info, exists := sr.agentRegistry[agentID]
-	if !exists {
-		info = AgentSignalInfo{
-			AgentID:        agentID,
-			AllowedSignals: []string{},
-		}
-	}
-
+	info := sr.getOrCreateAgentInfo(agentID)
 	info.AllowedSignals = append(info.AllowedSignals, signalName)
 	sr.agentRegistry[agentID] = info
 

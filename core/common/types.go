@@ -522,19 +522,20 @@ type HardcodedDefaults struct {
 // These methods support the agent_execution.go cost/quota tracking system
 // ============================================================================
 
+// estimateTokens calculates token count (assumes non-nil agent)
+func (a *Agent) estimateTokens(content string) int {
+	charCount := len(content)
+	estimatedTokens := (charCount + 3) / 4 // Round up division
+	return max(estimatedTokens, 1)
+}
+
 // EstimateTokens estimates token count for content
 // Uses rough heuristic: ~4 characters per token (varies by model)
 func (a *Agent) EstimateTokens(content string) int {
 	if a == nil {
 		return 0
 	}
-	// Rough estimation: 1 token ≈ 4 characters (varies by model and encoding)
-	charCount := len(content)
-	estimatedTokens := (charCount + 3) / 4 // Round up division
-	if estimatedTokens < 1 {
-		estimatedTokens = 1
-	}
-	return estimatedTokens
+	return a.estimateTokens(content)
 }
 
 // CheckCostLimits validates cost limits before execution

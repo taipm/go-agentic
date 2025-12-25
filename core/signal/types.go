@@ -36,6 +36,13 @@ type SignalMatch struct {
 	MatchedAt    time.Time
 }
 
+// Signal configuration constants
+const (
+	DefaultSignalTimeout       = 30 * time.Second
+	DefaultSignalBufferSize    = 100
+	DefaultMaxSignalsPerAgent  = 10
+)
+
 // SignalConfig defines configuration for signal handling
 type SignalConfig struct {
 	Enabled            bool
@@ -49,9 +56,9 @@ type SignalConfig struct {
 func DefaultSignalConfig() *SignalConfig {
 	return &SignalConfig{
 		Enabled:            true,
-		Timeout:            time.Second * 30,
-		BufferSize:         100,
-		MaxSignalsPerAgent: 10,
+		Timeout:            DefaultSignalTimeout,
+		BufferSize:         DefaultSignalBufferSize,
+		MaxSignalsPerAgent: DefaultMaxSignalsPerAgent,
 		PersistSignals:     false,
 	}
 }

@@ -11,6 +11,12 @@ import (
 	"github.com/taipm/go-agentic/core/signal"
 )
 
+// Workflow execution constants
+const (
+	DefaultMaxHandoffs = 5
+	DefaultMaxRounds   = 10
+)
+
 // ExecutionContext holds the state during workflow execution
 type ExecutionContext struct {
 	CurrentAgent    *common.Agent
@@ -24,6 +30,17 @@ type ExecutionContext struct {
 	TotalTime       time.Duration
 	handler         OutputHandler
 	SignalRegistry  *signal.SignalRegistry
+}
+
+// createMetadata creates a metadata map with common fields
+func createMetadata(pairs ...interface{}) map[string]interface{} {
+	metadata := make(map[string]interface{})
+	for i := 0; i < len(pairs)-1; i += 2 {
+		if key, ok := pairs[i].(string); ok {
+			metadata[key] = pairs[i+1]
+		}
+	}
+	return metadata
 }
 
 // emitSignal emits a signal with the given name and metadata
@@ -54,8 +71,8 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 	execCtx := &ExecutionContext{
 		CurrentAgent:   entryAgent,
 		History:        history,
-		MaxHandoffs:    5,  // Default max handoffs
-		MaxRounds:      10, // Default max rounds
+		MaxHandoffs:    DefaultMaxHandoffs,
+		MaxRounds:      DefaultMaxRounds,
 		StartTime:      time.Now(),
 		handler:        handler,
 		SignalRegistry: signalRegistry,
@@ -130,11 +147,19 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 			}
 
 			// Emit signal
-			_ = execCtx.SignalRegistry.Emit(sig)
+			if err := execCtx.SignalRegistry.Emit(sig); err != nil {
+				fmt.Printf("[WARN] Failed to emit signal '%s': %v\n", sigName, err)
+				continue
+			}
 
 			// Process signal for routing decision
 			decision, err := execCtx.SignalRegistry.ProcessSignal(ctx, sig)
-			if err == nil && decision != nil {
+			if err != nil {
+				fmt.Printf("[WARN] Failed to process signal '%s': %v\n", sigName, err)
+				continue
+			}
+
+			if decision != nil {
 				routingDecision = decision
 
 				// If terminal signal, stop execution
@@ -214,8 +239,8 @@ func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input 
 	execCtx := &ExecutionContext{
 		CurrentAgent:   entryAgent,
 		History:        history,
-		MaxHandoffs:    5,
-		MaxRounds:      10,
+		MaxHandoffs:    DefaultMaxHandoffs,
+		MaxRounds:      DefaultMaxRounds,
 		StartTime:      time.Now(),
 		handler:        handler,
 		SignalRegistry: signalRegistry,
