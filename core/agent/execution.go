@@ -16,6 +16,30 @@ import (
 // providerFactory is the global LLM provider factory instance
 var providerFactory = providers.GetGlobalFactory()
 
+// ExtractSignalsFromContent extracts signal markers from agent response text
+// Signals are markers like [QUESTION], [ANSWER], [END_EXAM] etc.
+func ExtractSignalsFromContent(content string) []string {
+	var signals []string
+
+	// Define known signal patterns to extract
+	signalPatterns := []string{
+		"[QUESTION]",
+		"[ANSWER]",
+		"[END_EXAM]",
+		"[OK]",
+		"[DONE]",
+	}
+
+	// Check each signal pattern in content
+	for _, pattern := range signalPatterns {
+		if strings.Contains(content, pattern) {
+			signals = append(signals, pattern)
+		}
+	}
+
+	return signals
+}
+
 // ExecuteAgent runs an agent and returns its response
 // Uses provider factory to support multiple LLM backends (OpenAI, Ollama, etc.)
 // Supports fallback to backup LLM model if primary fails
@@ -121,11 +145,15 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 		return nil, err
 	}
 
+	// Extract signals from response content
+	signals := ExtractSignalsFromContent(response.Content)
+
 	return &common.AgentResponse{
 		AgentID:   agent.ID,
 		AgentName: agent.Name,
 		Content:   response.Content,
 		ToolCalls: ConvertToolCallsFromProvider(response.ToolCalls),
+		Signals:   signals,
 	}, nil
 }
 
