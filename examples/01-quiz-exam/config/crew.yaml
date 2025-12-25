@@ -15,34 +15,31 @@ agents:
   - reporter
 
 routing:
-  # Parallel routing: Teacher/Student -> [multiple targets]
+  # Signal-based routing: Direct agent targets (simplified for Phase 4)
   signals:
     teacher:
       - signal: "[QUESTION]"
-        target: parallel_question  # ✅ FIXED: Use parallel group to invoke student & reporter
+        target: student  # ✅ Route teacher's question to student
+      - signal: "[ANSWER]"
+        target: ""  # ✅ Teacher acknowledges answer, then checks if more questions needed
       - signal: "[END_EXAM]"
         target: ""  # ✅ Terminate workflow immediately when exam ends
     student:
+      - signal: "[QUESTION]"
+        target: ""  # ✅ Student acknowledges question, no further routing needed
       - signal: "[ANSWER]"
-        target: parallel_answer  # ✅ FIXED: Use parallel group to invoke teacher & reporter
+        target: teacher  # ✅ Route student's answer back to teacher
     reporter:
       - signal: "[OK]"
         target: ""  # Just acknowledge, don't route
+      - signal: "[QUESTION]"
+        target: ""  # ✅ Reporter acknowledges question
+      - signal: "[ANSWER]"
+        target: ""  # ✅ Reporter acknowledges answer
       - signal: "[DONE]"
         target: ""  # Terminate workflow
       - signal: "[END_EXAM]"
         target: ""  # ✅ Terminate if reporter emits end exam signal
-
-  # Parallel groups
-  parallel_groups:
-    parallel_question:  # ✅ FIXED: Triggered by Teacher's [QUESTION] signal
-      agents: [student, reporter]
-      wait_for_all: false
-      timeout_seconds: 30
-    parallel_answer:    # ✅ FIXED: Triggered by Student's [ANSWER] signal
-      agents: [teacher, reporter]
-      wait_for_all: false
-      timeout_seconds: 30
 
   agent_behaviors:
     teacher:

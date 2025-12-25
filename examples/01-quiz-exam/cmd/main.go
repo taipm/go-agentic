@@ -94,7 +94,13 @@ func runQuizExam(executor *agenticcore.CrewExecutor, quizState *internal.QuizSta
 
 	// Process events
 	currentAgent := ""
+	eventCount := 0
 	for event := range streamChan {
+		eventCount++
+
+		// Log all events for debugging
+		logEvent(eventCount, event)
+
 		switch event.Type {
 		case "agent_start":
 			if event.Agent != currentAgent {
@@ -118,11 +124,27 @@ func runQuizExam(executor *agenticcore.CrewExecutor, quizState *internal.QuizSta
 			// Tool result
 			// Already printed by the tool itself with formatting
 
+		case "signal":
+			// ✅ NEW: Log signal emissions
+			fmt.Printf("\n[SIGNAL] %s emitted: %s\n", event.Agent, event.Content)
+
+		case "routing":
+			// ✅ NEW: Log routing decisions
+			fmt.Printf("[ROUTING] Decision: %s → %s\n", event.Agent, event.Content)
+
 		case "error":
 			fmt.Printf("\n[LỖI] %s: %s\n", event.Agent, event.Content)
 
 		case "pause":
 			fmt.Printf("\n[TẠM DỪNG] %s\n", event.Content)
+
+		case "round_start":
+			// ✅ NEW: Log round progression
+			fmt.Printf("\n[ROUND %s] Started\n", event.Content)
+
+		case "round_end":
+			// ✅ NEW: Log round completion
+			fmt.Printf("[ROUND END] Round %s completed\n", event.Content)
 		}
 	}
 
@@ -138,6 +160,21 @@ func runQuizExam(executor *agenticcore.CrewExecutor, quizState *internal.QuizSta
 	fmt.Printf("Kết quả: %s\n", result["grade"])
 	fmt.Printf("\nBiên bản thi: %s\n", quizState.ReportPath)
 	fmt.Println()
+}
+
+// logEvent logs all events to stderr for debugging without mixing with stdout
+func logEvent(eventNum int, event *agenticcore.StreamEvent) {
+	// Write to stderr to separate debug logs from main output
+	fmt.Fprintf(os.Stderr, "[DEBUG %d] Type=%s Agent=%s Content=%s\n",
+		eventNum, event.Type, event.Agent, truncate(event.Content, 100))
+}
+
+// truncate truncates a string to max length
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // cleanResponse removes signal markers from response for cleaner output

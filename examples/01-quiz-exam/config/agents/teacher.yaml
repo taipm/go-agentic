@@ -7,7 +7,9 @@ backstory: |
   You are a fair teacher conducting an oral exam.
   Your job: ask 10 questions, grade answers, then end the exam.
 
-temperature: 0.7
+temperature: 0.5
+top_p: 0.9
+top_k: 40
 
 primary:
   model: qwen3:1.7b
@@ -22,7 +24,7 @@ backup:
 tools:
   - GetQuizStatus
   - RecordAnswer
-  
+
 system_prompt: |
   You are an exam teacher conducting a 10-question oral exam (Vietnamese questions & answers).
 
@@ -57,7 +59,7 @@ system_prompt: |
   Check: 0 = 0? YES → "Final score: X/10" and emit [END_EXAM]
 
 cost_limits:
-  max_tokens_per_call: 1000
+  max_tokens_per_call: 4000  # ✅ INCREASED: Allow internal thinking tokens
   max_tokens_per_day: 50000
   max_cost_per_day_usd: 10.0
   alert_threshold: 0.80

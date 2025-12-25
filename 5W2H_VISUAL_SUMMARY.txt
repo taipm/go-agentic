@@ -1,0 +1,285 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   5W2H ANALYSIS: SIGNAL ROUTING BUG                         ║
+║                        TEST PROVEN & DOCUMENTED                             ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─ WHAT ─────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ Signal-based routing is COMPLETELY NON-FUNCTIONAL                          │
+│                                                                              │
+│ EXPECTED:  Teacher → [QUESTION] → Student → [ANSWER] → Teacher → ...      │
+│ ACTUAL:    Teacher → [QUESTION] → (ignored) → STOP                         │
+│                                                                              │
+│ Impact: Quiz exam only executes first agent, Student never called           │
+│ Status: ✅ PROVEN BY TESTS (TestHandleAgentResponse_IgnoresSignalRouting)  │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHO ──────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ PRIMARY COMPONENTS IN BUG CHAIN:                                           │
+│                                                                              │
+│  1. ExecutionFlow (core/executor/workflow.go:12)                           │
+│     ├─ Missing: SignalRegistry field                                        │
+│     └─ Impact: Can't store registry                                         │
+│                                                                              │
+│  2. ExecuteWithCallbacks() (core/executor/workflow.go:185)                 │
+│     ├─ Missing: SignalRegistry parameter                                    │
+│     └─ Impact: Can't receive registry                                       │
+│                                                                              │
+│  3. ExecuteWorkflowStep() (core/executor/workflow.go:49)                   │
+│     ├─ Missing: SignalRegistry parameter                                    │
+│     └─ Impact: Can't accept registry from caller                            │
+│                                                                              │
+│  4. workflow.ExecuteWorkflow() (core/workflow/execution.go:30)             │
+│     ├─ Receives: nil (should be registry)                                   │
+│     └─ Impact: Signal processing impossible                                 │
+│                                                                              │
+│  5. workflow.executeAgent() (core/workflow/execution.go:128)               │
+│     ├─ Condition: if signalRegistry != nil { ... }                          │
+│     └─ Impact: Skipped when registry is nil ✗                              │
+│                                                                              │
+│  6. HandleAgentResponse() (core/executor/workflow.go:113)                  │
+│     ├─ Calls: DetermineNextAgent() (old API)                               │
+│     └─ Impact: Signals not checked                                          │
+│                                                                              │
+│  7. DetermineNextAgent() (core/workflow/routing.go:12)                     │
+│     ├─ Checks: IsTerminal + HandoffTargets only                            │
+│     └─ Impact: response.Signals completely ignored                          │
+│                                                                              │
+│ Status: ✅ IDENTIFIED (All 7 components causing bug)                       │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHERE ────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ BUG LOCATIONS IN SOURCE CODE:                                              │
+│                                                                              │
+│ File: core/executor/workflow.go                                             │
+│  ├─ Line 13:  ExecutionFlow struct (missing field)                          │
+│  ├─ Line 49:  ExecuteWorkflowStep() signature (missing param)               │
+│  ├─ Line 76:  workflow.ExecuteWorkflow(..., nil, ...) (passes nil)          │
+│  ├─ Line 113: HandleAgentResponse() (uses old API)                          │
+│  ├─ Line 124: DetermineNextAgent() call (wrong function)                    │
+│  └─ Line 185: ExecuteWithCallbacks() signature (missing param)              │
+│                                                                              │
+│ File: core/workflow/execution.go                                            │
+│  ├─ Line 128: if execCtx.SignalRegistry != nil { ... } (skipped)            │
+│  └─ Line 30:  ExecuteWorkflow() already has param ✓ (OK)                   │
+│                                                                              │
+│ File: core/workflow/routing.go                                              │
+│  └─ Line 12:  DetermineNextAgent() ignores signals                          │
+│                                                                              │
+│ Status: ✅ MAPPED (7 locations identified in 3 files)                      │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHEN ─────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ BUG TRIGGER TIMELINE:                                                       │
+│                                                                              │
+│ t=0.0s: ExecuteWithCallbacks() starts loop                                 │
+│         │                                                                    │
+│ t=0.1s: ├─ Round 1: ExecuteWorkflowStep() called                           │
+│         │          └─ Teacher agent executes ✓                              │
+│         │                                                                    │
+│ t=0.2s: │  Teacher emits signal "[QUESTION]" ✓                             │
+│         │  (But signalRegistry is nil in workflow layer)                    │
+│         │                                                                    │
+│ t=0.3s: │  HandleAgentResponse() called                                     │
+│         │  └─ DetermineNextAgent() returns IsTerminal=true ✗               │
+│         │                                                                    │
+│ t=0.4s: │  shouldContinue = false                                           │
+│         │                                                                    │
+│ t=0.5s: └─ if !shouldContinue { break } ✗                                  │
+│                                                                              │
+│ t=0.6s: ExecuteWithCallbacks() returns (ENDS)                              │
+│         Only 1 agent executed instead of continuing...                      │
+│                                                                              │
+│ Status: ✅ TRIGGERED (After first agent, before second agent)              │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHY ──────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ ROOT CAUSE: Architectural Design Flaw                                       │
+│                                                                              │
+│ TWO INCOMPATIBLE SYSTEMS COEXIST:                                          │
+│                                                                              │
+│ System A: Signal-Based Routing (NEW)                                       │
+│  ├─ SignalRegistry created ✓                                                │
+│  ├─ Handlers registered ✓                                                   │
+│  ├─ Signal emitted ✓                                                        │
+│  ├─ ProcessSignal() → routing decision ✓                                    │
+│  └─ PROBLEM: Never used ✗                                                   │
+│                                                                              │
+│ System B: Traditional Routing (OLD)                                         │
+│  ├─ IsTerminal status ✓                                                     │
+│  ├─ HandoffTargets ✓                                                        │
+│  ├─ DetermineNextAgent() ✓                                                  │
+│  └─ PROBLEM: Only this one called ✗                                         │
+│                                                                              │
+│ MISSING DATA FLOW:                                                          │
+│                                                                              │
+│  CrewExecutor.signalRegistry ──┐                                            │
+│                                │ (not passed)                               │
+│                                ↓                                            │
+│                          ExecutionFlow (no field) ──┐                       │
+│                                                     │ (missing param)       │
+│                                                     ↓                       │
+│                          ExecuteWithCallbacks() ─────┐                      │
+│                                                      │ (missing param)      │
+│                                                      ↓                      │
+│                          ExecuteWorkflowStep() ──────┐                      │
+│                                                      │ (passes nil)         │
+│                                                      ↓                      │
+│                    workflow.ExecuteWorkflow(nil) ────┐                      │
+│                                                      │ (receives nil)       │
+│                                                      ↓                      │
+│                      workflow.executeAgent(nil) ─────┐                      │
+│                                                      │ (registry is nil)    │
+│                                                      ↓                      │
+│              Signal handlers NOT invoked ────── ✗ BROKEN ✗                 │
+│                                                                              │
+│ Status: ✅ ANALYZED (Architectural flaw confirmed)                         │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ HOW ──────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ 7-STEP BUG PROPAGATION CHAIN:                                              │
+│                                                                              │
+│ STEP 1: ExecutionFlow missing SignalRegistry field
+│         File: core/executor/workflow.go:13
+│         Status: Cannot store registry ✗
+│                 │
+│                 ↓
+│ STEP 2: ExecuteWithCallbacks() missing SignalRegistry param
+│         File: core/executor/workflow.go:185
+│         Status: Cannot receive registry ✗
+│                 │
+│                 ↓
+│ STEP 3: ExecuteWorkflowStep() missing SignalRegistry param
+│         File: core/executor/workflow.go:49
+│         Status: Cannot accept from caller ✗
+│                 │
+│                 ↓
+│ STEP 4: ExecuteWorkflowStep() passes nil to workflow
+│         File: core/executor/workflow.go:76
+│         Code: workflow.ExecuteWorkflow(..., nil, ...)
+│         Status: Signal processing bypassed ✗
+│                 │
+│                 ↓
+│ STEP 5: workflow.executeAgent() can't emit (registry nil)
+│         File: core/workflow/execution.go:128
+│         Condition: if execCtx.SignalRegistry != nil { ... }
+│         Status: Block skipped when nil ✗
+│                 │
+│                 ↓
+│ STEP 6: HandleAgentResponse() uses old routing API
+│         File: core/executor/workflow.go:113
+│         Calls: DetermineNextAgent() (not DetermineNextAgentWithSignals)
+│         Status: Signals not checked ✗
+│                 │
+│                 ↓
+│ STEP 7: DetermineNextAgent() returns IsTerminal=true
+│         File: core/workflow/routing.go:12
+│         Problem: Doesn't check response.Signals
+│         Result: Loop breaks after first agent ✗
+│                 │
+│                 ↓
+│         WORKFLOW STOPS (only 1 agent executed)
+│
+│ Status: ✅ TRACED (All steps in fault chain identified)                   │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ HOW MANY ──────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│ CRITICAL ISSUES COUNTED: 7                                                 │
+│                                                                              │
+│ 1. ExecutionFlow missing field
+│    Severity: 🔴 CRITICAL
+│    Blocks: Registry storage
+│
+│ 2. ExecuteWithCallbacks missing param
+│    Severity: 🔴 CRITICAL
+│    Blocks: Registry reception
+│
+│ 3. ExecuteWorkflowStep missing param
+│    Severity: 🔴 CRITICAL
+│    Blocks: Registry acceptance
+│
+│ 4. ExecuteWorkflowStep passes nil
+│    Severity: 🔴 CRITICAL
+│    Blocks: Signal processing
+│
+│ 5. workflow.executeAgent skips on nil
+│    Severity: 🔴 CRITICAL
+│    Blocks: Signal emission
+│
+│ 6. HandleAgentResponse wrong API
+│    Severity: 🔴 CRITICAL
+│    Blocks: Signal awareness
+│
+│ 7. DetermineNextAgent ignores signals
+│    Severity: 🔴 CRITICAL
+│    Blocks: Signal routing decision
+│
+│ ALL 7 MUST BE FIXED TOGETHER
+│
+│ Status: ✅ COUNTED (7 critical issues, all interdependent)                │
+│                                                                              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                            TEST RESULTS                                     ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║ Test 1: TestHandleAgentResponse_IgnoresSignalRouting                      ║
+║         Status: 🔴 FAILED ✓ (Bug proven)                                   ║
+║         Result: shouldContinue=false (expected true)                       ║
+║                                                                              ║
+║ Test 2: TestQuizExamBugAnalysis                                            ║
+║         Status: 🔴 FAILED ✓ (Bug chain confirmed)                          ║
+║         Result: Signal routing non-functional                               ║
+║                                                                              ║
+║ Test 3: TestExecutionChainBugLocations                                     ║
+║         Status: 🔴 FAILED ✓ (7 locations identified)                       ║
+║         Result: All 7 bug locations mapped                                  ║
+║                                                                              ║
+║ Overall: 3/3 FAILED (As expected - bug is proven)                          ║
+║                                                                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                          REQUIRED FIXES                                     ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║ Fix 1: Add SignalRegistry field to ExecutionFlow struct                    ║
+║ Fix 2: Add SignalRegistry param to ExecuteWithCallbacks()                  ║
+║ Fix 3: Add SignalRegistry param to ExecuteWorkflowStep()                   ║
+║ Fix 4: Pass SignalRegistry instead of nil to workflow                      ║
+║ Fix 5: Update HandleAgentResponse() to use WithSignals() API               ║
+║ Fix 6: Use DetermineNextAgentWithSignals() not DetermineNextAgent()        ║
+║ Fix 7: (Verification) Run tests again - should all PASS                    ║
+║                                                                              ║
+║ Difficulty: MEDIUM (Architectural change, but straightforward)             ║
+║ Impact: HIGH (Unblocks all multi-agent orchestration)                      ║
+║ Time: ~2-3 hours for experienced developer                                 ║
+║                                                                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+DOCUMENTATION GENERATED:
+✅ BUG_REPORT_5W2H_ANALYSIS.md       (Complete analysis, 400+ lines)
+✅ TEST_EXECUTION_SUMMARY.md          (Test results, 300+ lines)
+✅ 5W2H_VISUAL_SUMMARY.txt            (This file, visual format)
+✅ core/executor/workflow_signal_test.go (3 test cases, 189 lines)
+
+VERIFICATION:
+Run: go test -v ./executor -run "TestHandleAgentResponse_IgnoresSignalRouting|TestQuizExamBugAnalysis|TestExecutionChainBugLocations"
+Expected: 3/3 FAILED (bug confirmed)
+After fix: 3/3 PASSED (bug resolved)
+
+Status: ✅ BUG THOROUGHLY ANALYZED AND PROVEN
+Ready for: Implementation of 7 fixes

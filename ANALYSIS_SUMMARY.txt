@@ -1,0 +1,232 @@
+═══════════════════════════════════════════════════════════════════════════════
+ANALYSIS SUMMARY: core/metrics.go
+═══════════════════════════════════════════════════════════════════════════════
+
+Ngày Phân Tích: 2025-12-25
+Phiên Bản Package: crewai
+File Chính: core/metrics.go (483 lines)
+
+═══════════════════════════════════════════════════════════════════════════════
+KEY FINDINGS
+═══════════════════════════════════════════════════════════════════════════════
+
+🔴 CRITICAL ISSUES (3)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. DUPLICATE COST TRACKING
+   Location: metrics.go:244 + common/types.go:668
+   Impact: Two separate systems tracking TotalTokens & cost
+   Severity: CRITICAL
+   Fix: Consolidate to single source (metrics.go)
+
+2. DUPLICATE MEMORY TRACKING
+   Location: metrics.go:340 + common/types.go:690
+   Impact: System tracks bytes, Agent tracks MB; no average ở system level
+   Severity: CRITICAL
+   Fix: Consolidate + add average calculation
+
+3. DUPLICATE PERFORMANCE TRACKING
+   Location: metrics.go:181 + common/types.go:725
+   Impact: ExecutionCount & Success/Error tracked twice
+   Severity: CRITICAL
+   Fix: Keep metrics.go as source of truth
+
+⚠️ HIGH PRIORITY ISSUES (4)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. DEAD CODE: RecordToolExecution()
+   Location: metrics.go:109-178
+   Status: NOT CALLED ANYWHERE
+   Lines: 70 lines of dead code
+   Fix: DELETE
+
+5. BUG: Wrong Average Memory Calculation
+   Location: common/types.go:711
+   Formula: PeakMemoryMB * CallCount / CallCount = PeakMemoryMB (WRONG!)
+   Should: Sum of all memory / number of calls
+   Fix: Track TotalMemoryMB + recalculate
+
+6. BUG: AverageCallDuration Overwrites
+   Location: common/types.go:720
+   Problem: Stores LAST duration, not average
+   Fix: Track sum + calculate average
+
+7. INEFFICIENT: Cache Hit Rate Calculation
+   Location: metrics.go:307-338
+   Problem: Recalculates EVERY time (millions of times possible)
+   Fix: Calculate on-demand (lazy evaluation)
+
+🟡 MEDIUM PRIORITY ISSUES (1)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+8. INCOMPLETE: Prometheus Export
+   Location: metrics.go:395-443
+   Issues: String concat inefficient, tool metrics missing
+   Fix: Use strings.Builder, add tool metrics export
+
+═══════════════════════════════════════════════════════════════════════════════
+DEAD CODE INVENTORY
+═══════════════════════════════════════════════════════════════════════════════
+
+Type                          Location              Lines   Status
+─────────────────────────────────────────────────────────────────────────────
+RecordToolExecution()         metrics.go:109-178    70      ❌ NOT CALLED
+executionTracker              metrics.go:87-95      9       ❌ NOT USED
+ExtendedExecutionMetrics      metrics.go:14-23      10      ❌ NOT USED
+MetricsCollector.currentEx... metrics.go:84         1       ❌ NOT USED
+
+Total Dead Code: 90 lines
+
+═══════════════════════════════════════════════════════════════════════════════
+DUPLICATE CODE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+DOMAIN          metrics.go              common/types.go         Severity
+─────────────────────────────────────────────────────────────────────────────
+Cost Tracking   RecordLLMCall()         UpdateCostMetrics()     CRITICAL
+Memory Tracking UpdateMemoryUsage()     UpdateMemoryMetrics()   CRITICAL
+Performance     RecordAgentExecution()  UpdatePerformanceMetrics() CRITICAL
+
+Impact:
+- Inconsistent state between two tracking systems
+- Data inconsistency during concurrent updates
+- Difficult to maintain single source of truth
+
+═══════════════════════════════════════════════════════════════════════════════
+FUNCTION QUALITY REPORT
+═══════════════════════════════════════════════════════════════════════════════
+
+Total Functions: 21
+
+Status Breakdown:
+  ✅ OK (Clean): 12 functions
+     - NewMetricsCollector, ResetSessionCost, GetSessionCost, GetTotalCost,
+     - LogCrewCostSummary, GetSystemMetrics, ExportMetrics, exportJSON,
+     - Reset, Enable, Disable, IsEnabled
+
+  ⚠️ ISSUES (Need Fix): 6 functions
+     - RecordToolExecution (DEAD)
+     - RecordAgentExecution (DUPLICATE)
+     - RecordLLMCall (DUPLICATE)
+     - RecordCacheHit (INEFFICIENT)
+     - RecordCacheMiss (INEFFICIENT)
+     - UpdateMemoryUsage (DUPLICATE)
+
+  🟡 COULD IMPROVE: 3 functions
+     - updateCacheHitRate (INEFFICIENT)
+     - exportPrometheus (INCOMPLETE)
+     - statusString (OK but simple)
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPLEMENTATION EFFORT ESTIMATE
+═══════════════════════════════════════════════════════════════════════════════
+
+Phase          Tasks            Effort    Risk    Priority
+─────────────────────────────────────────────────────────────────────────────
+P0 Critical    Delete dead code 1h        NONE    🔴 DO FIRST
+               Fix memory avg   2h        MEDIUM
+
+P1 High        Consolidate cost 3h        MEDIUM  🟠 IMPORTANT
+               Consolidate perf 3h        MEDIUM
+
+P2 Medium      Fix duration avg 1h        MEDIUM  🟡 NICE-TO-HAVE
+               Optimize cache   1h        NONE
+
+P3 Low         Improve export   2h        NONE    🟢 LAST
+
+TOTAL: ~13 hours for full remediation
+QUICK WIN: ~3 hours for P0 (biggest impact)
+
+═══════════════════════════════════════════════════════════════════════════════
+AFFECTED FILES
+═══════════════════════════════════════════════════════════════════════════════
+
+Core Files:
+  - core/metrics.go (Main file under analysis)
+  - core/common/types.go (Duplicate tracking logic)
+  - core/crew.go (Calls recording methods)
+  - core/agent/execution.go (May call recording methods)
+
+Test Files:
+  - core/*_test.go (Need updates after refactoring)
+  - core/agent/*_test.go (May reference old methods)
+
+Documentation:
+  - README.md (Update metrics documentation)
+  - API docs (If public API affected)
+
+═══════════════════════════════════════════════════════════════════════════════
+RECOMMENDATIONS (Priority Order)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. 🔴 IMMEDIATE (Next Commit)
+   ✓ Remove 90 lines of dead code (RecordToolExecution)
+   ✓ Fix critical calculation bugs
+
+2. 🟠 SHORT TERM (This Sprint)
+   ✓ Consolidate cost tracking → metrics.go
+   ✓ Consolidate performance tracking → metrics.go
+   ✓ Remove duplicate agent methods
+
+3. 🟡 MEDIUM TERM (Next Sprint)
+   ✓ Fix average duration calculation
+   ✓ Optimize cache hit rate computation
+   ✓ Improve memory metrics tracking
+
+4. 🟢 NICE-TO-HAVE (Later)
+   ✓ Enhance Prometheus export format
+   ✓ Add tool metrics to exports
+   ✓ Performance benchmarking
+
+═══════════════════════════════════════════════════════════════════════════════
+DETAILED REPORTS GENERATED
+═══════════════════════════════════════════════════════════════════════════════
+
+1. METRICS_ANALYSIS.md
+   - Comprehensive analysis of all issues
+   - Side-by-side code comparisons
+   - Detailed bug descriptions
+   - 300+ lines of analysis
+
+2. METRICS_FUNCTIONS_DETAIL.md
+   - Function-by-function breakdown
+   - Quality assessment for each function
+   - Specific line numbers and logic review
+   - 400+ lines of detailed analysis
+
+3. METRICS_REFACTORING_PLAN.md
+   - Step-by-step implementation guide
+   - Phase-based approach (P0-P3)
+   - Complete checklist and success criteria
+   - Testing strategy included
+   - 500+ lines of actionable plan
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK START: APPLY FIXES
+═══════════════════════════════════════════════════════════════════════════════
+
+Quick Win (1-2 hours):
+  1. Delete RecordToolExecution() - 70 lines removed
+  2. Delete executionTracker type - 9 lines removed
+  3. Delete ExtendedExecutionMetrics type - 10 lines removed
+  4. Delete MetricsCollector.currentExecution field
+
+  Result: 90 lines of dead code eliminated ✓
+
+Next Step (2-3 hours):
+  1. Fix memory average calculation in common/types.go
+  2. Fix AverageCallDuration logic in common/types.go
+  3. Add unit tests for both fixes
+  4. Run full test suite
+
+Full Refactoring (13 hours):
+  See METRICS_REFACTORING_PLAN.md for complete roadmap
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Generated: 2025-12-25
+Analyzed By: Claude Code (Haiku 4.5)
+Report Version: 1.0
+Status: COMPLETE ✅
+
+═══════════════════════════════════════════════════════════════════════════════

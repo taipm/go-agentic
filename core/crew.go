@@ -492,6 +492,7 @@ func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handl
 		},
 		agentsMap,
 		ce.crew.Routing,
+		ce.signalRegistry,
 	)
 
 	if err != nil {
@@ -564,6 +565,9 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 	handler := workflow.NewStreamHandler(workflowStreamChan)
 	result := ce.executeWorkflow(ctx, input, handler)
+
+	// Close workflowStreamChan to signal the conversion goroutine to stop reading
+	close(workflowStreamChan)
 
 	// Wait for conversion goroutine to finish sending all events before returning
 	select {

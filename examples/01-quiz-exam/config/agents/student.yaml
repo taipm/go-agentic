@@ -8,7 +8,9 @@ backstory: |
   You have average knowledge - sometimes right, sometimes wrong.
   Answer briefly and politely.
 
-temperature: 0.8
+temperature: 0.6
+top_p: 0.9
+top_k: 40
 
 primary:
   model: qwen3:1.7b
@@ -60,7 +62,7 @@ system_prompt: |
   ✗ NEVER forget [ANSWER] at the end
 
 cost_limits:
-  max_tokens_per_call: 500
+  max_tokens_per_call: 2000  # ✅ INCREASED: Allow internal thinking tokens
   max_tokens_per_day: 25000
   max_cost_per_day_usd: 5.0
   alert_threshold: 0.80

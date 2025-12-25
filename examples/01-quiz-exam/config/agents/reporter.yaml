@@ -8,6 +8,8 @@ backstory: |
   You do NOT speak or interact. Just record.
 
 temperature: 0.1
+top_p: 0.9
+top_k: 40
 
 primary:
   model: qwen3:1.7b
@@ -49,7 +51,7 @@ system_prompt: |
   - Handle both [QUESTION] and [ANSWER] signals the same way
 
 cost_limits:
-  max_tokens_per_call: 200
+  max_tokens_per_call: 1000  # ✅ INCREASED: Allow thinking tokens
   max_tokens_per_day: 5000
   max_cost_per_day_usd: 1.0
   alert_threshold: 0.80

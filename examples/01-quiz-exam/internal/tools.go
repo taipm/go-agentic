@@ -298,6 +298,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"properties": map[string]interface{}{},
 		},
 		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] GetQuizStatus() called\n")
 			result := state.GetStatus()
 
 			fmt.Printf("\n[TOOL] GetQuizStatus()\n")
@@ -305,6 +306,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Printf("  Điểm hiện tại: %d\n", result["current_score"])
 			fmt.Printf("  Còn lại: %d câu\n", result["questions_remaining"])
 			fmt.Printf("  [DEBUG] state pointer: %p, CorrectAnswers: %d, CurrentQuestion: %d\n\n", state, state.CorrectAnswers, state.CurrentQuestion)
+			fmt.Fprintf(os.Stderr, "[TOOL EXIT] GetQuizStatus() returning: questions_remaining=%d\n\n", result["questions_remaining"])
 
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
@@ -342,6 +344,8 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"required": []string{"question", "student_answer", "is_correct"},
 		},
 		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] RecordAnswer() called with args: %v\n", args)
+
 			// ✅ PHASE 3.6: Auto-infer question_number from current state
 			var questionNum int
 
@@ -392,11 +396,14 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			// Parse teacher_comment (optional)
 			teacherComment, _ := args["teacher_comment"].(string)
 
+			fmt.Fprintf(os.Stderr, "[TOOL DEBUG] Before RecordAnswer: CurrentQuestion=%d, TotalQuestions=%d\n", state.CurrentQuestion, state.TotalQuestions)
 			result := state.RecordAnswer(questionNum, question, studentAnswer, isCorrect, teacherComment)
+			fmt.Fprintf(os.Stderr, "[TOOL DEBUG] After RecordAnswer: CurrentQuestion=%d, is_complete=%v\n", state.CurrentQuestion, result["is_complete"])
 
 			// Check for error
 			if _, hasError := result["error"]; hasError {
 				fmt.Printf("\n[TOOL ERROR] RecordAnswer: %s\n\n", result["error"])
+				fmt.Fprintf(os.Stderr, "[TOOL ERROR] RecordAnswer returned error: %v\n", result["error"])
 				jsonBytes, _ := json.Marshal(result)
 				return string(jsonBytes), nil
 			}
@@ -405,7 +412,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			if isCorrect {
 				correctStr = "ĐÚNG"
 			}
-			fmt.Printf("\n[TOOL] RecordAnswer(question=%d, is_correct=%v)\n", questionNum, isCorrect)
+			fmt.Printf("\n[TOOL] RecordAnswer(question=%d, is_correct=%v)\n", result["question_number"], isCorrect)
 			fmt.Printf("  Câu hỏi: %s\n", question)
 			fmt.Printf("  Trả lời: %s\n", studentAnswer)
 			fmt.Printf("  Kết quả: %s (+%d điểm)\n", correctStr, result["points_awarded"])
@@ -416,8 +423,10 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			// ✅ AUTO-SAVE: Write report after each answer to ensure file is updated
 			if err := state.WriteReportToFile(""); err != nil {
 				fmt.Printf("  [Auto-save] Lỗi lưu biên bản: %v\n", err)
+				fmt.Fprintf(os.Stderr, "[TOOL ERROR] WriteReportToFile failed: %v\n", err)
 			}
 
+			fmt.Fprintf(os.Stderr, "[TOOL EXIT] RecordAnswer() returning: is_complete=%v, questions_remaining=%d\n\n", result["is_complete"], result["questions_remaining"])
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
 		},
@@ -432,6 +441,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"properties": map[string]interface{}{},
 		},
 		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] GetFinalResult() called\n")
 			result := state.GetFinalResult()
 
 			fmt.Printf("\n[TOOL] GetFinalResult()\n")
@@ -442,6 +452,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Printf("  Điểm số: %d/%d (%s)\n", result["final_score"], result["max_score"], result["percentage"])
 			fmt.Printf("  Kết quả: %s\n", result["grade"])
 			fmt.Printf("  ==================================\n\n")
+			fmt.Fprintf(os.Stderr, "[TOOL EXIT] GetFinalResult() returning: grade=%v\n\n", result["grade"])
 
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
@@ -462,6 +473,8 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			},
 		},
 		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] WriteExamReport() called\n")
+
 			// Parse teacher_final_comment (optional)
 			teacherComment, _ := args["teacher_final_comment"].(string)
 
@@ -469,6 +482,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			err := state.WriteReportToFile(teacherComment)
 			if err != nil {
 				fmt.Printf("\n[TOOL ERROR] WriteExamReport: %v\n\n", err)
+				fmt.Fprintf(os.Stderr, "[TOOL ERROR] WriteExamReport failed: %v\n", err)
 				return fmt.Sprintf(`{"error": "%v"}`, err), nil
 			}
 
@@ -486,6 +500,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Printf("\n[TOOL] WriteExamReport()\n")
 			fmt.Printf("  File: %s\n", reportPath)
 			fmt.Printf("  Trạng thái: %s (%d câu)\n\n", status, currentQ)
+			fmt.Fprintf(os.Stderr, "[TOOL EXIT] WriteExamReport() success: status=%v, questions=%d\n\n", status, currentQ)
 
 			result := map[string]interface{}{
 				"success":     true,

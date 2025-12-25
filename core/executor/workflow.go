@@ -6,18 +6,20 @@ import (
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/signal"
 	"github.com/taipm/go-agentic/core/workflow"
 )
 
 // ExecutionFlow represents the state of workflow execution.
 type ExecutionFlow struct {
-	CurrentAgent *common.Agent
-	History      []common.Message
-	RoundCount   int
-	HandoffCount int
-	MaxRounds    int
-	MaxHandoffs  int
-	State        *ExecutionState
+	CurrentAgent  *common.Agent
+	History       []common.Message
+	RoundCount    int
+	HandoffCount  int
+	MaxRounds     int
+	MaxHandoffs   int
+	State         *ExecutionState
+	SignalRegistry *signal.SignalRegistry
 }
 
 // NewExecutionFlow creates a new ExecutionFlow with initial state.
@@ -79,7 +81,7 @@ func (ef *ExecutionFlow) ExecuteWorkflowStep(
 		userInput,
 		ef.History,
 		handler,
-		nil,
+		ef.SignalRegistry,
 		apiKey,
 	)
 
@@ -111,6 +113,7 @@ func (ef *ExecutionFlow) ExecuteWorkflowStep(
 // HandleAgentResponse processes agent response and determines next step.
 // Returns true if workflow should continue, false if terminal.
 func (ef *ExecutionFlow) HandleAgentResponse(
+	ctx context.Context,
 	response *common.AgentResponse,
 	routing *common.RoutingConfig,
 	agentsMap map[string]*common.Agent,
@@ -121,11 +124,27 @@ func (ef *ExecutionFlow) HandleAgentResponse(
 
 	// Check if this is a terminal agent
 	if routing != nil {
-		decision, err := workflow.DetermineNextAgent(
-			ef.CurrentAgent,
-			response,
-			routing,
-		)
+		// Priority 1: Use signal-based routing if SignalRegistry available
+		var decision *common.RoutingDecision
+		var err error
+
+		if ef.SignalRegistry != nil {
+			// Use signal-aware routing function
+			decision, err = workflow.DetermineNextAgentWithSignals(
+				ctx,
+				ef.CurrentAgent,
+				response,
+				routing,
+				ef.SignalRegistry,
+			)
+		} else {
+			// Fallback to simple routing (no signal support)
+			decision, err = workflow.DetermineNextAgent(
+				ef.CurrentAgent,
+				response,
+				routing,
+			)
+		}
 
 		if err != nil {
 			return false, fmt.Errorf("failed to determine next agent: %w", err)
@@ -137,14 +156,19 @@ func (ef *ExecutionFlow) HandleAgentResponse(
 
 		// Get next agent
 		nextAgentID := decision.NextAgentID
-		if nextAgent, exists := agentsMap[nextAgentID]; exists {
-			ef.CurrentAgent = nextAgent
-			ef.HandoffCount++
-			ef.State.RecordHandoff()
-			return true, nil // Continue with next agent
+		if nextAgentID != "" {
+			if nextAgent, exists := agentsMap[nextAgentID]; exists {
+				fmt.Printf("[ROUTING] %s → %s (reason: %s)\n", ef.CurrentAgent.ID, nextAgentID, decision.Reason)
+				ef.CurrentAgent = nextAgent
+				ef.HandoffCount++
+				ef.State.RecordHandoff()
+				return true, nil // Continue with next agent
+			}
+			return false, fmt.Errorf("agent not found: %s", nextAgentID)
 		}
 
-		return false, fmt.Errorf("agent not found: %s", nextAgentID)
+		// No next agent determined - continue anyway (allow fallthrough)
+		return true, nil
 	}
 
 	// No routing config - use default behavior (first agent terminates)
@@ -189,7 +213,11 @@ func (ef *ExecutionFlow) ExecuteWithCallbacks(
 	onStep WorkflowCallback,
 	agents map[string]*common.Agent,
 	routing *common.RoutingConfig,
+	signalRegistry *signal.SignalRegistry,
 ) (*common.AgentResponse, error) {
+	// Assign signal registry for routing decisions
+	ef.SignalRegistry = signalRegistry
+
 	var lastResponse *common.AgentResponse
 
 	for {
@@ -214,7 +242,7 @@ func (ef *ExecutionFlow) ExecuteWithCallbacks(
 		}
 
 		// Check if workflow should continue
-		shouldContinue, err := ef.HandleAgentResponse(response, routing, agents)
+		shouldContinue, err := ef.HandleAgentResponse(ctx, response, routing, agents)
 		if err != nil {
 			return lastResponse, err
 		}
@@ -232,13 +260,14 @@ func (ef *ExecutionFlow) ExecuteWithCallbacks(
 // Copy creates a copy of the ExecutionFlow for branching/parallel execution.
 func (ef *ExecutionFlow) Copy() *ExecutionFlow {
 	return &ExecutionFlow{
-		CurrentAgent: ef.CurrentAgent,
-		History:      append([]common.Message{}, ef.History...),
-		RoundCount:   ef.RoundCount,
-		HandoffCount: ef.HandoffCount,
-		MaxRounds:    ef.MaxRounds,
-		MaxHandoffs:  ef.MaxHandoffs,
-		State:        ef.State.Copy(),
+		CurrentAgent:   ef.CurrentAgent,
+		History:        append([]common.Message{}, ef.History...),
+		RoundCount:     ef.RoundCount,
+		HandoffCount:   ef.HandoffCount,
+		MaxRounds:      ef.MaxRounds,
+		MaxHandoffs:    ef.MaxHandoffs,
+		State:          ef.State.Copy(),
+		SignalRegistry: ef.SignalRegistry,
 	}
 }
 

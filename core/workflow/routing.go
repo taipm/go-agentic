@@ -9,22 +9,15 @@ import (
 	"github.com/taipm/go-agentic/core/signal"
 )
 
-// RoutingDecision represents the result of routing logic
-type RoutingDecision struct {
-	NextAgentID string
-	Reason      string
-	IsTerminal  bool
-}
-
 // DetermineNextAgent determines the next agent based on routing configuration
-func DetermineNextAgent(currentAgent *common.Agent, response *common.AgentResponse, routing *common.RoutingConfig) (*RoutingDecision, error) {
+func DetermineNextAgent(currentAgent *common.Agent, response *common.AgentResponse, routing *common.RoutingConfig) (*common.RoutingDecision, error) {
 	if currentAgent == nil {
 		return nil, fmt.Errorf("current agent cannot be nil")
 	}
 
 	// Check if current agent is terminal
 	if currentAgent.IsTerminal {
-		return &RoutingDecision{
+		return &common.RoutingDecision{
 			IsTerminal: true,
 			Reason:     "agent is marked as terminal",
 		}, nil
@@ -35,7 +28,7 @@ func DetermineNextAgent(currentAgent *common.Agent, response *common.AgentRespon
 	// and route accordingly
 
 	// No routing configured - execution ends
-	return &RoutingDecision{
+	return &common.RoutingDecision{
 		IsTerminal: true,
 		Reason:     "no handoff targets configured",
 	}, nil
@@ -43,28 +36,59 @@ func DetermineNextAgent(currentAgent *common.Agent, response *common.AgentRespon
 
 // DetermineNextAgentWithSignals determines next agent using signal priority
 func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Agent, response *common.AgentResponse,
-	routing *common.RoutingConfig, signalRegistry *signal.SignalRegistry) (*RoutingDecision, error) {
+	routing *common.RoutingConfig, signalRegistry *signal.SignalRegistry) (*common.RoutingDecision, error) {
 
 	if currentAgent == nil {
 		return nil, fmt.Errorf("current agent cannot be nil")
 	}
 
-	// Priority 1: Check signals in response
-	if signalRegistry != nil && response != nil && response.Signals != nil && len(response.Signals) > 0 {
-		for _, sigName := range response.Signals {
-			sig := &signal.Signal{
-				Name:    sigName,
-				AgentID: currentAgent.ID,
+	// Priority 1: Check signals in response using routing configuration
+	if response != nil && response.Signals != nil && len(response.Signals) > 0 {
+		// Check if routing is configured
+		if routing != nil && routing.Signals != nil {
+			// Get signal routing rules for current agent
+			if agentSignals, exists := routing.Signals[currentAgent.ID]; exists {
+				// Look for matching signal in routing rules
+				for _, sigName := range response.Signals {
+					for _, routingSignal := range agentSignals {
+						if routingSignal.Signal == sigName {
+							// Check for terminal signal
+							if routingSignal.Target == "" {
+								return &common.RoutingDecision{
+									IsTerminal: sigName == "[END_EXAM]",
+									Reason:     fmt.Sprintf("signal '%s' marks terminal", sigName),
+								}, nil
+							}
+							// Return the target agent
+							return &common.RoutingDecision{
+								NextAgentID: routingSignal.Target,
+								Reason:      fmt.Sprintf("routed by signal '%s'", sigName),
+								IsTerminal:  false,
+							}, nil
+						}
+					}
+				}
 			}
+		}
 
-			decision, err := signalRegistry.ProcessSignal(ctx, sig)
-			if err == nil && decision != nil {
-				if decision.IsTerminal || decision.NextAgentID != "" {
-					return &RoutingDecision{
-						NextAgentID: decision.NextAgentID,
-						Reason:      decision.Reason,
-						IsTerminal:  decision.IsTerminal,
-					}, nil
+		// Fallback: Use signal registry if available
+		if signalRegistry != nil {
+			for _, sigName := range response.Signals {
+				sig := &signal.Signal{
+					Name:    sigName,
+					AgentID: currentAgent.ID,
+				}
+
+				decision, err := signalRegistry.ProcessSignal(ctx, sig)
+				if err == nil && decision != nil {
+					if decision.IsTerminal || decision.NextAgentID != "" {
+						return &common.RoutingDecision{
+							NextAgentID: decision.NextAgentID,
+							Reason:      decision.Reason,
+							IsTerminal:  decision.IsTerminal,
+							Metadata:    decision.Metadata,
+						}, nil
+					}
 				}
 			}
 		}
@@ -72,7 +96,7 @@ func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Age
 
 	// Priority 2: Check terminal status
 	if currentAgent.IsTerminal {
-		return &RoutingDecision{
+		return &common.RoutingDecision{
 			IsTerminal: true,
 			Reason:     "agent is marked as terminal",
 		}, nil
@@ -80,17 +104,19 @@ func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Age
 
 	// Priority 3: Check handoff targets
 	if len(currentAgent.HandoffTargets) > 0 {
-		return &RoutingDecision{
+		return &common.RoutingDecision{
 			NextAgentID: currentAgent.HandoffTargets[0].ID,
 			Reason:      "default handoff target",
 			IsTerminal:  false,
 		}, nil
 	}
 
-	// No routing found
-	return &RoutingDecision{
-		IsTerminal: true,
-		Reason:     "no handoff targets configured",
+	// No routing found - but don't mark as terminal, allow continuation
+	// Let other routing mechanisms handle it
+	return &common.RoutingDecision{
+		IsTerminal:  false,
+		NextAgentID: "",
+		Reason:      "no signal routing configured, will use default routing",
 	}, nil
 }
 
