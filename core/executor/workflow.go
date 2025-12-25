@@ -158,7 +158,6 @@ func (ef *ExecutionFlow) HandleAgentResponse(
 		nextAgentID := decision.NextAgentID
 		if nextAgentID != "" {
 			if nextAgent, exists := agentsMap[nextAgentID]; exists {
-				fmt.Printf("[ROUTING] %s → %s (reason: %s)\n", ef.CurrentAgent.ID, nextAgentID, decision.Reason)
 				ef.CurrentAgent = nextAgent
 				ef.HandoffCount++
 				ef.State.RecordHandoff()
