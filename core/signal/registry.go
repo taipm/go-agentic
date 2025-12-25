@@ -12,6 +12,15 @@ import (
 // Error message constant to avoid duplication
 const errSignalsDisabled = "Signal handling is disabled"
 
+// truncateSignals returns last maxSize elements from slice
+// Used for limiting history to avoid unbounded growth
+func truncateSignals(signals []string, maxSize int) []string {
+	if len(signals) <= maxSize {
+		return signals
+	}
+	return signals[len(signals)-maxSize:]
+}
+
 // SignalRegistry manages signal emission, registration, and routing
 type SignalRegistry struct {
 	handler       *Handler
@@ -185,9 +194,7 @@ func (sr *SignalRegistry) recordAgentSignal(agentID, signalName string) {
 	info.LastSignalTime = time.Now()
 
 	// Limit history per agent
-	if len(info.EmittedSignals) > sr.config.MaxSignalsPerAgent {
-		info.EmittedSignals = info.EmittedSignals[len(info.EmittedSignals)-sr.config.MaxSignalsPerAgent:]
-	}
+	info.EmittedSignals = truncateSignals(info.EmittedSignals, sr.config.MaxSignalsPerAgent)
 
 	sr.agentRegistry[agentID] = info
 }
