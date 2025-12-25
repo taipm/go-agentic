@@ -19,12 +19,12 @@ routing:
   signals:
     teacher:
       - signal: "[QUESTION]"
-        target: student  # Question goes to student (not parallel)
+        target: [student, reporter]  # ✅ FIXED: Question goes to BOTH student & reporter (for parallel recording)
       - signal: "[END_EXAM]"
         target: ""  # ✅ Terminate workflow immediately when exam ends
     student:
       - signal: "[ANSWER]"
-        target: teacher  # Student answers go back to teacher
+        target: [teacher, reporter]  # ✅ FIXED: Answers go to BOTH teacher & reporter (for recording)
     reporter:
       - signal: "[OK]"
         target: ""  # Just acknowledge, don't route
