@@ -2,9 +2,11 @@
 package workflow
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/signal"
 )
 
 // RoutingDecision represents the result of routing logic
@@ -39,21 +41,83 @@ func DetermineNextAgent(currentAgent *common.Agent, response *common.AgentRespon
 	}, nil
 }
 
+// DetermineNextAgentWithSignals determines next agent using signal priority
+func DetermineNextAgentWithSignals(ctx context.Context, currentAgent *common.Agent, response *common.AgentResponse,
+	routing *common.RoutingConfig, signalRegistry *signal.SignalRegistry) (*RoutingDecision, error) {
+
+	if currentAgent == nil {
+		return nil, fmt.Errorf("current agent cannot be nil")
+	}
+
+	// Priority 1: Check signals in response
+	if signalRegistry != nil && response != nil && response.Signals != nil && len(response.Signals) > 0 {
+		for _, sigName := range response.Signals {
+			sig := &signal.Signal{
+				Name:    sigName,
+				AgentID: currentAgent.ID,
+			}
+
+			decision, err := signalRegistry.ProcessSignal(ctx, sig)
+			if err == nil && decision != nil {
+				if decision.IsTerminal || decision.NextAgentID != "" {
+					return &RoutingDecision{
+						NextAgentID: decision.NextAgentID,
+						Reason:      decision.Reason,
+						IsTerminal:  decision.IsTerminal,
+					}, nil
+				}
+			}
+		}
+	}
+
+	// Priority 2: Check terminal status
+	if currentAgent.IsTerminal {
+		return &RoutingDecision{
+			IsTerminal: true,
+			Reason:     "agent is marked as terminal",
+		}, nil
+	}
+
+	// Priority 3: Check handoff targets
+	if len(currentAgent.HandoffTargets) > 0 {
+		return &RoutingDecision{
+			NextAgentID: currentAgent.HandoffTargets[0].ID,
+			Reason:      "default handoff target",
+			IsTerminal:  false,
+		}, nil
+	}
+
+	// No routing found
+	return &RoutingDecision{
+		IsTerminal: true,
+		Reason:     "no handoff targets configured",
+	}, nil
+}
+
 // RouteBySignal routes to an agent based on signal-based routing configuration
-func RouteBySignal(signal string, routing *common.RoutingConfig) (string, error) {
+func RouteBySignal(signalName string, routing *common.RoutingConfig) (string, error) {
 	if routing == nil {
 		return "", fmt.Errorf("routing configuration is nil")
 	}
 
-	if signal == "" {
-		return "", fmt.Errorf("signal is empty")
+	if signalName == "" {
+		return "", fmt.Errorf("signal name is empty")
 	}
 
-	// Placeholder implementation for signal-based routing
-	// In a full implementation, would lookup signal in routing.Signals map
-	// and return the target agent ID
+	if routing.Signals == nil {
+		return "", fmt.Errorf("no signals configured in routing")
+	}
 
-	return "", fmt.Errorf("signal '%s' not found in routing configuration", signal)
+	// Search all agents for this signal
+	for _, signalList := range routing.Signals {
+		for _, sig := range signalList {
+			if sig.Signal == signalName {
+				return sig.Target, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("signal '%s' not found in routing configuration", signalName)
 }
 
 // RouteByBehavior routes to an agent based on behavior-based routing configuration

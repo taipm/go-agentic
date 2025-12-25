@@ -40,6 +40,7 @@ type AgentResponse struct {
 	AgentName string
 	Content   string
 	ToolCalls []ToolCall
+	Signals   []string // Signals emitted by agent (e.g., "[END_EXAM]")
 }
 
 // CrewResponse represents the final response from the crew

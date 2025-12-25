@@ -8,6 +8,7 @@ import (
 
 	"github.com/taipm/go-agentic/core/agent"
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/signal"
 )
 
 // ExecutionContext holds the state during workflow execution
@@ -22,10 +23,11 @@ type ExecutionContext struct {
 	LastAgentTime   time.Duration
 	TotalTime       time.Duration
 	handler         OutputHandler
+	SignalRegistry  *signal.SignalRegistry
 }
 
 // ExecuteWorkflow executes the workflow starting from an entry agent
-func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, handler OutputHandler, apiKey string) (*common.AgentResponse, error) {
+func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, handler OutputHandler, signalRegistry *signal.SignalRegistry, apiKey string) (*common.AgentResponse, error) {
 	if entryAgent == nil {
 		return nil, fmt.Errorf("entry agent cannot be nil")
 	}
@@ -35,12 +37,13 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 	}
 
 	execCtx := &ExecutionContext{
-		CurrentAgent: entryAgent,
-		History:      history,
-		MaxHandoffs:  5,  // Default max handoffs
-		MaxRounds:    10, // Default max rounds
-		StartTime:    time.Now(),
-		handler:      handler,
+		CurrentAgent:   entryAgent,
+		History:        history,
+		MaxHandoffs:    5,  // Default max handoffs
+		MaxRounds:      10, // Default max rounds
+		StartTime:      time.Now(),
+		handler:        handler,
+		SignalRegistry: signalRegistry,
 	}
 
 	return executeAgent(ctx, execCtx, input, apiKey)
@@ -62,12 +65,35 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		})
 	}
 
+	// SIGNAL 1: Emit agent:start
+	if execCtx.SignalRegistry != nil {
+		_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+			Name:    signal.SignalAgentStart,
+			AgentID: execCtx.CurrentAgent.ID,
+			Metadata: map[string]interface{}{
+				"round": execCtx.RoundCount,
+				"input": input,
+			},
+		})
+	}
+
 	// Execute current agent
 	startTime := time.Now()
 	response, err := agent.ExecuteAgent(ctx, execCtx.CurrentAgent, input, execCtx.History, apiKey)
 	execCtx.LastAgentTime = time.Since(startTime)
 
 	if err != nil {
+		// SIGNAL 2: Emit agent:error
+		if execCtx.SignalRegistry != nil {
+			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+				Name:    signal.SignalAgentError,
+				AgentID: execCtx.CurrentAgent.ID,
+				Metadata: map[string]interface{}{
+					"error": err.Error(),
+				},
+			})
+		}
+
 		handler := execCtx.handler
 		if handler != nil {
 			_ = handler.HandleError(err)
@@ -86,25 +112,126 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		_ = execCtx.handler.HandleAgentResponse(response)
 	}
 
-	// Check if agent is terminal (execution ends)
-	if execCtx.CurrentAgent.IsTerminal {
+	// SIGNAL 3: Emit agent:end
+	if execCtx.SignalRegistry != nil {
+		_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+			Name:    signal.SignalAgentEnd,
+			AgentID: execCtx.CurrentAgent.ID,
+			Metadata: map[string]interface{}{
+				"duration_ms": execCtx.LastAgentTime.Milliseconds(),
+			},
+		})
+	}
+
+	// SIGNAL 4: Process custom signals from agent response
+	var routingDecision *signal.RoutingDecision
+	if execCtx.SignalRegistry != nil && response.Signals != nil && len(response.Signals) > 0 {
+		for _, sigName := range response.Signals {
+			sig := &signal.Signal{
+				Name:    sigName,
+				AgentID: execCtx.CurrentAgent.ID,
+			}
+
+			// Emit signal
+			_ = execCtx.SignalRegistry.Emit(sig)
+
+			// Process signal for routing decision
+			decision, err := execCtx.SignalRegistry.ProcessSignal(ctx, sig)
+			if err == nil && decision != nil {
+				routingDecision = decision
+
+				// If terminal signal, stop execution
+				if decision.IsTerminal {
+					return response, nil
+				}
+
+				// Found routing decision, stop processing signals
+				if decision.NextAgentID != "" {
+					break
+				}
+			}
+		}
+	}
+
+	// ROUTING PRIORITY:
+	// 1. Signal-based routing (if decision found)
+	// 2. Terminal agent check
+	// 3. Default handoff targets
+
+	// Priority 1: Signal routing takes precedence
+	if routingDecision != nil && routingDecision.NextAgentID != "" {
+		// SIGNAL 5: Emit route:handoff
+		if execCtx.SignalRegistry != nil {
+			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+				Name:    signal.SignalHandoff,
+				AgentID: execCtx.CurrentAgent.ID,
+				Metadata: map[string]interface{}{
+					"from_agent":     execCtx.CurrentAgent.ID,
+					"to_agent":       routingDecision.NextAgentID,
+					"routing_type":   "signal",
+					"routing_reason": routingDecision.Reason,
+				},
+			})
+		}
+
+		// TODO: Look up next agent by ID and continue execution
+		// For now, return (will be implemented in crew.go integration)
 		return response, nil
 	}
 
-	// Check for handoffs
+	// Priority 2: Check if agent is terminal
+	if execCtx.CurrentAgent.IsTerminal {
+		// SIGNAL 6: Emit route:terminal
+		if execCtx.SignalRegistry != nil {
+			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+				Name:    signal.SignalTerminal,
+				AgentID: execCtx.CurrentAgent.ID,
+				Metadata: map[string]interface{}{
+					"reason": "agent marked as terminal",
+				},
+			})
+		}
+		return response, nil
+	}
+
+	// Priority 3: Check for handoffs
 	if len(execCtx.CurrentAgent.HandoffTargets) > 0 && execCtx.HandoffCount < execCtx.MaxHandoffs {
-		// Route to next agent
-		_ = execCtx.CurrentAgent.HandoffTargets[0] // Next agent ID for future implementation
-		// In a full implementation, would look up agent from crew by ID
+		nextAgentID := execCtx.CurrentAgent.HandoffTargets[0].ID
+
+		// SIGNAL 7: Emit route:handoff
+		if execCtx.SignalRegistry != nil {
+			_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+				Name:    signal.SignalHandoff,
+				AgentID: execCtx.CurrentAgent.ID,
+				Metadata: map[string]interface{}{
+					"from_agent":   execCtx.CurrentAgent.ID,
+					"to_agent":     nextAgentID,
+					"routing_type": "handoff_target",
+				},
+			})
+		}
+
+		// TODO: Look up next agent by ID and continue execution
 		// For now, return response
 		return response, nil
+	}
+
+	// No routing found - terminal
+	if execCtx.SignalRegistry != nil {
+		_ = execCtx.SignalRegistry.Emit(&signal.Signal{
+			Name:    signal.SignalTerminal,
+			AgentID: execCtx.CurrentAgent.ID,
+			Metadata: map[string]interface{}{
+				"reason": "no handoff targets configured",
+			},
+		})
 	}
 
 	return response, nil
 }
 
 // ExecuteWorkflowStream executes the workflow with streaming output
-func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, streamChan chan *StreamEvent, apiKey string) error {
+func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, streamChan chan *StreamEvent, signalRegistry *signal.SignalRegistry, apiKey string) error {
 	if entryAgent == nil {
 		return fmt.Errorf("entry agent cannot be nil")
 	}
@@ -112,12 +239,13 @@ func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input 
 	handler := NewStreamHandler(streamChan)
 
 	execCtx := &ExecutionContext{
-		CurrentAgent: entryAgent,
-		History:      history,
-		MaxHandoffs:  5,
-		MaxRounds:    10,
-		StartTime:    time.Now(),
-		handler:      handler,
+		CurrentAgent:   entryAgent,
+		History:        history,
+		MaxHandoffs:    5,
+		MaxRounds:      10,
+		StartTime:      time.Now(),
+		handler:        handler,
+		SignalRegistry: signalRegistry,
 	}
 
 	_, err := executeAgent(ctx, execCtx, input, apiKey)

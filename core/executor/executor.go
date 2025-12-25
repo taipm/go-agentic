@@ -97,7 +97,7 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 
 	// Execute workflow
 	history := []common.Message{}
-	response, err := workflow.ExecuteWorkflow(ctx, entryAgent, input, history, handler, e.apiKey)
+	response, err := workflow.ExecuteWorkflow(ctx, entryAgent, input, history, handler, nil, e.apiKey)
 
 	if err != nil {
 		if e.verbose {
@@ -147,7 +147,7 @@ func (e *Executor) ExecuteStream(ctx context.Context, input string, streamChan c
 
 	// Execute workflow with streaming
 	history := []common.Message{}
-	err := workflow.ExecuteWorkflowStream(ctx, entryAgent, input, history, streamChan, e.apiKey)
+	err := workflow.ExecuteWorkflowStream(ctx, entryAgent, input, history, streamChan, nil, e.apiKey)
 
 	if err != nil {
 		if e.verbose {

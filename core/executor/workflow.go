@@ -79,6 +79,7 @@ func (ef *ExecutionFlow) ExecuteWorkflowStep(
 		userInput,
 		ef.History,
 		handler,
+		nil,
 		apiKey,
 	)
 
