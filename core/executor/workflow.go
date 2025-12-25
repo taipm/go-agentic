@@ -3,10 +3,12 @@ package executor
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
 	"github.com/taipm/go-agentic/core/signal"
+	"github.com/taipm/go-agentic/core/tools"
 	"github.com/taipm/go-agentic/core/workflow"
 )
 
@@ -101,6 +103,25 @@ func (ef *ExecutionFlow) ExecuteWorkflowStep(
 		Content: response.Content,
 	}
 	ef.History = append(ef.History, responseMsg)
+
+	// Execute tool calls if present in response
+	if response != nil && len(response.ToolCalls) > 0 {
+		toolResults, toolErr := tools.ExecuteToolCalls(ctx, response.ToolCalls, ef.CurrentAgent.Tools)
+
+		// Add tool results to history if any tools executed successfully
+		if len(toolResults) > 0 {
+			resultMsg := common.Message{
+				Role:    "system",
+				Content: tools.FormatToolResults(toolResults),
+			}
+			ef.History = append(ef.History, resultMsg)
+		}
+
+		// Log any tool execution errors (but don't fail the workflow)
+		if toolErr != nil {
+			log.Printf("[WORKFLOW] Tool execution had errors: %v", toolErr)
+		}
+	}
 
 	// Emit response event
 	if err := handler.HandleAgentResponse(response); err != nil {

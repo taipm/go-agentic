@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -68,8 +69,8 @@ func TestHandleAgentResponse_IgnoresSignalRouting(t *testing.T) {
 	t.Logf("  - Routing config provided: YES\n")
 
 	// Call HandleAgentResponse
-	t.Logf("CALLING: flow.HandleAgentResponse(response, routing, agents)")
-	shouldContinue, err := flow.HandleAgentResponse(response, routing, agents)
+	t.Logf("CALLING: flow.HandleAgentResponse(ctx, response, routing, agents)")
+	shouldContinue, err := flow.HandleAgentResponse(context.Background(), response, routing, agents)
 
 	if err != nil {
 		t.Logf("Error returned: %v", err)
