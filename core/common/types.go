@@ -5,6 +5,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -379,18 +380,25 @@ type Agent struct {
 	IsTerminal         bool
 	Tools              []interface{}
 	HandoffTargets     []*Agent
-	SystemPrompt       string
-	SystemPromptCache  string
+	SystemPrompt        string
+	SystemPromptCache   string
 	IsSystemPromptDirty bool
-	PrimaryModel       *ModelConfig
-	BackupModel        *ModelConfig
-	Metadata           *AgentMetadata
-	Quota              *AgentQuotaLimits
-	CostMetrics        *AgentCostMetrics
-	MemoryMetrics      *AgentMemoryMetrics
-	PerformanceMetrics *AgentPerformanceMetrics
-	ctx                context.Context
-	Mutex              sync.RWMutex
+	SystemPromptMutex   sync.RWMutex      // ✅ PHASE 10b: Protects SystemPromptCache and IsSystemPromptDirty
+	PrimaryModel        *ModelConfig
+	BackupModel         *ModelConfig
+	Metadata            *AgentMetadata
+	Quota               *AgentQuotaLimits
+	CostMetrics         *AgentCostMetrics
+	MemoryMetrics       *AgentMemoryMetrics
+	PerformanceMetrics  *AgentPerformanceMetrics
+	ctx                 context.Context
+	Mutex               sync.RWMutex
+
+	// ✅ PHASE 1: Backward compatibility fields for old agent_execution.go
+	// These are populated from PrimaryModel if not explicitly set
+	Provider   string // Deprecated: Use PrimaryModel.Provider instead
+	Model      string // Deprecated: Use PrimaryModel.Model instead
+	ProviderURL string // Deprecated: Use PrimaryModel.ProviderURL instead
 }
 
 // HardcodedDefaults stores hardcoded default configuration values
@@ -458,4 +466,263 @@ type HardcodedDefaults struct {
 	DefaultStreamBufferSize       int
 	DefaultMaxStoredRequests      int
 	DefaultClientCacheTTL         int
+}
+
+// ============================================================================
+// AGENT METHODS - PHASE 2: Cost, Memory, Performance Quota Management
+// These methods support the agent_execution.go cost/quota tracking system
+// ============================================================================
+
+// EstimateTokens estimates token count for content
+// Uses rough heuristic: ~4 characters per token (varies by model)
+func (a *Agent) EstimateTokens(content string) int {
+	if a == nil {
+		return 0
+	}
+	// Rough estimation: 1 token ≈ 4 characters (varies by model and encoding)
+	charCount := len(content)
+	estimatedTokens := (charCount + 3) / 4 // Round up division
+	if estimatedTokens < 1 {
+		estimatedTokens = 1
+	}
+	return estimatedTokens
+}
+
+// CheckCostLimits validates cost limits before execution
+// Returns error if execution would exceed configured quotas
+func (a *Agent) CheckCostLimits(estimatedTokens int) error {
+	if a == nil {
+		return nil
+	}
+
+	if a.CostMetrics == nil {
+		return nil
+	}
+
+	a.CostMetrics.Mutex.RLock()
+	defer a.CostMetrics.Mutex.RUnlock()
+
+	if a.Quota == nil {
+		return nil // No quota configured
+	}
+
+	// Check max tokens per call
+	if a.Quota.MaxTokensPerCall > 0 && estimatedTokens > a.Quota.MaxTokensPerCall {
+		return fmt.Errorf(
+			"agent '%s': estimated tokens (%d) exceeds max per call (%d)",
+			a.ID, estimatedTokens, a.Quota.MaxTokensPerCall,
+		)
+	}
+
+	// Check max tokens per day
+	if a.Quota.MaxTokensPerDay > 0 && a.CostMetrics.TotalTokens+estimatedTokens > a.Quota.MaxTokensPerDay {
+		return fmt.Errorf(
+			"agent '%s': total daily tokens (%d) would exceed limit (%d)",
+			a.ID, a.CostMetrics.TotalTokens+estimatedTokens, a.Quota.MaxTokensPerDay,
+		)
+	}
+
+	// Check max cost per day (estimated)
+	if a.Quota.MaxCostPerDay > 0 {
+		estimatedCost := a.CalculateCost(estimatedTokens)
+		if a.CostMetrics.DailyCost+estimatedCost > a.Quota.MaxCostPerDay {
+			return fmt.Errorf(
+				"agent '%s': daily cost ($%.4f) would exceed limit ($%.4f)",
+				a.ID, a.CostMetrics.DailyCost+estimatedCost, a.Quota.MaxCostPerDay,
+			)
+		}
+	}
+
+	return nil
+}
+
+// CheckErrorQuota validates error rate quotas
+// Returns error if error limits have been exceeded
+func (a *Agent) CheckErrorQuota() error {
+	if a == nil {
+		return nil
+	}
+
+	if a.PerformanceMetrics == nil {
+		return nil
+	}
+
+	a.PerformanceMetrics.Mutex.RLock()
+	defer a.PerformanceMetrics.Mutex.RUnlock()
+
+	if a.Quota == nil {
+		return nil // No quota configured
+	}
+
+	// Check consecutive errors
+	if a.Quota.MaxErrorsPerHour > 0 && a.PerformanceMetrics.ConsecutiveErrors > a.Quota.MaxErrorsPerHour {
+		return fmt.Errorf(
+			"agent '%s': consecutive errors (%d) exceeded limit (%d)",
+			a.ID, a.PerformanceMetrics.ConsecutiveErrors, a.Quota.MaxErrorsPerHour,
+		)
+	}
+
+	// Check daily error count
+	if a.Quota.MaxErrorsPerDay > 0 && a.PerformanceMetrics.ErrorCountToday >= a.Quota.MaxErrorsPerDay {
+		return fmt.Errorf(
+			"agent '%s': daily errors (%d) reached limit (%d)",
+			a.ID, a.PerformanceMetrics.ErrorCountToday, a.Quota.MaxErrorsPerDay,
+		)
+	}
+
+	return nil
+}
+
+// CheckMemoryQuota validates memory usage quotas
+// Returns error if memory limits have been exceeded
+func (a *Agent) CheckMemoryQuota() error {
+	if a == nil {
+		return nil
+	}
+
+	if a.MemoryMetrics == nil {
+		return nil
+	}
+
+	a.MemoryMetrics.Mutex.RLock()
+	defer a.MemoryMetrics.Mutex.RUnlock()
+
+	if a.Quota == nil {
+		return nil // No quota configured
+	}
+
+	// Check memory per call
+	if a.Quota.MaxMemoryPerCall > 0 && a.MemoryMetrics.CurrentMemoryMB > a.Quota.MaxMemoryPerCall {
+		return fmt.Errorf(
+			"agent '%s': current memory (%dMB) exceeds per-call limit (%dMB)",
+			a.ID, a.MemoryMetrics.CurrentMemoryMB, a.Quota.MaxMemoryPerCall,
+		)
+	}
+
+	// Check peak memory
+	if a.Quota.MaxMemoryPerDay > 0 && a.MemoryMetrics.PeakMemoryMB > a.Quota.MaxMemoryPerDay {
+		return fmt.Errorf(
+			"agent '%s': peak memory (%dMB) exceeds daily limit (%dMB)",
+			a.ID, a.MemoryMetrics.PeakMemoryMB, a.Quota.MaxMemoryPerDay,
+		)
+	}
+
+	return nil
+}
+
+// CalculateCost estimates cost from token count
+// Uses approximate pricing per token
+func (a *Agent) CalculateCost(tokenCount int) float64 {
+	if a == nil || a.Quota == nil {
+		return 0
+	}
+
+	// Default pricing approximation (varies by model)
+	// GPT-4: ~$30/1M input tokens, ~$60/1M output tokens
+	// Assume 60% input, 40% output = average $42/1M
+	averagePricePerMillion := 0.042
+
+	costPerToken := averagePricePerMillion / 1_000_000.0
+	return float64(tokenCount) * costPerToken
+}
+
+// UpdateCostMetrics updates cost tracking after execution
+// Increments token count and cost, resets daily counter if 24h passed
+func (a *Agent) UpdateCostMetrics(tokenCount int, cost float64) {
+	if a == nil || a.CostMetrics == nil {
+		return
+	}
+
+	a.CostMetrics.Mutex.Lock()
+	defer a.CostMetrics.Mutex.Unlock()
+
+	a.CostMetrics.CallCount++
+	a.CostMetrics.TotalTokens += tokenCount
+	a.CostMetrics.DailyCost += cost
+
+	// Check if we need to reset daily counter (24 hours have passed)
+	now := time.Now()
+	if now.Sub(a.CostMetrics.LastResetTime) > 24*time.Hour {
+		a.CostMetrics.DailyCost = cost
+		a.CostMetrics.LastResetTime = now
+	}
+}
+
+// UpdateMemoryMetrics updates memory tracking after execution
+// Tracks current, peak, and average memory usage
+func (a *Agent) UpdateMemoryMetrics(memoryMB int, durationMs int64) {
+	if a == nil || a.MemoryMetrics == nil {
+		return
+	}
+
+	a.MemoryMetrics.Mutex.Lock()
+	defer a.MemoryMetrics.Mutex.Unlock()
+
+	a.MemoryMetrics.CurrentMemoryMB = memoryMB
+
+	if memoryMB > a.MemoryMetrics.PeakMemoryMB {
+		a.MemoryMetrics.PeakMemoryMB = memoryMB
+	}
+
+	// Update average memory usage
+	if a.CostMetrics != nil {
+		a.CostMetrics.Mutex.RLock()
+		callCount := a.CostMetrics.CallCount
+		a.CostMetrics.Mutex.RUnlock()
+
+		if callCount > 0 {
+			total := a.MemoryMetrics.PeakMemoryMB * callCount
+			a.MemoryMetrics.AverageMemoryMB = total / callCount
+		}
+	}
+
+	// Update average call duration
+	if durationMs > 0 {
+		d := time.Duration(durationMs) * time.Millisecond
+		a.MemoryMetrics.AverageCallDuration = d
+	}
+}
+
+// UpdatePerformanceMetrics tracks success/failure metrics
+// Updates success rate, consecutive errors, and error count
+func (a *Agent) UpdatePerformanceMetrics(success bool, errorMsg string) {
+	if a == nil || a.PerformanceMetrics == nil {
+		return
+	}
+
+	a.PerformanceMetrics.Mutex.Lock()
+	defer a.PerformanceMetrics.Mutex.Unlock()
+
+	if success {
+		a.PerformanceMetrics.SuccessfulCalls++
+		a.PerformanceMetrics.ConsecutiveErrors = 0
+	} else {
+		a.PerformanceMetrics.FailedCalls++
+		a.PerformanceMetrics.ConsecutiveErrors++
+		a.PerformanceMetrics.LastError = errorMsg
+		a.PerformanceMetrics.LastErrorTime = time.Now()
+		a.PerformanceMetrics.ErrorCountToday++
+	}
+
+	// Update success rate
+	total := a.PerformanceMetrics.SuccessfulCalls + a.PerformanceMetrics.FailedCalls
+	if total > 0 {
+		a.PerformanceMetrics.SuccessRate = (float64(a.PerformanceMetrics.SuccessfulCalls) / float64(total)) * 100
+	}
+}
+
+// CheckSlowCall checks if execution time exceeded threshold
+// Logs warning if call duration exceeds configured slow call threshold
+func (a *Agent) CheckSlowCall(duration time.Duration) {
+	if a == nil || a.MemoryMetrics == nil {
+		return
+	}
+
+	a.MemoryMetrics.Mutex.RLock()
+	defer a.MemoryMetrics.Mutex.RUnlock()
+
+	if a.MemoryMetrics.SlowCallThreshold > 0 && duration > a.MemoryMetrics.SlowCallThreshold {
+		fmt.Printf("[SLOW_CALL] Agent '%s' execution took %v (threshold: %v)\n",
+			a.ID, duration, a.MemoryMetrics.SlowCallThreshold)
+	}
 }

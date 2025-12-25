@@ -297,7 +297,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			result := state.GetStatus()
 
 			fmt.Printf("\n[TOOL] GetQuizStatus()\n")
@@ -341,7 +341,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			},
 			"required": []string{"question", "student_answer", "is_correct"},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			// ✅ PHASE 3.6: Auto-infer question_number from current state
 			var questionNum int
 
@@ -431,7 +431,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			result := state.GetFinalResult()
 
 			fmt.Printf("\n[TOOL] GetFinalResult()\n")
@@ -461,7 +461,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				},
 			},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			// Parse teacher_final_comment (optional)
 			teacherComment, _ := args["teacher_final_comment"].(string)
 
@@ -515,7 +515,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				},
 			},
 		},
-		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			studentName, _ := args["student_name"].(string)
 			examTopic, _ := args["exam_topic"].(string)
 

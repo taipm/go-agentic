@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Code Scan Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .stat-card h3 {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-card .number {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+        
+        .section h2 {
+            color: #333;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        tr:hover {
+            background: #f9f9f9;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .badge-method {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .badge-test {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+        
+        .badge-constructor {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .badge-getter {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        
+        .badge-setter {
+            background: #fff3e0;
+            color: #e65100;
+        }
+        
+        .badge-handler {
+            background: #fce4ec;
+            color: #c2185b;
+        }
+        
+        .badge-middleware {
+            background: #ede7f6;
+            color: #5e35b1;
+        }
+        
+        .badge-higher-order {
+            background: #f3e5f5;
+            color: #8e24aa;
+        }
+        
+        .badge-validator {
+            background: #e8eaf6;
+            color: #3949ab;
+        }
+        
+        .badge-converter {
+            background: #e0f7fa;
+            color: #00838f;
+        }
+        
+        .badge-callback {
+            background: #fff8e1;
+            color: #ff8f00;
+        }
+        
+        .badge-helper {
+            background: #f5f5f5;
+            color: #616161;
+        }
+        
+        .badge-lifecycle {
+            background: #efebe9;
+            color: #5d4037;
+        }
+        
+        .badge-standard {
+            background: #eceff1;
+            color: #455a64;
+        }
+        
+        .type-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 40px;
+        }
+        
+        .type-stat-card {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .type-stat-card .icon {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+        
+        .type-stat-card .label {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .type-stat-card .count {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        /* Directory Tree Styles */
+        .tree-container {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .tree-node {
+            color: #d4d4d4;
+            line-height: 1.6;
+        }
+        
+        .tree-dir {
+            color: #4fc3f7;
+            cursor: pointer;
+        }
+        
+        .tree-dir:hover {
+            color: #81d4fa;
+        }
+        
+        .tree-file {
+            color: #a5d6a7;
+        }
+        
+        .tree-file-go {
+            color: #00bcd4;
+        }
+        
+        .tree-stats {
+            color: #9e9e9e;
+            font-size: 0.85em;
+            margin-left: 8px;
+        }
+        
+        .tree-icon {
+            margin-right: 6px;
+        }
+        
+        .tree-children {
+            margin-left: 20px;
+            border-left: 1px dashed #444;
+            padding-left: 10px;
+        }
+        
+        .tree-toggle {
+            cursor: pointer;
+            user-select: none;
+            display: inline-block;
+            width: 16px;
+        }
+        
+        .file-list {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .file-item {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        
+        .file-item h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .file-item-meta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .footer {
+            background: #f5f5f5;
+            padding: 20px 40px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            border-top: 1px solid #ddd;
+        }
+        
+        .functions-list {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0 0 0;
+        }
+        
+        .functions-list li {
+            padding: 8px 0;
+            padding-left: 20px;
+            color: #555;
+            font-size: 0.95em;
+            border-left: 3px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Go Code Scan Report</h1>
+            <p>Comprehensive function and method analysis</p>
+        </div>
+        
+        <div class="content">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Files</h3>
+                    <div class="number">80</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Functions</h3>
+                    <div class="number">839</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Methods</h3>
+                    <div class="number">266</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Tests</h3>
+                    <div class="number">304</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🏷️ Function Type Classification</h2>
+                <div class="type-stats-grid">
+                    <div class="type-stat-card">
+                        <div class="icon">📦</div>
+                        <div class="label">Constructors</div>
+                        <div class="count">40</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🔧</div>
+                        <div class="label">Getters</div>
+                        <div class="count">58</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">✏️</div>
+                        <div class="label">Setters</div>
+                        <div class="count">15</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🎯</div>
+                        <div class="label">Handlers</div>
+                        <div class="count">47</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🔗</div>
+                        <div class="label">Middlewares</div>
+                        <div class="count">1</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">⚡</div>
+                        <div class="label">Higher-Order</div>
+                        <div class="count">12</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">✅</div>
+                        <div class="label">Validators</div>
+                        <div class="count">50</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🔄</div>
+                        <div class="label">Converters</div>
+                        <div class="count">10</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🚀</div>
+                        <div class="label">Inits</div>
+                        <div class="count">3</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">📞</div>
+                        <div class="label">Callbacks</div>
+                        <div class="count">1</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🧪</div>
+                        <div class="label">Tests</div>
+                        <div class="count">304</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">🔨</div>
+                        <div class="label">Helpers</div>
+                        <div class="count">0</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">♻️</div>
+                        <div class="label">Lifecycle</div>
+                        <div class="count">16</div>
+                    </div>
+                    <div class="type-stat-card">
+                        <div class="icon">📝</div>
+                        <div class="label">Standard</div>
+                        <div class="count">282</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🌳 Directory Structure</h2>
+                <div class="tree-container">
+<div class="tree-node"><span class="tree-icon">🏠</span><span class="tree-dir">go-agentic/</span><span class="tree-stats">(80 files, 839 functions)</span></div><div class="tree-children">
+    <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">core/</span><span class="tree-stats">(61 files, 742 functions)</span></div>    <div class="tree-children">
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">agent/</span><span class="tree-stats">(2 files, 14 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">execution.go</span><span class="tree-stats">(11 funcs)</span><span class="tree-stats">[agent]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">messaging.go</span><span class="tree-stats">(3 funcs)</span><span class="tree-stats">[agent]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">common/</span><span class="tree-stats">(3 files, 25 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">constants.go</span><span class="tree-stats">[common]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">errors.go</span><span class="tree-stats">(16 funcs)</span><span class="tree-stats">[common]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">types.go</span><span class="tree-stats">(9 funcs)</span><span class="tree-stats">[common]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">config/</span><span class="tree-stats">(2 files, 4 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">loader.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[config]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">types.go</span><span class="tree-stats">[config]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">executor/</span><span class="tree-stats">(5 files, 57 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">executor.go</span><span class="tree-stats">(7 funcs)</span><span class="tree-stats">[executor]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">executor_phase6_test.go</span><span class="tree-stats">(19 funcs)</span><span class="tree-stats">[executor]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">history.go</span><span class="tree-stats">(12 funcs)</span><span class="tree-stats">[executor]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">state.go</span><span class="tree-stats">(10 funcs)</span><span class="tree-stats">[executor]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">workflow.go</span><span class="tree-stats">(9 funcs)</span><span class="tree-stats">[executor]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">providers/</span><span class="tree-stats">(6 files, 77 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">ollama/</span><span class="tree-stats">(2 files, 27 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">provider.go</span><span class="tree-stats">(10 funcs)</span><span class="tree-stats">[ollama]</span></div>
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">provider_test.go</span><span class="tree-stats">(17 funcs)</span><span class="tree-stats">[ollama]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">openai/</span><span class="tree-stats">(2 files, 31 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">provider.go</span><span class="tree-stats">(16 funcs)</span><span class="tree-stats">[openai]</span></div>
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">provider_test.go</span><span class="tree-stats">(15 funcs)</span><span class="tree-stats">[openai]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">provider.go</span><span class="tree-stats">(6 funcs)</span><span class="tree-stats">[providers]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">provider_test.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[providers]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">signal/</span><span class="tree-stats">(4 files, 74 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">handler.go</span><span class="tree-stats">(16 funcs)</span><span class="tree-stats">[signal]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">registry.go</span><span class="tree-stats">(23 funcs)</span><span class="tree-stats">[signal]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">signal_test.go</span><span class="tree-stats">(20 funcs)</span><span class="tree-stats">[signal]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">types.go</span><span class="tree-stats">(15 funcs)</span><span class="tree-stats">[signal]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">tool/</span><span class="tree-stats">(1 files, 4 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">execution.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[tool]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">tools/</span><span class="tree-stats">(1 files, 6 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">errors.go</span><span class="tree-stats">(6 funcs)</span><span class="tree-stats">[tools]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">validation/</span><span class="tree-stats">(4 files, 26 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">agent.go</span><span class="tree-stats">(5 funcs)</span><span class="tree-stats">[validation]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[validation]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">helpers.go</span><span class="tree-stats">(11 funcs)</span><span class="tree-stats">[validation]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">routing.go</span><span class="tree-stats">(6 funcs)</span><span class="tree-stats">[validation]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">workflow/</span><span class="tree-stats">(4 files, 36 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">execution.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[workflow]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">handler.go</span><span class="tree-stats">(14 funcs)</span><span class="tree-stats">[workflow]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">routing.go</span><span class="tree-stats">(5 funcs)</span><span class="tree-stats">[workflow]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">workflow_signal_test.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[workflow]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">agent_cost_control_test.go</span><span class="tree-stats">(8 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">agent_execution.go</span><span class="tree-stats">(20 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">agent_test.go</span><span class="tree-stats">(17 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">config_loader.go</span><span class="tree-stats">(12 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">config_test.go</span><span class="tree-stats">(27 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew.go</span><span class="tree-stats">(25 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew_extracted_functions_test.go</span><span class="tree-stats">(8 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew_race_test.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew_signal_registry_integration_test.go</span><span class="tree-stats">(14 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew_signal_validation_test.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew_test.go</span><span class="tree-stats">(30 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">defaults.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">defaults_test.go</span><span class="tree-stats">(7 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">html_client.go</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">http.go</span><span class="tree-stats">(15 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">http_test.go</span><span class="tree-stats">(14 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">metrics.go</span><span class="tree-stats">(21 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">providers_integration_test.go</span><span class="tree-stats">(15 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">quota_integration_test.go</span><span class="tree-stats">(5 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">report.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">request_tracking.go</span><span class="tree-stats">(23 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">request_tracking_test.go</span><span class="tree-stats">(20 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">shutdown.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">shutdown_test.go</span><span class="tree-stats">(14 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">streaming.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">tests.go</span><span class="tree-stats">(7 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">types.go</span><span class="tree-stats">(3 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">validation.go</span><span class="tree-stats">(34 funcs)</span><span class="tree-stats">[crewai]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">validation_test.go</span><span class="tree-stats">(20 funcs)</span><span class="tree-stats">[crewai]</span></div>\n    </div>
+    <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">examples/</span><span class="tree-stats">(17 files, 80 functions)</span></div>    <div class="tree-children">
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">00-hello-crew/</span><span class="tree-stats">(7 files, 15 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">cmd/</span><span class="tree-stats">(1 files, 4 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">internal/</span><span class="tree-stats">(1 files, 1 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">hello.go</span><span class="tree-stats">(1 funcs)</span><span class="tree-stats">[internal]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">test_history/</span><span class="tree-stats">(1 files, 1 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(1 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">debug_test.go</span><span class="tree-stats">(1 funcs)</span><span class="tree-stats">[main]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">run_debug_test.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[main]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">test_memory_debug.go</span><span class="tree-stats">(3 funcs)</span><span class="tree-stats">[main]</span></div>
+            <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">test_metadata.go</span><span class="tree-stats">(1 funcs)</span><span class="tree-stats">[main]</span></div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">00-hello-crew-tools/</span><span class="tree-stats">(2 files, 14 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">cmd/</span><span class="tree-stats">(1 files, 5 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(5 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">internal/</span><span class="tree-stats">(1 files, 9 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">tools.go</span><span class="tree-stats">(9 funcs)</span><span class="tree-stats">[internal]</span></div>\n            </div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">01-quiz-exam/</span><span class="tree-stats">(2 files, 13 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">cmd/</span><span class="tree-stats">(1 files, 4 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">internal/</span><span class="tree-stats">(1 files, 9 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">tools.go</span><span class="tree-stats">(9 funcs)</span><span class="tree-stats">[internal]</span></div>\n            </div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">02-multi-team/</span><span class="tree-stats">(1 files, 6 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">cmd/</span><span class="tree-stats">(1 files, 6 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(6 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">it-support/</span><span class="tree-stats">(3 files, 19 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">cmd/</span><span class="tree-stats">(1 files, 1 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(1 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">internal/</span><span class="tree-stats">(2 files, 18 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">crew.go</span><span class="tree-stats">(2 funcs)</span><span class="tree-stats">[internal]</span></div>
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">tools.go</span><span class="tree-stats">(16 funcs)</span><span class="tree-stats">[internal]</span></div>\n            </div>\n        </div>
+        <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">vector-search/</span><span class="tree-stats">(2 files, 13 functions)</span></div>        <div class="tree-children">
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">cmd/</span><span class="tree-stats">(1 files, 4 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">main.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[main]</span></div>\n            </div>
+            <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">internal/</span><span class="tree-stats">(1 files, 9 functions)</span></div>            <div class="tree-children">
+                <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">qdrant_tools.go</span><span class="tree-stats">(9 funcs)</span><span class="tree-stats">[internal]</span></div>\n            </div>\n        </div>\n    </div>
+    <div class="tree-node"><span class="tree-icon">📁</span><span class="tree-dir">go-scan/</span><span class="tree-stats">(2 files, 17 functions)</span></div>    <div class="tree-children">
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">generate-html-report.go</span><span class="tree-stats">(4 funcs)</span><span class="tree-stats">[main]</span></div>
+        <div class="tree-node"><span class="tree-icon">🐹</span><span class="tree-file-go">scan.go</span><span class="tree-stats">(13 funcs)</span><span class="tree-stats">[main]</span></div>\n    </div>\n</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📦 Packages Overview</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Package</th>
+                            <th>Files</th>
+                            <th>Functions</th>
+                            <th>Methods</th>
+                            <th>Tests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>crewai</strong></td>
+                            <td>29</td>
+                            <td>419</td>
+                            <td>120</td>
+                            <td><span class="badge badge-test">211</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>signal</strong></td>
+                            <td>4</td>
+                            <td>74</td>
+                            <td>47</td>
+                            <td><span class="badge badge-test">20</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>executor</strong></td>
+                            <td>5</td>
+                            <td>57</td>
+                            <td>33</td>
+                            <td><span class="badge badge-test">19</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>main</strong></td>
+                            <td>13</td>
+                            <td>51</td>
+                            <td>2</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>internal</strong></td>
+                            <td>6</td>
+                            <td>46</td>
+                            <td>13</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>workflow</strong></td>
+                            <td>4</td>
+                            <td>36</td>
+                            <td>12</td>
+                            <td><span class="badge badge-test">13</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>openai</strong></td>
+                            <td>2</td>
+                            <td>31</td>
+                            <td>4</td>
+                            <td><span class="badge badge-test">15</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>ollama</strong></td>
+                            <td>2</td>
+                            <td>27</td>
+                            <td>4</td>
+                            <td><span class="badge badge-test">17</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>validation</strong></td>
+                            <td>4</td>
+                            <td>26</td>
+                            <td>0</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>common</strong></td>
+                            <td>3</td>
+                            <td>25</td>
+                            <td>24</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>providers</strong></td>
+                            <td>2</td>
+                            <td>19</td>
+                            <td>7</td>
+                            <td><span class="badge badge-test">9</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>agent</strong></td>
+                            <td>2</td>
+                            <td>14</td>
+                            <td>0</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>tools</strong></td>
+                            <td>1</td>
+                            <td>6</td>
+                            <td>0</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>tool</strong></td>
+                            <td>1</td>
+                            <td>4</td>
+                            <td>0</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>config</strong></td>
+                            <td>2</td>
+                            <td>4</td>
+                            <td>0</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="section">
+                <h2>📄 Top 20 Files by Function Count</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Package</th>
+                            <th>Functions</th>
+                            <th>Tests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>core/validation.go</strong></td>
+                            <td>crewai</td>
+                            <td>34</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/crew_test.go</strong></td>
+                            <td>crewai</td>
+                            <td>30</td>
+                            <td><span class="badge badge-test">29</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/config_test.go</strong></td>
+                            <td>crewai</td>
+                            <td>27</td>
+                            <td><span class="badge badge-test">26</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/crew.go</strong></td>
+                            <td>crewai</td>
+                            <td>25</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/signal/registry.go</strong></td>
+                            <td>signal</td>
+                            <td>23</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/request_tracking.go</strong></td>
+                            <td>crewai</td>
+                            <td>23</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/metrics.go</strong></td>
+                            <td>crewai</td>
+                            <td>21</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/validation_test.go</strong></td>
+                            <td>crewai</td>
+                            <td>20</td>
+                            <td><span class="badge badge-test">18</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/signal/signal_test.go</strong></td>
+                            <td>signal</td>
+                            <td>20</td>
+                            <td><span class="badge badge-test">20</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/request_tracking_test.go</strong></td>
+                            <td>crewai</td>
+                            <td>20</td>
+                            <td><span class="badge badge-test">20</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/agent_execution.go</strong></td>
+                            <td>crewai</td>
+                            <td>20</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/executor/executor_phase6_test.go</strong></td>
+                            <td>executor</td>
+                            <td>19</td>
+                            <td><span class="badge badge-test">19</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/providers/ollama/provider_test.go</strong></td>
+                            <td>ollama</td>
+                            <td>17</td>
+                            <td><span class="badge badge-test">17</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/agent_test.go</strong></td>
+                            <td>crewai</td>
+                            <td>17</td>
+                            <td><span class="badge badge-test">17</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/signal/handler.go</strong></td>
+                            <td>signal</td>
+                            <td>16</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/common/errors.go</strong></td>
+                            <td>common</td>
+                            <td>16</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>examples/it-support/internal/tools.go</strong></td>
+                            <td>internal</td>
+                            <td>16</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/providers/openai/provider.go</strong></td>
+                            <td>openai</td>
+                            <td>16</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/providers_integration_test.go</strong></td>
+                            <td>crewai</td>
+                            <td>15</td>
+                            <td><span class="badge badge-test">15</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>core/http.go</strong></td>
+                            <td>crewai</td>
+                            <td>15</td>
+                            <td><span class="badge badge-test">0</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="section">
+                <h2>🔍 Files with Details</h2>
+                <div class="file-list">
+                    <div class="file-item">
+                        <h4>core/validation.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>34</strong></span>
+                            <span>Tests: <strong>0</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>isSignalFormatValid <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• isSignalFormatValid checks if a signal matches the [NAME] format</em><br></span></li>
+                            <li>ValidateRequiredFields <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">3 params → 2 returns | 60 lines</span><br><em style="color:#999; font-size:0.9em;">📝 4 comments | 60 lines</em></li>
+                            <li>validateCrewRequiredFields <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateCrewRequiredFields checks for essential crew configuration fields</em><br></span></li>
+                            <li>validateEntryPointAndBuildMap <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 2 returns | 17 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 17 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateEntryPointAndBuildMap validates that entry_point exists and builds agent map</em><br></span></li>
+                            <li>validateCrewSettings <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateCrewSettings validates settings constraints</em><br></span></li>
+                            <li>validateSignals <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">3 params → 1 returns | 21 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 21 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateSignals validates routing signals reference valid agents and formats</em><br></span></li>
+                            <li>validateAgentBehaviors <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateAgentBehaviors validates agent behaviors reference existing agents</em><br></span></li>
+                            <li>validateParallelGroups <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 22 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 22 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateParallelGroups validates parallel groups structure and references</em><br></span></li>
+                            <li>validateRoutingReferences <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 28 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 28 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateRoutingReferences validates routing signals and parallel groups</em><br></span></li>
+                            <li>ValidateCrewConfig <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">1 params → 1 returns | 24 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 24 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ValidateCrewConfig validates crew configuration structure and constraints</em><br><em>• ✅ FIX for Issue #6: Validate YAML config at load time instead of runtime</em><br></span></li>
+                            <li>validateAgentBasicConstraints <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 20 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 20 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateAgentBasicConstraints validates temperature and quota constraints</em><br></span></li>
+                            <li>validatePrimaryModelConfig <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 31 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 31 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validatePrimaryModelConfig validates primary model configuration</em><br></span></li>
+                            <li>validateBackupModelConfig <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 15 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 15 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateBackupModelConfig validates backup model configuration if present</em><br></span></li>
+                            <li>warnAgentContextMissing <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• warnAgentContextMissing warns if agent has no system prompt or backstory</em><br></span></li>
+                            <li>ValidateAgentConfig <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">2 params → 1 returns | 31 lines</span><br><em style="color:#999; font-size:0.9em;">📝 5 comments | 31 lines</em></li>
+                            <li>NewConfigValidator <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">2 params → 1 returns | 9 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 9 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewConfigValidator creates a new validator</em><br></span></li>
+                            <li>ValidateAll (*ConfigValidator) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 29 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 29 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ValidateAll runs all validation checks</em><br></span></li>
+                            <li>validateCrewStructure (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 26 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 26 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateCrewStructure checks basic crew structure</em><br></span></li>
+                            <li>validateFields (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 27 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 27 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateFields checks field values and ranges</em><br></span></li>
+                            <li>validateAgentConfig (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 49 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 49 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateAgentConfig checks individual agent configuration</em><br></span></li>
+                            <li>validateAgents (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 16 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 16 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateAgents checks agent-specific validations</em><br></span></li>
+                            <li>validateRouting (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 39 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 39 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateRouting checks routing configuration</em><br></span></li>
+                            <li>DetectCircularReferences (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 22 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 22 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• DetectCircularReferences detects circular routing patterns</em><br></span></li>
+                            <li>hasCycle (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 26 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 26 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• hasCycle detects if there's a cycle starting from agentID</em><br></span></li>
+                            <li>CheckReachability (*ConfigValidator) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 42 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 42 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• CheckReachability verifies all agents can be reached from entry point</em><br></span></li>
+                            <li>validateGraph (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 4 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 4 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• validateGraph performs graph validation</em><br></span></li>
+                            <li>addError (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">4 params → 0 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• addError adds a validation error</em><br></span></li>
+                            <li>addWarning (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">4 params → 0 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• addWarning adds a validation warning</em><br></span></li>
+                            <li>GenerateErrorReport (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 27 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 27 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GenerateErrorReport generates a human-readable error report</em><br></span></li>
+                            <li>PrintReport (*ConfigValidator) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 22 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 22 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• PrintReport prints a detailed validation report</em><br></span></li>
+                            <li>GetErrors (*ConfigValidator) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetErrors returns all errors</em><br></span></li>
+                            <li>GetWarnings (*ConfigValidator) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetWarnings returns all warnings</em><br></span></li>
+                            <li>IsValid (*ConfigValidator) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• IsValid returns true if no errors (warnings are OK)</em><br></span></li>
+                            <li>ToJSON (*ConfigValidator) <span class="badge badge-converter">🔄 Converter</span> <span class="badge badge-method">0 params → 2 returns | 45 lines</span><br><em style="color:#999; font-size:0.9em;">📝 24 comments | 45 lines</em></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/crew_test.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>30</strong></span>
+                            <span>Tests: <strong>29</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>copyHistory <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• copyHistory creates a deep copy of message history to ensure thread safety</em><br><em>• Moved from deprecated tool_validation.go for test use</em><br></span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/config_test.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>27</strong></span>
+                            <span>Tests: <strong>26</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>contains <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Helper function for string containment check</em><br></span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/crew.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>25</strong></span>
+                            <span>Tests: <strong>0</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>NewCrewExecutor <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">2 params → 1 returns | 23 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 23 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewCrewExecutor creates a new crew executor</em><br><em>• Note: crew.Routing MUST be set for signal-based routing to work</em><br></span></li>
+                            <li>SetSignalRegistry (*CrewExecutor) <span class="badge badge-setter">✏️ Setter</span> <span class="badge badge-method">1 params → 0 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• SetSignalRegistry sets the signal registry for enhanced signal validation (Phase 3.5)</em><br><em>• When a registry is set, ValidateSignals() will perform enhanced validation using the registry</em><br></span></li>
+                            <li>NewCrewExecutorFromConfig <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">3 params → 2 returns | 84 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 84 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewCrewExecutorFromConfig creates a crew executor by loading configuration from files</em><br><em>• This is the recommended way to initialize a crew with routing configuration</em><br></span></li>
+                            <li>SetVerbose (*CrewExecutor) <span class="badge badge-setter">✏️ Setter</span> <span class="badge badge-method">1 params → 0 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• SetVerbose enables or disables verbose output</em><br></span></li>
+                            <li>SetResumeAgent (*CrewExecutor) <span class="badge badge-setter">✏️ Setter</span> <span class="badge badge-method">1 params → 0 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• SetResumeAgent sets the agent to resume from in the next execution</em><br><em>• This is used when continuing a conversation after a PAUSE (wait_for_signal)</em><br></span></li>
+                            <li>ClearResumeAgent (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ClearResumeAgent clears the resume agent, so next execution starts from entry agent</em><br></span></li>
+                            <li>GetResumeAgentID (*CrewExecutor) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetResumeAgentID returns the current resume agent ID</em><br></span></li>
+                            <li>ValidateSignals (*CrewExecutor) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 24 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 24 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ValidateSignals validates the signal routing configuration</em><br><em>• Returns error if signals are misconfigured (empty names, unknown targets, invalid format)</em><br></span></li>
+                            <li>RegisterSignalHandlers (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 33 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 33 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RegisterSignalHandlers registers signal handlers from routing configuration</em><br><em>• This method should be called after SetSignalRegistry to register handlers</em><br></span></li>
+                            <li>appendMessage (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• appendMessage safely appends a message to history with mutex protection</em><br><em>• Delegates to HistoryManager for thread-safe operations</em><br></span></li>
+                            <li>getHistoryCopy (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 14 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 14 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• getHistoryCopy returns a copy of history for safe reading</em><br><em>• Caller can safely read the returned copy without affecting concurrent writers</em><br></span></li>
+                            <li>GetHistory (*CrewExecutor) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetHistory returns a copy of the conversation history</em><br><em>• Allows inspection for debugging memory issues</em><br></span></li>
+                            <li>estimateHistoryTokens (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• estimateHistoryTokens estimates total tokens in conversation history</em><br><em>• Uses approximation: 1 token ≈ 4 characters (OpenAI convention)</em><br></span></li>
+                            <li>trimHistoryIfNeeded (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 4 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 4 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• trimHistoryIfNeeded trims conversation history to fit within context window</em><br><em>• Note: HistoryManager automatically trims on Add() calls based on configured thresholds</em><br></span></li>
+                            <li>ClearHistory (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ClearHistory clears the conversation history</em><br><em>• Useful for starting fresh conversations</em><br></span></li>
+                            <li>sendStreamEvent (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">4 params → 0 returns | 13 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 13 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• sendStreamEvent safely sends a stream event to the channel</em><br><em>• It handles nil channels gracefully and won't block indefinitely</em><br></span></li>
+                            <li>handleAgentError (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">4 params → 1 returns | 19 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 19 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• handleAgentError handles errors from agent execution</em><br><em>• It logs the error, sends a stream event, and returns the error</em><br></span></li>
+                            <li>updateAgentMetrics (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">5 params → 1 returns | 14 lines</span><br><em style="color:#999; font-size:0.9em;">📝 4 comments | 14 lines</em></li>
+                            <li>calculateMessageTokens <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• calculateMessageTokens calculates the token count for a message</em><br><em>• Uses the formula: base_tokens + (content_length + padding) / divisor</em><br></span></li>
+                            <li>addUserMessageToHistory (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• addUserMessageToHistory adds a user message to the conversation history</em><br><em>• This is a convenience wrapper around appendMessage</em><br></span></li>
+                            <li>addAssistantMessageToHistory (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• addAssistantMessageToHistory adds an assistant message to the conversation history</em><br><em>• This is a convenience wrapper around appendMessage</em><br></span></li>
+                            <li>recordAgentExecution (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">3 params → 0 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• recordAgentExecution records metrics about agent execution</em><br><em>• Updates both internal metrics and global metrics collector</em><br></span></li>
+                            <li>executeWorkflow (*CrewExecutor) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">3 params → 1 returns | 78 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 78 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• executeWorkflow executes the crew workflow with signal support</em><br><em>• This is the core execution method that coordinates multi-agent workflows</em><br></span></li>
+                            <li>ExecuteStream (*CrewExecutor) <span class="badge badge-handler">🎯 Handler</span> <span class="badge badge-method">3 params → 1 returns | 52 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 52 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ExecuteStream runs the crew with streaming events</em><br></span></li>
+                            <li>Execute (*CrewExecutor) <span class="badge badge-handler">🎯 Handler</span> <span class="badge badge-method">2 params → 2 returns | 16 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 16 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Execute runs the crew with the given input</em><br></span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/signal/registry.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>signal</strong></span>
+                            <span>Functions: <strong>23</strong></span>
+                            <span>Tests: <strong>0</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>NewSignalRegistry <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">0 params → 1 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewSignalRegistry creates a new signal registry</em><br></span></li>
+                            <li>NewSignalRegistryWithConfig <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">1 params → 1 returns | 13 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 13 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewSignalRegistryWithConfig creates a registry with custom configuration</em><br></span></li>
+                            <li>RegisterHandler (*SignalRegistry) <span class="badge badge-handler">🎯 Handler</span> <span class="badge badge-method">1 params → 1 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RegisterHandler registers a signal handler</em><br></span></li>
+                            <li>UnregisterHandler (*SignalRegistry) <span class="badge badge-handler">🎯 Handler</span> <span class="badge badge-method">1 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• UnregisterHandler removes a signal handler</em><br></span></li>
+                            <li>GetHandler (*SignalRegistry) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetHandler retrieves a handler by ID</em><br></span></li>
+                            <li>Emit (*SignalRegistry) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 39 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 39 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Emit broadcasts a signal to all listeners and returns routing decision</em><br></span></li>
+                            <li>Listen (*SignalRegistry) <span class="badge badge-higher-order">⚡ Higher-Order</span> <span class="badge badge-method">2 params → 1 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Listen registers a listener for specific signal types</em><br></span></li>
+                            <li>notifyListeners (*SignalRegistry) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 11 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 11 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• notifyListeners notifies all registered listeners</em><br></span></li>
+                            <li>ProcessSignal (*SignalRegistry) <span class="badge badge-handler">🎯 Handler</span> <span class="badge badge-method">2 params → 2 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ProcessSignal processes a signal through registered handlers</em><br></span></li>
+                            <li>ProcessSignalWithPriority (*SignalRegistry) <span class="badge badge-handler">🎯 Handler</span> <span class="badge badge-method">3 params → 2 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ProcessSignalWithPriority processes signal with priority handling</em><br></span></li>
+                            <li>recordAgentSignal (*SignalRegistry) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 0 returns | 22 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 22 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• recordAgentSignal records signal emission by agent</em><br></span></li>
+                            <li>GetAgentSignalInfo (*SignalRegistry) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 11 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 11 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetAgentSignalInfo retrieves signal information for an agent</em><br></span></li>
+                            <li>GetSignalHistory (*SignalRegistry) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetSignalHistory returns signal history</em><br></span></li>
+                            <li>ClearSignalHistory (*SignalRegistry) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ClearSignalHistory clears the history</em><br></span></li>
+                            <li>AllowAgentSignal (*SignalRegistry) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 17 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 17 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• AllowAgentSignal allows an agent to emit a signal</em><br></span></li>
+                            <li>IsAgentSignalAllowed (*SignalRegistry) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">2 params → 1 returns | 17 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 17 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• IsAgentSignalAllowed checks if agent can emit signal</em><br></span></li>
+                            <li>GetAgentEmittedSignals (*SignalRegistry) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 14 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 14 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetAgentEmittedSignals returns all signals emitted by an agent</em><br></span></li>
+                            <li>Drain (*SignalRegistry) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 18 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 18 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Drain processes all queued signals (blocking)</em><br></span></li>
+                            <li>Start (*SignalRegistry) <span class="badge badge-lifecycle">♻️ Lifecycle</span> <span class="badge badge-method">1 params → 0 returns | 17 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 17 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Start starts processing signals (runs in goroutine)</em><br></span></li>
+                            <li>Close (*SignalRegistry) <span class="badge badge-lifecycle">♻️ Lifecycle</span> <span class="badge badge-method">0 params → 1 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Close closes the signal registry</em><br></span></li>
+                            <li>IsClosed (*SignalRegistry) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• IsClosed checks if registry is closed</em><br></span></li>
+                            <li>ValidateConfiguration (*SignalRegistry) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 23 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 23 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ValidateConfiguration validates the registry configuration</em><br></span></li>
+                            <li>GetStats (*SignalRegistry) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 14 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 14 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetStats returns registry statistics</em><br></span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/request_tracking.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>23</strong></span>
+                            <span>Tests: <strong>0</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>GenerateRequestID <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 3 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 3 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GenerateRequestID generates a unique request ID using UUID</em><br></span></li>
+                            <li>GenerateShortRequestID <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 4 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 4 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GenerateShortRequestID generates a shorter request ID for logs (16 chars)</em><br><em>• Format: "req-" + first 12 chars of UUID</em><br></span></li>
+                            <li>GetRequestID <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetRequestID retrieves request ID from context</em><br><em>• Returns "unknown" if no ID found</em><br></span></li>
+                            <li>GetOrCreateRequestID <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 2 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetOrCreateRequestID gets request ID from context or creates new one</em><br></span></li>
+                            <li>AddEvent (*RequestMetadata) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">4 params → 0 returns | 15 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 15 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• AddEvent adds an event to the request metadata</em><br></span></li>
+                            <li>IncrementAgentCalls (*RequestMetadata) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• IncrementAgentCalls increments agent call counter</em><br></span></li>
+                            <li>IncrementToolCalls (*RequestMetadata) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• IncrementToolCalls increments tool call counter</em><br></span></li>
+                            <li>SetStatus (*RequestMetadata) <span class="badge badge-setter">✏️ Setter</span> <span class="badge badge-method">2 params → 0 returns | 11 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 11 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• SetStatus sets request status and optionally error message</em><br></span></li>
+                            <li>Finalize (*RequestMetadata) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Finalize completes the request metadata</em><br></span></li>
+                            <li>GetSnapshot (*RequestMetadata) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 34 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 34 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetSnapshot returns a thread-safe copy of metadata</em><br></span></li>
+                            <li>NewRequestStore <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">1 params → 1 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 3 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewRequestStore creates a new request store</em><br><em>• maxSize: Keep last N requests (default: 1000, configurable via HardcodedDefaults)</em><br></span></li>
+                            <li>Add (*RequestStore) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 0 returns | 26 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 26 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Add adds or updates a request in the store</em><br></span></li>
+                            <li>Get (*RequestStore) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Get retrieves a request by ID</em><br></span></li>
+                            <li>GetAll (*RequestStore) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 14 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 14 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetAll returns all stored requests (snapshot)</em><br></span></li>
+                            <li>GetRecent (*RequestStore) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 30 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 30 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetRecent returns last N requests in reverse chronological order</em><br></span></li>
+                            <li>GetByStatus (*RequestStore) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">1 params → 1 returns | 15 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 15 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetByStatus returns requests with matching status</em><br></span></li>
+                            <li>GetStats (*RequestStore) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 44 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 44 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetStats returns store statistics</em><br></span></li>
+                            <li>Clear (*RequestStore) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 10 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 10 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Clear removes all requests from the store</em><br></span></li>
+                            <li>Size (*RequestStore) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Size returns number of stored requests</em><br></span></li>
+                            <li>Cleanup (*RequestStore) <span class="badge badge-lifecycle">♻️ Lifecycle</span> <span class="badge badge-method">1 params → 0 returns | 28 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 28 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Cleanup removes old requests based on age</em><br><em>• olderThan: Remove requests older than this duration</em><br></span></li>
+                            <li>Export (*RequestStore) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 36 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 36 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Export exports all requests as JSON-compatible format</em><br></span></li>
+                            <li>Summary (*RequestMetadata) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 1 returns | 18 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 18 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Summary returns a human-readable summary of request</em><br></span></li>
+                            <li>truncateString <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• truncateString truncates a string to max length and adds ellipsis</em><br></span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/metrics.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>21</strong></span>
+                            <span>Tests: <strong>0</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>NewMetricsCollector <span class="badge badge-constructor">📦 Constructor</span> <span class="badge badge-method">0 params → 1 returns | 9 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 9 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• NewMetricsCollector creates a new metrics collector</em><br></span></li>
+                            <li>RecordToolExecution (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">3 params → 0 returns | 70 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 70 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RecordToolExecution records execution of a single tool</em><br></span></li>
+                            <li>RecordAgentExecution (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">4 params → 0 returns | 60 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 60 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RecordAgentExecution records execution of an entire agent</em><br></span></li>
+                            <li>RecordLLMCall (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">3 params → 0 returns | 15 lines</span><br><em style="color:#999; font-size:0.9em;">📝 2 comments | 15 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RecordLLMCall records an LLM API call with token usage and cost</em><br><em>• ✅ Crew-level cost tracking - called after each ExecuteAgent</em><br></span></li>
+                            <li>ResetSessionCost (*MetricsCollector) <span class="badge badge-lifecycle">♻️ Lifecycle</span> <span class="badge badge-method">0 params → 0 returns | 11 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 11 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ResetSessionCost resets session-level cost tracking (called on ClearHistory)</em><br></span></li>
+                            <li>GetSessionCost (*MetricsCollector) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 2 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetSessionCost returns current session cost metrics</em><br></span></li>
+                            <li>GetTotalCost (*MetricsCollector) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 3 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetTotalCost returns total cost metrics across all sessions</em><br></span></li>
+                            <li>LogCrewCostSummary (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 15 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 15 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• LogCrewCostSummary logs the current crew cost summary</em><br></span></li>
+                            <li>RecordCacheHit (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 11 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 11 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RecordCacheHit records a cache hit</em><br></span></li>
+                            <li>RecordCacheMiss (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 11 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 11 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• RecordCacheMiss records a cache miss</em><br></span></li>
+                            <li>updateCacheHitRate (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• updateCacheHitRate calculates cache hit rate (must be called with lock held)</em><br></span></li>
+                            <li>UpdateMemoryUsage (*MetricsCollector) <span class="badge badge-setter">✏️ Setter</span> <span class="badge badge-method">1 params → 0 returns | 13 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 13 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• UpdateMemoryUsage updates current memory usage</em><br></span></li>
+                            <li>GetSystemMetrics (*MetricsCollector) <span class="badge badge-getter">🔧 Getter</span> <span class="badge badge-method">0 params → 1 returns | 8 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 8 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• GetSystemMetrics returns a copy of current system metrics</em><br></span></li>
+                            <li>ExportMetrics (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 2 returns | 13 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 13 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• ExportMetrics exports metrics in specified format (json or prometheus)</em><br></span></li>
+                            <li>exportJSON (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 2 returns | 12 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 12 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• exportJSON exports metrics in JSON format</em><br></span></li>
+                            <li>exportPrometheus (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 2 returns | 49 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 49 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• exportPrometheus exports metrics in Prometheus format</em><br></span></li>
+                            <li>Reset (*MetricsCollector) <span class="badge badge-lifecycle">♻️ Lifecycle</span> <span class="badge badge-method">0 params → 0 returns | 9 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 9 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Reset resets all metrics (useful for testing)</em><br></span></li>
+                            <li>Enable (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Enable enables metrics collection</em><br></span></li>
+                            <li>Disable (*MetricsCollector) <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">0 params → 0 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Disable disables metrics collection</em><br></span></li>
+                            <li>IsEnabled (*MetricsCollector) <span class="badge badge-validator">✅ Validator</span> <span class="badge badge-method">0 params → 1 returns | 5 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 5 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• IsEnabled returns whether metrics collection is enabled</em><br></span></li>
+                            <li>statusString <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">1 params → 1 returns | 6 lines</span><br><em style="color:#999; font-size:0.9em;">📝 1 comments | 6 lines</em><br><span style="color:#666; font-size:0.85em; margin-top:4px; display:block;"><em>• Helper function to convert boolean to status string</em><br></span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/validation_test.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>20</strong></span>
+                            <span>Tests: <strong>18</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                            <li>makeConfig <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">2 params → 1 returns | 10 lines</span></li>
+                            <li>makeAgent <span class="badge badge-standard">📝 Standard</span> <span class="badge badge-method">5 params → 1 returns | 9 lines</span></li>
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/signal/signal_test.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>signal</strong></span>
+                            <span>Functions: <strong>20</strong></span>
+                            <span>Tests: <strong>20</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                        </ul>
+                    </div>
+                    <div class="file-item">
+                        <h4>core/request_tracking_test.go</h4>
+                        <div class="file-item-meta">
+                            <span>Package: <strong>crewai</strong></span>
+                            <span>Functions: <strong>20</strong></span>
+                            <span>Tests: <strong>20</strong></span>
+                        </div>
+                        <ul class="functions-list">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Generated by Go Code Scanner | 80 files analyzed | 839 functions discovered</p>
+        </div>
+    </div>
+</body>
+</html>

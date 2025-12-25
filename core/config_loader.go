@@ -5,8 +5,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/taipm/go-agentic/core/common"
 	"gopkg.in/yaml.v3"
 )
 
@@ -221,8 +223,8 @@ func convertToModelConfig(primary *ModelConfigYAML, backup *ModelConfigYAML) (*M
 }
 
 // buildAgentQuotas creates quota limits from agent config
-func buildAgentQuotas(config *AgentConfig) AgentQuotaLimits {
-	return AgentQuotaLimits{
+func buildAgentQuotas(config *AgentConfig) *common.AgentQuotaLimits {
+	return &common.AgentQuotaLimits{
 		MaxTokensPerCall:   config.MaxTokensPerCall,
 		MaxTokensPerDay:    config.MaxTokensPerDay,
 		MaxCostPerDay:      config.MaxCostPerDay,
@@ -244,20 +246,21 @@ func buildAgentMetadata(config *AgentConfig) *AgentMetadata {
 	now := time.Now()
 
 	return &AgentMetadata{
-		AgentID:        config.ID,
-		AgentName:      config.Name,
-		CreatedTime:    now,
-		LastAccessTime: now,
-		Quotas:         buildAgentQuotas(config),
+		ID:        config.ID,
+		Name:      config.Name,
+		Role:      config.Role,
+		CreatedAt: now,
+		QuotaLimits: buildAgentQuotas(config),
 
-		Cost: AgentCostMetrics{
+		CostMetrics: &AgentCostMetrics{
 			CallCount:     0,
 			TotalTokens:   0,
 			DailyCost:     0,
 			LastResetTime: time.Time{},
+			Mutex:         sync.RWMutex{},
 		},
 
-		Memory: AgentMemoryMetrics{
+		MemoryMetrics: &AgentMemoryMetrics{
 			CurrentMemoryMB:     0,
 			PeakMemoryMB:        0,
 			AverageMemoryMB:     0,
@@ -270,9 +273,10 @@ func buildAgentMetadata(config *AgentConfig) *AgentMetadata {
 			ContextTrimPercent:  0.20,
 			AverageCallDuration: 0,
 			SlowCallThreshold:   30 * time.Second,
+			Mutex:               sync.RWMutex{},
 		},
 
-		Performance: AgentPerformanceMetrics{
+		PerformanceMetrics: &AgentPerformanceMetrics{
 			SuccessfulCalls:      0,
 			FailedCalls:          0,
 			SuccessRate:          100.0,
@@ -284,9 +288,10 @@ func buildAgentMetadata(config *AgentConfig) *AgentMetadata {
 			MaxErrorsPerHour:     10,
 			MaxErrorsPerDay:      50,
 			MaxConsecutiveErrors: 5,
+			Mutex:                sync.RWMutex{},
 		},
 
-		EnforceCostLimits: config.EnforceCostLimits,
+		AllowedToolNames: config.Tools,
 	}
 }
 
@@ -313,33 +318,19 @@ func CreateAgentFromConfig(config *AgentConfig, allTools map[string]*Tool) *Agen
 		Name:           config.Name,
 		Role:           config.Role,
 		Backstory:      config.Backstory,
-		Model:          config.Model,
 		SystemPrompt:   config.SystemPrompt,
-		Provider:       config.Provider,
-		ProviderURL:    config.ProviderURL,
-		Primary:        primary,
-		Backup:         backup,
+		PrimaryModel:   primary,
+		BackupModel:    backup,
 		Temperature:    config.Temperature,
 		IsTerminal:     config.IsTerminal,
-		HandoffTargets: config.HandoffTargets,
-		Tools:          []*Tool{},
+		HandoffTargets: []*Agent{}, // TODO: Resolve string IDs to Agent pointers after all agents are created
+		Tools:          []interface{}{},
 
 		Metadata: metadata,
-
-		MaxTokensPerCall:   config.MaxTokensPerCall,
-		MaxTokensPerDay:    config.MaxTokensPerDay,
-		MaxCostPerDay:      config.MaxCostPerDay,
-		CostAlertThreshold: config.CostAlertThreshold,
-		EnforceCostLimits:  config.EnforceCostLimits,
-		CostMetrics: AgentCostMetrics{
-			CallCount:     0,
-			TotalTokens:   0,
-			DailyCost:     0,
-			LastResetTime: time.Time{},
-		},
-
-		InputTokenPricePerMillion:  getInputTokenPrice(config.CostLimits),
-		OutputTokenPricePerMillion: getOutputTokenPrice(config.CostLimits),
+		Quota:    metadata.QuotaLimits,
+		CostMetrics: metadata.CostMetrics,
+		MemoryMetrics: metadata.MemoryMetrics,
+		PerformanceMetrics: metadata.PerformanceMetrics,
 	}
 
 	// Step 4: Add tools from config

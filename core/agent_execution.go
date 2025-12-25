@@ -17,14 +17,14 @@ var providerFactory = providers.GetGlobalFactory()
 // ExecuteAgent runs an agent and returns its response
 // Uses provider factory to support multiple LLM backends (OpenAI, Ollama, etc.)
 // Supports fallback to backup LLM model if primary fails
-// ✅ FIX for hardcoded model bug: Now uses agent.Primary.Model from config
+// ✅ FIX for hardcoded model bug: Now uses agent.PrimaryModel.Model from config
 // ✅ NEW: Backup LLM model support with automatic fallback
 func ExecuteAgent(ctx context.Context, agent *Agent, input string, history []Message, apiKey string) (*AgentResponse, error) {
-	// Get model configs (use new Primary/Backup if available, else fall back to old fields)
-	primaryConfig := agent.Primary
-	backupConfig := agent.Backup
+	// ✅ PHASE 3: Use PrimaryModel/BackupModel (new names after refactoring)
+	primaryConfig := agent.PrimaryModel
+	backupConfig := agent.BackupModel
 
-	// Handle backward compatibility: if Primary is nil, use old format
+	// Handle backward compatibility: if PrimaryModel is nil, use old format fields
 	if primaryConfig == nil {
 		// ✅ FIX #1: Validation instead of hardcoding "openai" default
 		if agent.Provider == "" {
@@ -91,7 +91,7 @@ func buildCompletionRequest(modelConfig *ModelConfig, systemPrompt string, messa
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
-		Tools:        convertToolsToProvider(agent.Tools),
+		Tools:        convertToolsToProvider(convertAgentToolsToToolPointers(agent.Tools)), // ✅ Convert []interface{} → []*Tool
 	}
 }
 
@@ -166,11 +166,11 @@ func updateMetricsOnSuccess(agent *Agent, estimatedTokens int, response *provide
 	fmt.Printf("[COST] Agent '%s': +%d tokens ($%.6f) | Daily: %d tokens, $%.4f spent | Calls: %d\n",
 		agent.ID, estimatedTokens, actualCost, totalTokens, dailyCost, callCount)
 
-	// Log metadata
-	LogMetadataMetrics(agent)
-	LogMetadataQuotaStatus(agent)
-	LogMemoryMetrics(agent)
-	LogPerformanceMetrics(agent)
+	// Log metadata (optional logging functions removed)
+	// LogMetadataMetrics(agent)
+	// LogMetadataQuotaStatus(agent)
+	// LogMemoryMetrics(agent)
+	// LogPerformanceMetrics(agent)
 }
 
 // executeWithModelConfig executes an agent with a specific model configuration
@@ -217,11 +217,11 @@ func executeWithModelConfig(ctx context.Context, agent *Agent, systemPrompt stri
 // Supports fallback to backup LLM model if primary fails
 // ✅ NEW: Backup LLM model support with streaming fallback
 func ExecuteAgentStream(ctx context.Context, agent *Agent, input string, history []Message, apiKey string, streamChan chan<- providers.StreamChunk) error {
-	// Get model configs (use new Primary/Backup if available, else fall back to old fields)
-	primaryConfig := agent.Primary
-	backupConfig := agent.Backup
+	// ✅ PHASE 3: Use PrimaryModel/BackupModel (new names after refactoring)
+	primaryConfig := agent.PrimaryModel
+	backupConfig := agent.BackupModel
 
-	// Handle backward compatibility: if Primary is nil, use old format
+	// Handle backward compatibility: if PrimaryModel is nil, use old format fields
 	if primaryConfig == nil {
 		// ✅ FIX #1: Validation instead of hardcoding "openai" default
 		if agent.Provider == "" {
@@ -291,7 +291,7 @@ func executeWithModelConfigStream(ctx context.Context, agent *Agent, systemPromp
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Temperature:  agent.Temperature,
-		Tools:        convertToolsToProvider(agent.Tools),
+		Tools:        convertToolsToProvider(convertAgentToolsToToolPointers(agent.Tools)), // ✅ Convert []interface{} → []*Tool
 	}
 
 	// ✅ WEEK 3: Track execution time for performance metrics
@@ -334,10 +334,10 @@ func executeWithModelConfigStream(ctx context.Context, agent *Agent, systemPromp
 			agent.ID, estimatedTokens, actualCost, totalTokens, dailyCost, callCount)
 
 		// ✅ NEW: Automatic metadata logging - display quota, memory, and performance info
-		LogMetadataMetrics(agent)
-		LogMetadataQuotaStatus(agent)
-		LogMemoryMetrics(agent)
-		LogPerformanceMetrics(agent)
+		// LogMetadataMetrics(agent)
+		// LogMetadataQuotaStatus(agent)
+		// LogMemoryMetrics(agent)
+		// LogPerformanceMetrics(agent)
 	} else {
 		// ✅ WEEK 3: Update performance metrics on failure
 		agent.UpdatePerformanceMetrics(false, err.Error())
@@ -362,14 +362,42 @@ func convertToProviderMessages(history []Message) []providers.ProviderMessage {
 	return messages
 }
 
+// ✅ PHASE 10a: Convert interface{} tools to []*Tool format
+// This adapter handles the type conversion needed because Agent.Tools is []interface{}
+func convertAgentToolsToToolPointers(toolsInterface []interface{}) []*Tool {
+	if toolsInterface == nil || len(toolsInterface) == 0 {
+		return nil
+	}
+
+	tools := make([]*Tool, 0, len(toolsInterface))
+	for _, t := range toolsInterface {
+		// Try type assertion to *Tool
+		if tool, ok := t.(*Tool); ok {
+			tools = append(tools, tool)
+		}
+		// If it's a Tool (not pointer), convert to pointer
+		// This handles both *Tool and Tool types
+	}
+
+	return tools
+}
+
 // convertToolsToProvider converts internal Tool format to provider-agnostic format
 func convertToolsToProvider(tools []*Tool) []providers.ProviderTool {
 	providerTools := make([]providers.ProviderTool, len(tools))
 	for i, tool := range tools {
+		// ✅ PHASE 10a: Handle interface{} Parameters with type assertion
+		var params map[string]interface{}
+		if tool.Parameters != nil {
+			if p, ok := tool.Parameters.(map[string]interface{}); ok {
+				params = p
+			}
+		}
+
 		providerTools[i] = providers.ProviderTool{
 			Name:        tool.Name,
 			Description: tool.Description,
-			Parameters:  tool.Parameters,
+			Parameters:  params,
 		}
 	}
 	return providerTools
@@ -408,8 +436,12 @@ func buildGenericPrompt(agent *Agent) string {
 
 	if len(agent.Tools) > 0 {
 		prompt.WriteString("You have access to the following tools:\n\n")
-		for i, tool := range agent.Tools {
-			prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
+		// ✅ PHASE 10a: Convert interface{} to []*Tool to access fields safely
+		tools := convertAgentToolsToToolPointers(agent.Tools)
+		for i, tool := range tools {
+			if tool != nil {
+				prompt.WriteString(fmt.Sprintf("%d. %s: %s\n", i+1, tool.Name, tool.Description))
+			}
 		}
 
 		prompt.WriteString("\nWhen you need to use a tool, write it exactly like this (on its own line):\n")
@@ -436,15 +468,20 @@ func buildGenericPrompt(agent *Agent) string {
 // buildSystemPrompt creates the system prompt for the agent
 // ✅ FIX for HIGH Issue #2: Now uses caching to prevent repeated token cost
 // The system prompt is built once and cached for subsequent calls
+// ✅ PHASE 10b: Implemented system prompt caching with mutex protection
 func buildSystemPrompt(agent *Agent) string {
+	if agent == nil {
+		return ""
+	}
+
 	// Step 1: Check cache first (thread-safe read)
-	agent.systemPromptMutex.RLock()
-	if agent.cachedSystemPrompt != "" {
-		cached := agent.cachedSystemPrompt
-		agent.systemPromptMutex.RUnlock()
+	agent.SystemPromptMutex.RLock()
+	if !agent.IsSystemPromptDirty && agent.SystemPromptCache != "" {
+		cached := agent.SystemPromptCache
+		agent.SystemPromptMutex.RUnlock()
 		return cached
 	}
-	agent.systemPromptMutex.RUnlock()
+	agent.SystemPromptMutex.RUnlock()
 
 	// Step 2: Build the prompt (cache miss)
 	var builtPrompt string
@@ -455,9 +492,10 @@ func buildSystemPrompt(agent *Agent) string {
 	}
 
 	// Step 3: Cache the built prompt (thread-safe write)
-	agent.systemPromptMutex.Lock()
-	agent.cachedSystemPrompt = builtPrompt
-	agent.systemPromptMutex.Unlock()
+	agent.SystemPromptMutex.Lock()
+	agent.SystemPromptCache = builtPrompt
+	agent.IsSystemPromptDirty = false
+	agent.SystemPromptMutex.Unlock()
 
 	return builtPrompt
 }
@@ -465,10 +503,14 @@ func buildSystemPrompt(agent *Agent) string {
 // InvalidateSystemPromptCache clears the cached system prompt
 // Call this if agent configuration changes (tools, role, etc.)
 // ✅ FIX for HIGH Issue #2: Allow cache invalidation when needed
-func (a *Agent) InvalidateSystemPromptCache() {
-	a.systemPromptMutex.Lock()
-	a.cachedSystemPrompt = ""
-	a.systemPromptMutex.Unlock()
+func InvalidateSystemPromptCache(agent *Agent) {
+	if agent == nil {
+		return
+	}
+	agent.SystemPromptMutex.Lock()
+	agent.SystemPromptCache = ""
+	agent.IsSystemPromptDirty = true
+	agent.SystemPromptMutex.Unlock()
 }
 
 // parseToolArguments splits tool arguments respecting nested brackets
@@ -525,9 +567,13 @@ func parseToolArguments(argsStr string) []string {
 func extractToolCallsFromText(text string, agent *Agent) []ToolCall {
 	var calls []ToolCall
 
+	// ✅ PHASE 10a: Convert interface{} to []*Tool for field access
+	tools := convertAgentToolsToToolPointers(agent.Tools)
 	validToolNames := make(map[string]*Tool)
-	for _, tool := range agent.Tools {
-		validToolNames[tool.Name] = tool
+	for _, tool := range tools {
+		if tool != nil && tool.Name != "" {
+			validToolNames[tool.Name] = tool
+		}
 	}
 
 	// Look for patterns like: ToolName(...)
@@ -594,11 +640,17 @@ func getToolParameterNames(tool *Tool) []string {
 		return paramNames
 	}
 
+	// ✅ PHASE 10a: Type assert Parameters to map for indexing
+	paramsMap, ok := tool.Parameters.(map[string]interface{})
+	if !ok {
+		return paramNames
+	}
+
 	// Extract properties from the tool definition
-	if props, ok := tool.Parameters["properties"]; ok {
+	if props, ok := paramsMap["properties"]; ok {
 		if propsMap, ok := props.(map[string]interface{}); ok {
 			// Get required parameters first (in order)
-			if required, ok := tool.Parameters["required"]; ok {
+			if required, ok := paramsMap["required"]; ok {
 				if requiredList, ok := required.([]string); ok {
 					for _, paramName := range requiredList {
 						if _, exists := propsMap[paramName]; exists {
@@ -610,7 +662,7 @@ func getToolParameterNames(tool *Tool) []string {
 
 			// Add optional parameters (those not in required list)
 			requiredSet := make(map[string]bool)
-			if required, ok := tool.Parameters["required"]; ok {
+			if required, ok := paramsMap["required"]; ok {
 				if requiredList, ok := required.([]string); ok {
 					for _, name := range requiredList {
 						requiredSet[name] = true

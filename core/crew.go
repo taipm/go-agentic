@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/taipm/go-agentic/core/common"
 	"github.com/taipm/go-agentic/core/executor"
 	"github.com/taipm/go-agentic/core/signal"
 	"github.com/taipm/go-agentic/core/validation"
@@ -241,7 +242,12 @@ func (ce *CrewExecutor) RegisterSignalHandlers() error {
 // Delegates to HistoryManager for thread-safe operations
 func (ce *CrewExecutor) appendMessage(msg Message) {
 	if ce.history != nil {
-		ce.history.Append(msg)
+		// Convert Message to common.Message for HistoryManager.Add
+		commonMsg := common.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+		ce.history.Add(commonMsg)
 	}
 }
 
@@ -252,7 +258,15 @@ func (ce *CrewExecutor) getHistoryCopy() []Message {
 	if ce.history == nil {
 		return []Message{}
 	}
-	return ce.history.Copy()
+	messages := ce.history.GetMessages()
+	result := make([]Message, len(messages))
+	for i, msg := range messages {
+		result[i] = Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+	return result
 }
 
 // GetHistory returns a copy of the conversation history
@@ -262,24 +276,23 @@ func (ce *CrewExecutor) GetHistory() []Message {
 }
 
 // estimateHistoryTokens estimates total tokens in conversation history
-// Uses approximation: 1 token ≈ TokenDivisor characters (OpenAI convention)
+// Uses approximation: 1 token ≈ 4 characters (OpenAI convention)
 // Delegates to HistoryManager
 func (ce *CrewExecutor) estimateHistoryTokens() int {
 	if ce.history == nil {
 		return 0
 	}
-	return ce.history.EstimateTokens()
+	// Estimate: ~1 token per 4 characters
+	totalSize := ce.history.TotalSize()
+	return (totalSize + 3) / 4 // Round up
 }
 
 // trimHistoryIfNeeded trims conversation history to fit within context window
-// Uses ce.defaults.MaxContextWindow and ce.defaults.ContextTrimPercent
-// Strategy: Keep first + recent messages, remove oldest in middle when over limit
-// Delegates to HistoryManager
+// Note: HistoryManager automatically trims on Add() calls based on configured thresholds
+// This method is kept for API compatibility but trimming happens automatically
 func (ce *CrewExecutor) trimHistoryIfNeeded() {
-	if ce.history == nil || ce.defaults == nil {
-		return
-	}
-	ce.history.TrimIfNeeded(ce.defaults.MaxContextWindow, ce.defaults.ContextTrimPercent)
+	// Automatic trimming happens in HistoryManager.Add()
+	// No explicit action needed here
 }
 
 // ClearHistory clears the conversation history
@@ -420,7 +433,17 @@ func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handl
 
 	// Create ExecutionFlow for multi-agent coordination
 	flow := executor.NewExecutionFlow(startAgent, ce.crew.MaxRounds, ce.crew.MaxHandoffs)
-	flow.History = ce.getHistoryCopy()
+
+	// Convert local Message types to common.Message for executor
+	historyMessages := ce.getHistoryCopy()
+	commonMessages := make([]common.Message, len(historyMessages))
+	for i, msg := range historyMessages {
+		commonMessages[i] = common.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+	flow.History = commonMessages
 
 	// Cast handler to workflow.OutputHandler
 	var workflowHandler workflow.OutputHandler
@@ -461,8 +484,52 @@ func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handl
 
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
-	handler := NewStreamHandler(streamChan)
+	// Create adapter channel for workflow.StreamEvent
+	workflowStreamChan := make(chan *workflow.StreamEvent)
+
+	// Start goroutine to convert workflow events to crewai events
+	// The handler closes workflowStreamChan when done
+	go func() {
+		defer func() {
+			// Recover if streamChan is closed while we're sending
+			if r := recover(); r != nil {
+				log.Printf("[STREAM] Stream channel closed during conversion")
+			}
+		}()
+
+		for event := range workflowStreamChan {
+			if event != nil {
+				streamEvent := &StreamEvent{
+					Type:      event.Type,
+					Agent:     event.AgentName,
+					Content:   event.Message,
+					Timestamp: time.Unix(0, event.Timestamp),
+				}
+
+				// Use select with context to safely send without panicking
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					// Try to send, but don't panic if channel is closed
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								// Channel closed, exit gracefully
+							}
+						}()
+						streamChan <- streamEvent
+					}()
+				}
+			}
+		}
+		// workflowStreamChan is closed by the handler, conversion is complete
+		// The caller is responsible for closing streamChan
+	}()
+
+	handler := workflow.NewStreamHandler(workflowStreamChan)
 	result := ce.executeWorkflow(ctx, input, handler)
+
 	if err, ok := result.(error); ok {
 		return err
 	}
@@ -471,7 +538,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 
 // Execute runs the crew with the given input
 func (ce *CrewExecutor) Execute(ctx context.Context, input string) (*CrewResponse, error) {
-	handler := NewSyncHandler(ce, ce.Verbose)
+	handler := workflow.NewSyncHandler()
 	result := ce.executeWorkflow(ctx, input, handler)
 
 	// Handle the result based on its type

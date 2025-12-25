@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/taipm/go-agentic/core/common"
 )
 
 // StreamRequest represents a request to stream crew execution
@@ -233,7 +235,12 @@ func (h *HTTPHandler) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	// Create isolated copy of history using HistoryManager (no shared references)
 	hm := NewHistoryManager()
 	for _, msg := range req.History {
-		hm.Append(msg)
+		// Convert request message to common.Message format
+		commonMsg := common.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+		hm.Add(commonMsg)
 	}
 
 	executor := &CrewExecutor{

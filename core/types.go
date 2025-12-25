@@ -49,8 +49,54 @@ type AgentQuotaLimits = common.AgentQuotaLimits
 // AgentMetadata - re-export from common package for backward compatibility
 type AgentMetadata = common.AgentMetadata
 
+// MemoryLimitsConfig - re-export from common package for backward compatibility
+type MemoryLimitsConfig = common.MemoryLimitsConfig
+
+// ErrorLimitsConfig - re-export from common package for backward compatibility
+type ErrorLimitsConfig = common.ErrorLimitsConfig
+
+// LoggingConfig - re-export from common package for backward compatibility
+type LoggingConfig = common.LoggingConfig
+
+// AgentCostMetrics - re-export from common package for backward compatibility
+type AgentCostMetrics = common.AgentCostMetrics
+
+// AgentMemoryMetrics - re-export from common package for backward compatibility
+type AgentMemoryMetrics = common.AgentMemoryMetrics
+
+// AgentPerformanceMetrics - re-export from common package for backward compatibility
+type AgentPerformanceMetrics = common.AgentPerformanceMetrics
+
 // HistoryManager - re-export from executor package for backward compatibility
 type HistoryManager = executor.HistoryManager
+
+// NewHistoryManager creates a new HistoryManager with default settings
+func NewHistoryManager() *HistoryManager {
+	return executor.NewHistoryManager()
+}
+
+// ============================================================================
+// CONSTANTS RE-EXPORTS FROM COMMON PACKAGE
+// ============================================================================
+
+// Token Calculation Constants (re-exported from common)
+const (
+	TokenBaseValue   = common.TokenBaseValue
+	TokenPaddingValue = common.TokenPaddingValue
+	TokenDivisor    = common.TokenDivisor
+)
+
+// Role Constants (re-exported from common)
+const (
+	RoleUser      = common.RoleUser
+	RoleAssistant = common.RoleAssistant
+)
+
+// Event Type Constants (re-exported from common)
+const (
+	EventTypeError      = common.EventTypeError
+	EventTypeToolResult = common.EventTypeToolResult
+)
 
 // ============================================================================
 // CORE DOMAIN TYPES (DEFINED LOCALLY)
@@ -89,6 +135,7 @@ type Tool struct {
 	Description string
 	Func        interface{} // The actual function to execute
 	Input       interface{} // Input schema or parameters
+	Parameters  interface{} // ✅ PHASE 10a: Parameters schema (can be JSON schema, map, etc.)
 	Output      interface{} // Output schema or return type
 }
 
