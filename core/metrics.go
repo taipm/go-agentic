@@ -10,18 +10,6 @@ import (
 // ✅ FIX for Issue #14 (Metrics & Observability)
 // This file implements comprehensive metrics collection for production monitoring
 
-// ExtendedExecutionMetrics extends the ExecutionMetrics from Issue #11 with more details
-type ExtendedExecutionMetrics struct {
-	ToolName   string        // Name of the tool executed
-	Duration   time.Duration // Time taken to execute
-	Status     string        // "success", "timeout", "error"
-	TimedOut   bool          // True if tool execution exceeded timeout
-	Success    bool          // True if execution succeeded
-	Error      string        // Error message if execution failed
-	StartTime  time.Time     // When tool execution started
-	EndTime    time.Time     // When tool execution completed
-}
-
 // ToolMetrics tracks per-tool statistics
 type ToolMetrics struct {
 	ToolName        string        // Name of the tool
@@ -51,26 +39,26 @@ type AgentMetrics struct {
 
 // SystemMetrics aggregates all metrics across the entire system
 type SystemMetrics struct {
-	StartTime           time.Time
-	LastUpdated         time.Time
-	TotalRequests       int64
-	SuccessfulRequests  int64
-	FailedRequests      int64
-	TotalExecutionTime  time.Duration
-	AverageRequestTime  time.Duration
-	MemoryUsage         uint64 // Current memory in bytes
-	MaxMemoryUsage      uint64 // Peak memory in bytes
-	CacheHits           int64
-	CacheMisses         int64
-	CacheHitRate        float64
-	AgentMetrics        map[string]*AgentMetrics // Per-agent stats
+	StartTime          time.Time
+	LastUpdated        time.Time
+	TotalRequests      int64
+	SuccessfulRequests int64
+	FailedRequests     int64
+	TotalExecutionTime time.Duration
+	AverageRequestTime time.Duration
+	MemoryUsage        uint64 // Current memory in bytes
+	MaxMemoryUsage     uint64 // Peak memory in bytes
+	CacheHits          int64
+	CacheMisses        int64
+	CacheHitRate       float64
+	AgentMetrics       map[string]*AgentMetrics // Per-agent stats
 
 	// ✅ Crew-level LLM Cost Tracking
-	TotalTokens         int     // Total tokens used across all agents
-	TotalCost           float64 // Total cost in USD across all agents
-	SessionTokens       int     // Tokens in current session (reset on ClearHistory)
-	SessionCost         float64 // Cost in current session
-	LLMCallCount        int     // Total LLM API calls made
+	TotalTokens   int     // Total tokens used across all agents
+	TotalCost     float64 // Total cost in USD across all agents
+	SessionTokens int     // Tokens in current session (reset on ClearHistory)
+	SessionCost   float64 // Cost in current session
+	LLMCallCount  int     // Total LLM API calls made
 }
 
 // MetricsCollector is the main component for collecting and aggregating metrics
@@ -79,19 +67,6 @@ type MetricsCollector struct {
 	mu            sync.RWMutex
 	systemMetrics *SystemMetrics
 	enabled       bool
-
-	// Tracking for ongoing execution
-	currentExecution *executionTracker
-}
-
-// executionTracker tracks an ongoing execution
-type executionTracker struct {
-	agentID       string
-	agentName     string
-	startTime     time.Time
-	success       bool
-	error         string
-	execMetrics   []ExtendedExecutionMetrics
 }
 
 // NewMetricsCollector creates a new metrics collector
@@ -102,78 +77,6 @@ func NewMetricsCollector() *MetricsCollector {
 			AgentMetrics: make(map[string]*AgentMetrics),
 		},
 		enabled: true,
-	}
-}
-
-// RecordToolExecution records execution of a single tool
-func (mc *MetricsCollector) RecordToolExecution(toolName string, duration time.Duration, success bool) {
-	if !mc.enabled {
-		return
-	}
-
-	mc.mu.Lock()
-	defer mc.mu.Unlock()
-
-	mc.systemMetrics.LastUpdated = time.Now()
-
-	// Update current execution metrics
-	if mc.currentExecution != nil {
-		metric := ExtendedExecutionMetrics{
-			ToolName:  toolName,
-			Duration:  duration,
-			Status:    statusString(success),
-			Success:   success,
-			StartTime: time.Now().Add(-duration),
-			EndTime:   time.Now(),
-		}
-		mc.currentExecution.execMetrics = append(mc.currentExecution.execMetrics, metric)
-	}
-
-	// Update tool metrics within agent
-	if mc.currentExecution != nil && mc.currentExecution.agentID != "" {
-		agent, exists := mc.systemMetrics.AgentMetrics[mc.currentExecution.agentID]
-		if !exists {
-			agent = &AgentMetrics{
-				AgentID:     mc.currentExecution.agentID,
-				AgentName:   mc.currentExecution.agentName,
-				ToolMetrics: make(map[string]*ToolMetrics),
-			}
-			mc.systemMetrics.AgentMetrics[mc.currentExecution.agentID] = agent
-		}
-
-		// Update tool metrics
-		toolMetric, exists := agent.ToolMetrics[toolName]
-		if !exists {
-			toolMetric = &ToolMetrics{
-				ToolName:    toolName,
-				MinDuration: duration,
-				MaxDuration: duration,
-			}
-			agent.ToolMetrics[toolName] = toolMetric
-		}
-
-		toolMetric.ExecutionCount++
-		toolMetric.TotalDuration += duration
-
-		// Update min/max
-		if duration < toolMetric.MinDuration {
-			toolMetric.MinDuration = duration
-		}
-		if duration > toolMetric.MaxDuration {
-			toolMetric.MaxDuration = duration
-		}
-
-		// Update average
-		if toolMetric.ExecutionCount > 0 {
-			toolMetric.AverageDuration = toolMetric.TotalDuration / time.Duration(toolMetric.ExecutionCount)
-		}
-
-		// Update success/error
-		if success {
-			toolMetric.SuccessCount++
-		} else {
-			toolMetric.ErrorCount++
-		}
 	}
 }
 

@@ -27,10 +27,10 @@ type Tool struct {
 
 // ToolTimeoutConfig manages timeout settings for tool execution
 type ToolTimeoutConfig struct {
-	DefaultToolTimeout time.Duration         // Default timeout for tool execution (default: 5s)
-	SequenceTimeout    time.Duration         // Timeout for entire tool execution sequence (default: 30s)
+	DefaultToolTimeout time.Duration            // Default timeout for tool execution (default: 5s)
+	SequenceTimeout    time.Duration            // Timeout for entire tool execution sequence (default: 30s)
 	PerToolTimeout     map[string]time.Duration // Per-tool timeout overrides
-	CollectMetrics     bool                  // Whether to collect timeout metrics
+	CollectMetrics     bool                     // Whether to collect timeout metrics
 }
 
 // NewToolTimeoutConfig creates a new tool timeout configuration with defaults
@@ -140,6 +140,14 @@ type ParallelGroupConfig struct {
 	Description    string   `yaml:"description"`
 }
 
+// RoutingDecision represents the result of routing logic
+type RoutingDecision struct {
+	NextAgentID string                 // Agent ID to route to
+	Reason      string                 // Why this routing decision was made
+	IsTerminal  bool                   // Whether execution should terminate
+	Metadata    map[string]interface{} // Additional routing context and metadata
+}
+
 // RoutingConfig defines routing rules for the crew
 type RoutingConfig struct {
 	Signals        map[string][]RoutingSignal     `yaml:"signals"`
@@ -160,16 +168,16 @@ type CrewConfig struct {
 		// Configuration Mode (Permissive vs Strict)
 		ConfigMode string `yaml:"config_mode"` // "permissive" (default) or "strict"
 
-		MaxHandoffs                int `yaml:"max_handoffs" required:"strict"`
-		MaxRounds                  int `yaml:"max_rounds" required:"strict"`
-		TimeoutSeconds             int `yaml:"timeout_seconds" required:"strict"`
-		Language                   string `yaml:"language"`
-		Organization               string `yaml:"organization"`
+		MaxHandoffs    int    `yaml:"max_handoffs" required:"strict"`
+		MaxRounds      int    `yaml:"max_rounds" required:"strict"`
+		TimeoutSeconds int    `yaml:"timeout_seconds" required:"strict"`
+		Language       string `yaml:"language"`
+		Organization   string `yaml:"organization"`
 
 		// Configurable timeouts and output limits
-		ParallelTimeoutSeconds     int `yaml:"parallel_timeout_seconds" required:"strict"`       // Timeout for parallel execution
-		MaxToolOutputChars         int `yaml:"max_tool_output_chars" required:"strict"`          // Per-tool output limit
-		MaxTotalToolOutputChars    int `yaml:"max_total_tool_output_chars" required:"strict"`    // Total limit for all tools
+		ParallelTimeoutSeconds  int `yaml:"parallel_timeout_seconds" required:"strict"`    // Timeout for parallel execution
+		MaxToolOutputChars      int `yaml:"max_tool_output_chars" required:"strict"`       // Per-tool output limit
+		MaxTotalToolOutputChars int `yaml:"max_total_tool_output_chars" required:"strict"` // Total limit for all tools
 
 		// Extended configuration for all remaining hardcoded values
 		ToolExecutionTimeoutSeconds int `yaml:"tool_execution_timeout_seconds" required:"strict"` // Timeout per tool execution
@@ -180,50 +188,50 @@ type CrewConfig struct {
 		RequestStoreCleanupMinutes  int `yaml:"request_store_cleanup_minutes" required:"strict"`  // Cleanup interval
 
 		// Retry and backoff
-		RetryBackoffMinMillis int `yaml:"retry_backoff_min_millis" required:"strict"`       // Initial backoff
-		RetryBackoffMaxSeconds int `yaml:"retry_backoff_max_seconds" required:"strict"`     // Max backoff
+		RetryBackoffMinMillis  int `yaml:"retry_backoff_min_millis" required:"strict"`  // Initial backoff
+		RetryBackoffMaxSeconds int `yaml:"retry_backoff_max_seconds" required:"strict"` // Max backoff
 
 		// Input validation limits
-		MaxInputSizeKB       int `yaml:"max_input_size_kb" required:"strict"`              // Max input size
-		MinAgentIDLength     int `yaml:"min_agent_id_length" required:"strict"`            // Min agent ID length
-		MaxAgentIDLength     int `yaml:"max_agent_id_length" required:"strict"`            // Max agent ID length
-		MaxRequestBodySizeKB int `yaml:"max_request_body_size_kb" required:"strict"`       // Max request body
+		MaxInputSizeKB       int `yaml:"max_input_size_kb" required:"strict"`        // Max input size
+		MinAgentIDLength     int `yaml:"min_agent_id_length" required:"strict"`      // Min agent ID length
+		MaxAgentIDLength     int `yaml:"max_agent_id_length" required:"strict"`      // Max agent ID length
+		MaxRequestBodySizeKB int `yaml:"max_request_body_size_kb" required:"strict"` // Max request body
 
 		// Output and storage
-		StreamBufferSize    int `yaml:"stream_buffer_size" required:"strict"`             // Stream buffer size
-		MaxStoredRequests   int `yaml:"max_stored_requests" required:"strict"`            // Max stored requests
+		StreamBufferSize  int `yaml:"stream_buffer_size" required:"strict"`  // Stream buffer size
+		MaxStoredRequests int `yaml:"max_stored_requests" required:"strict"` // Max stored requests
 
 		// Client cache
-		ClientCacheTTLMinutes int `yaml:"client_cache_ttl_minutes" required:"strict"`       // Client cache TTL
+		ClientCacheTTLMinutes int `yaml:"client_cache_ttl_minutes" required:"strict"` // Client cache TTL
 
 		// Graceful shutdown
 		GracefulShutdownCheckMillis int `yaml:"graceful_shutdown_check_millis" required:"strict"` // Shutdown check interval
 		TimeoutWarningThresholdPct  int `yaml:"timeout_warning_threshold_pct" required:"strict"`  // Timeout warning %
 
 		// Cost Control Parameters
-		MaxTokensPerCall   int     `yaml:"max_tokens_per_call" required:"strict"`       // Max tokens per request
-		MaxTokensPerDay    int     `yaml:"max_tokens_per_day" required:"strict"`        // Max tokens per 24h
-		MaxCostPerDay      float64 `yaml:"max_cost_per_day" required:"strict"`          // Max cost per day in USD
-		CostAlertThreshold float64 `yaml:"cost_alert_threshold" required:"strict"`      // Alert at % of budget
+		MaxTokensPerCall   int     `yaml:"max_tokens_per_call" required:"strict"`  // Max tokens per request
+		MaxTokensPerDay    int     `yaml:"max_tokens_per_day" required:"strict"`   // Max tokens per 24h
+		MaxCostPerDay      float64 `yaml:"max_cost_per_day" required:"strict"`     // Max cost per day in USD
+		CostAlertThreshold float64 `yaml:"cost_alert_threshold" required:"strict"` // Alert at % of budget
 
 		// Memory Management Parameters
-		MaxMemoryMB         int     `yaml:"max_memory_mb" required:"strict"`              // Max memory per request in MB
-		MaxDailyMemoryGB    int     `yaml:"max_daily_memory_gb" required:"strict"`        // Max total memory per 24h in GB
-		MemoryAlertPercent  float64 `yaml:"memory_alert_percent" required:"strict"`       // Alert when exceeds this %
-		MaxContextWindow    int     `yaml:"max_context_window" required:"strict"`         // Max context window size in tokens
-		ContextTrimPercent  float64 `yaml:"context_trim_percent" required:"strict"`       // Trim % when full
-		SlowCallThresholdSec int    `yaml:"slow_call_threshold_seconds" required:"strict"`// Alert if exceeds this duration
+		MaxMemoryMB          int     `yaml:"max_memory_mb" required:"strict"`               // Max memory per request in MB
+		MaxDailyMemoryGB     int     `yaml:"max_daily_memory_gb" required:"strict"`         // Max total memory per 24h in GB
+		MemoryAlertPercent   float64 `yaml:"memory_alert_percent" required:"strict"`        // Alert when exceeds this %
+		MaxContextWindow     int     `yaml:"max_context_window" required:"strict"`          // Max context window size in tokens
+		ContextTrimPercent   float64 `yaml:"context_trim_percent" required:"strict"`        // Trim % when full
+		SlowCallThresholdSec int     `yaml:"slow_call_threshold_seconds" required:"strict"` // Alert if exceeds this duration
 
 		// Performance & Reliability Parameters
-		MaxErrorsPerHour     int `yaml:"max_errors_per_hour" required:"strict"`          // Max errors per hour
-		MaxErrorsPerDay      int `yaml:"max_errors_per_day" required:"strict"`           // Max errors per day
-		MaxConsecutiveErrors int `yaml:"max_consecutive_errors" required:"strict"`       // Max consecutive errors
+		MaxErrorsPerHour     int `yaml:"max_errors_per_hour" required:"strict"`    // Max errors per hour
+		MaxErrorsPerDay      int `yaml:"max_errors_per_day" required:"strict"`     // Max errors per day
+		MaxConsecutiveErrors int `yaml:"max_consecutive_errors" required:"strict"` // Max consecutive errors
 
 		// Rate Limiting & Quotas
-		MaxCallsPerMinute  int  `yaml:"max_calls_per_minute" required:"strict"`           // Rate limit: calls per minute
-		MaxCallsPerHour    int  `yaml:"max_calls_per_hour" required:"strict"`             // Rate limit: calls per hour
-		MaxCallsPerDay     int  `yaml:"max_calls_per_day" required:"strict"`              // Rate limit: calls per 24 hours
-		BlockOnQuotaExceed bool `yaml:"block_on_quota_exceed" required:"strict"`          // BLOCK request when quota exceeded
+		MaxCallsPerMinute  int  `yaml:"max_calls_per_minute" required:"strict"`  // Rate limit: calls per minute
+		MaxCallsPerHour    int  `yaml:"max_calls_per_hour" required:"strict"`    // Rate limit: calls per hour
+		MaxCallsPerDay     int  `yaml:"max_calls_per_day" required:"strict"`     // Rate limit: calls per 24 hours
+		BlockOnQuotaExceed bool `yaml:"block_on_quota_exceed" required:"strict"` // BLOCK request when quota exceeded
 	} `yaml:"settings"`
 
 	Routing *RoutingConfig `yaml:"routing"`
@@ -231,20 +239,20 @@ type CrewConfig struct {
 
 // ModelConfigYAML represents YAML configuration for a model (for parsing)
 type ModelConfigYAML struct {
-	Model       string `yaml:"model" required:"strict"`              // LLM model name
-	Provider    string `yaml:"provider" required:"strict"`           // LLM provider name
-	ProviderURL string `yaml:"provider_url"`                         // Optional provider URL
+	Model       string `yaml:"model" required:"strict"`    // LLM model name
+	Provider    string `yaml:"provider" required:"strict"` // LLM provider name
+	ProviderURL string `yaml:"provider_url"`               // Optional provider URL
 }
 
 // CostLimitsConfig defines cost control quota limits
 type CostLimitsConfig struct {
-	MaxTokensPerCall               int     `yaml:"max_tokens_per_call"`             // Max tokens per API call
-	MaxTokensPerDay                int     `yaml:"max_tokens_per_day"`              // Max tokens per 24 hours
-	MaxCostPerDayUSD               float64 `yaml:"max_cost_per_day_usd"`            // Max USD cost per day
-	AlertThreshold                 float64 `yaml:"alert_threshold"`                 // Warn at % of limit
-	BlockOnCostExceed              bool    `yaml:"block_on_cost_exceed"`            // true=BLOCK request, false=WARN only
-	InputTokenPricePerMillion      float64 `yaml:"input_token_price_per_million"`   // Cost per 1M input tokens
-	OutputTokenPricePerMillion     float64 `yaml:"output_token_price_per_million"`  // Cost per 1M output tokens
+	MaxTokensPerCall           int     `yaml:"max_tokens_per_call"`            // Max tokens per API call
+	MaxTokensPerDay            int     `yaml:"max_tokens_per_day"`             // Max tokens per 24 hours
+	MaxCostPerDayUSD           float64 `yaml:"max_cost_per_day_usd"`           // Max USD cost per day
+	AlertThreshold             float64 `yaml:"alert_threshold"`                // Warn at % of limit
+	BlockOnCostExceed          bool    `yaml:"block_on_cost_exceed"`           // true=BLOCK request, false=WARN only
+	InputTokenPricePerMillion  float64 `yaml:"input_token_price_per_million"`  // Cost per 1M input tokens
+	OutputTokenPricePerMillion float64 `yaml:"output_token_price_per_million"` // Cost per 1M output tokens
 }
 
 // MemoryLimitsConfig defines memory quota limits
@@ -256,17 +264,17 @@ type MemoryLimitsConfig struct {
 
 // ErrorLimitsConfig defines error rate quota limits
 type ErrorLimitsConfig struct {
-	MaxConsecutive     int  `yaml:"max_consecutive"`        // Max consecutive failures
-	MaxPerDay          int  `yaml:"max_per_day"`            // Max errors per 24 hours
-	BlockOnErrorExceed bool `yaml:"block_on_error_exceed"`  // true=BLOCK request, false=WARN only
+	MaxConsecutive     int  `yaml:"max_consecutive"`       // Max consecutive failures
+	MaxPerDay          int  `yaml:"max_per_day"`           // Max errors per 24 hours
+	BlockOnErrorExceed bool `yaml:"block_on_error_exceed"` // true=BLOCK request, false=WARN only
 }
 
 // LoggingConfig defines observability and monitoring settings
 type LoggingConfig struct {
-	EnableMemoryMetrics     bool   `yaml:"enable_memory_metrics"`      // Log memory usage per call
-	EnablePerformanceMetrics bool  `yaml:"enable_performance_metrics"` // Log response metrics
-	EnableQuotaWarnings     bool   `yaml:"enable_quota_warnings"`      // Log quota threshold alerts
-	LogLevel                string `yaml:"log_level"`                  // debug/info/warn/error
+	EnableMemoryMetrics      bool   `yaml:"enable_memory_metrics"`      // Log memory usage per call
+	EnablePerformanceMetrics bool   `yaml:"enable_performance_metrics"` // Log response metrics
+	EnableQuotaWarnings      bool   `yaml:"enable_quota_warnings"`      // Log quota threshold alerts
+	LogLevel                 string `yaml:"log_level"`                  // debug/info/warn/error
 }
 
 // AgentConfig represents an agent configuration
@@ -276,29 +284,29 @@ type AgentConfig struct {
 	Description    string           `yaml:"description"`
 	Role           string           `yaml:"role" required:"strict"`
 	Backstory      string           `yaml:"backstory"`
-	Model          string           `yaml:"model"`         // Deprecated: Use Primary instead
+	Model          string           `yaml:"model"` // Deprecated: Use Primary instead
 	Temperature    float64          `yaml:"temperature"`
 	IsTerminal     bool             `yaml:"is_terminal"`
 	Tools          []string         `yaml:"tools"`
 	HandoffTargets []string         `yaml:"handoff_targets"`
 	SystemPrompt   string           `yaml:"system_prompt"`
-	Provider       string           `yaml:"provider"`      // Deprecated: Use Primary.Provider instead
-	ProviderURL    string           `yaml:"provider_url"`  // Deprecated: Use Primary.ProviderURL instead
-	Primary        *ModelConfigYAML `yaml:"primary" required:"strict"`       // Primary LLM provider
-	Backup         *ModelConfigYAML `yaml:"backup"`        // Fallback LLM provider
+	Provider       string           `yaml:"provider"`                  // Deprecated: Use Primary.Provider instead
+	ProviderURL    string           `yaml:"provider_url"`              // Deprecated: Use Primary.ProviderURL instead
+	Primary        *ModelConfigYAML `yaml:"primary" required:"strict"` // Primary LLM provider
+	Backup         *ModelConfigYAML `yaml:"backup"`                    // Fallback LLM provider
 
 	// Nested quota and monitoring configurations
-	CostLimits   *CostLimitsConfig   `yaml:"cost_limits"`      // Token usage and cost limits
-	MemoryLimits *MemoryLimitsConfig `yaml:"memory_limits"`    // Memory usage limits
-	ErrorLimits  *ErrorLimitsConfig  `yaml:"error_limits"`     // Error rate limits
-	Logging      *LoggingConfig      `yaml:"logging"`          // Observability settings
+	CostLimits   *CostLimitsConfig   `yaml:"cost_limits"`   // Token usage and cost limits
+	MemoryLimits *MemoryLimitsConfig `yaml:"memory_limits"` // Memory usage limits
+	ErrorLimits  *ErrorLimitsConfig  `yaml:"error_limits"`  // Error rate limits
+	Logging      *LoggingConfig      `yaml:"logging"`       // Observability settings
 
 	// Backward compatibility: Keep old flat fields for existing configurations
-	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`   // DEPRECATED
-	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`    // DEPRECATED
-	MaxCostPerDay      float64 `yaml:"max_cost_per_day"`      // DEPRECATED
-	CostAlertThreshold float64 `yaml:"cost_alert_threshold"`  // DEPRECATED
-	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`   // DEPRECATED
+	MaxTokensPerCall   int     `yaml:"max_tokens_per_call"`  // DEPRECATED
+	MaxTokensPerDay    int     `yaml:"max_tokens_per_day"`   // DEPRECATED
+	MaxCostPerDay      float64 `yaml:"max_cost_per_day"`     // DEPRECATED
+	CostAlertThreshold float64 `yaml:"cost_alert_threshold"` // DEPRECATED
+	EnforceCostLimits  bool    `yaml:"enforce_cost_limits"`  // DEPRECATED
 }
 
 // ============================================================================
@@ -326,6 +334,8 @@ type AgentMemoryMetrics struct {
 	// Memory Usage (Runtime)
 	CurrentMemoryMB    int     // Current memory usage in MB
 	PeakMemoryMB       int     // Peak memory usage ever recorded
+	TotalMemoryMB      int     // ✅ PHASE 2: Sum of all memory samples (for accurate average)
+	MemorySampleCount  int     // ✅ PHASE 2: Number of memory samples collected
 	AverageMemoryMB    int     // Average memory usage across calls
 	MemoryTrendPercent float64 // Trend: positive = increasing, negative = decreasing
 
@@ -340,6 +350,8 @@ type AgentMemoryMetrics struct {
 	ContextTrimPercent float64 // How much to trim when full
 
 	// Call Metrics
+	TotalDurationMs     int64         // ✅ PHASE 2: Sum of all call durations in milliseconds
+	CallDurationCount   int           // ✅ PHASE 2: Number of calls with duration tracking
 	AverageCallDuration time.Duration // Average execution time per call
 	SlowCallThreshold   time.Duration // Alert if exceeds this
 
@@ -408,19 +420,19 @@ type AgentMetadata struct {
 
 // Agent represents an AI agent in the crew
 type Agent struct {
-	ID                 string
-	Name               string
-	Description        string
-	Role               string
-	Backstory          string
-	Temperature        float64
-	IsTerminal         bool
-	Tools              []interface{}
-	HandoffTargets     []*Agent
+	ID                  string
+	Name                string
+	Description         string
+	Role                string
+	Backstory           string
+	Temperature         float64
+	IsTerminal          bool
+	Tools               []interface{}
+	HandoffTargets      []*Agent
 	SystemPrompt        string
 	SystemPromptCache   string
 	IsSystemPromptDirty bool
-	SystemPromptMutex   sync.RWMutex      // ✅ PHASE 10b: Protects SystemPromptCache and IsSystemPromptDirty
+	SystemPromptMutex   sync.RWMutex // ✅ PHASE 10b: Protects SystemPromptCache and IsSystemPromptDirty
 	PrimaryModel        *ModelConfig
 	BackupModel         *ModelConfig
 	Metadata            *AgentMetadata
@@ -433,8 +445,8 @@ type Agent struct {
 
 	// ✅ PHASE 1: Backward compatibility fields for old agent_execution.go
 	// These are populated from PrimaryModel if not explicitly set
-	Provider   string // Deprecated: Use PrimaryModel.Provider instead
-	Model      string // Deprecated: Use PrimaryModel.Model instead
+	Provider    string // Deprecated: Use PrimaryModel.Provider instead
+	Model       string // Deprecated: Use PrimaryModel.Model instead
 	ProviderURL string // Deprecated: Use PrimaryModel.ProviderURL instead
 }
 
@@ -442,17 +454,17 @@ type Agent struct {
 // These are fallback defaults when values are not specified in YAML
 type HardcodedDefaults struct {
 	// Timeouts (all in seconds)
-	DefaultTimeoutSeconds           int
-	DefaultToolExecutionTimeout     int
-	DefaultParallelTimeout          int
-	DefaultStreamChunkTimeout       int
-	DefaultToolResultTimeout        int
+	DefaultTimeoutSeconds       int
+	DefaultToolExecutionTimeout int
+	DefaultParallelTimeout      int
+	DefaultStreamChunkTimeout   int
+	DefaultToolResultTimeout    int
 
 	// Limits (characters, KB, MB, GB)
-	DefaultMaxToolOutputChars    int
+	DefaultMaxToolOutputChars      int
 	DefaultMaxTotalToolOutputChars int
-	DefaultMaxInputSizeKB        int
-	DefaultMaxRequestBodySizeKB  int
+	DefaultMaxInputSizeKB          int
+	DefaultMaxRequestBodySizeKB    int
 
 	// ID constraints
 	DefaultMinAgentIDLength int
@@ -463,7 +475,7 @@ type HardcodedDefaults struct {
 	DefaultMaxTokensPerDay  int
 
 	// Cost limits
-	DefaultMaxCostPerDay float64
+	DefaultMaxCostPerDay    float64
 	DefaultCostAlertPercent float64
 
 	// Memory limits (MB)
@@ -474,7 +486,7 @@ type HardcodedDefaults struct {
 	DefaultMaxDailyMemoryGB int
 
 	// Context window
-	DefaultMaxContextWindow int
+	DefaultMaxContextWindow   int
 	DefaultContextTrimPercent float64
 
 	// Rate limiting
@@ -687,6 +699,7 @@ func (a *Agent) UpdateCostMetrics(tokenCount int, cost float64) {
 
 // UpdateMemoryMetrics updates memory tracking after execution
 // Tracks current, peak, and average memory usage
+// ✅ PHASE 2: Fixed calculation bugs - now tracks sum for accurate averages
 func (a *Agent) UpdateMemoryMetrics(memoryMB int, durationMs int64) {
 	if a == nil || a.MemoryMetrics == nil {
 		return
@@ -695,28 +708,32 @@ func (a *Agent) UpdateMemoryMetrics(memoryMB int, durationMs int64) {
 	a.MemoryMetrics.Mutex.Lock()
 	defer a.MemoryMetrics.Mutex.Unlock()
 
+	// Update current and peak memory
 	a.MemoryMetrics.CurrentMemoryMB = memoryMB
 
 	if memoryMB > a.MemoryMetrics.PeakMemoryMB {
 		a.MemoryMetrics.PeakMemoryMB = memoryMB
 	}
 
-	// Update average memory usage
-	if a.CostMetrics != nil {
-		a.CostMetrics.Mutex.RLock()
-		callCount := a.CostMetrics.CallCount
-		a.CostMetrics.Mutex.RUnlock()
+	// ✅ PHASE 2: Track sum of memory for accurate average calculation
+	a.MemoryMetrics.TotalMemoryMB += memoryMB
+	a.MemoryMetrics.MemorySampleCount++
 
-		if callCount > 0 {
-			total := a.MemoryMetrics.PeakMemoryMB * callCount
-			a.MemoryMetrics.AverageMemoryMB = total / callCount
-		}
+	// Calculate average memory usage = Sum / Count (not Peak * Count / Count!)
+	if a.MemoryMetrics.MemorySampleCount > 0 {
+		a.MemoryMetrics.AverageMemoryMB = a.MemoryMetrics.TotalMemoryMB / a.MemoryMetrics.MemorySampleCount
 	}
 
-	// Update average call duration
+	// ✅ PHASE 2: Track sum of durations for accurate call duration average
 	if durationMs > 0 {
-		d := time.Duration(durationMs) * time.Millisecond
-		a.MemoryMetrics.AverageCallDuration = d
+		a.MemoryMetrics.TotalDurationMs += durationMs
+		a.MemoryMetrics.CallDurationCount++
+
+		// Calculate average duration = Total / Count
+		if a.MemoryMetrics.CallDurationCount > 0 {
+			avgMs := a.MemoryMetrics.TotalDurationMs / int64(a.MemoryMetrics.CallDurationCount)
+			a.MemoryMetrics.AverageCallDuration = time.Duration(avgMs) * time.Millisecond
+		}
 	}
 }
 
