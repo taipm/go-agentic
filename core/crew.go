@@ -451,8 +451,27 @@ func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handl
 		workflowHandler = h
 	}
 
-	// Execute workflow - expects OutputHandler interface
-	response, err := flow.ExecuteWorkflowStep(ctx, workflowHandler, ce.apiKey)
+	// Build agents map for routing
+	agentsMap := make(map[string]*common.Agent)
+	for _, agent := range ce.crew.Agents {
+		agentsMap[agent.ID] = agent
+	}
+
+	// Execute workflow with callbacks - supports multi-turn and handoffs
+	response, err := flow.ExecuteWithCallbacks(
+		ctx,
+		workflowHandler,
+		ce.apiKey,
+		func(step int, agent *common.Agent, agentResponse *common.AgentResponse) error {
+			// Add agent response to history
+			if agentResponse != nil {
+				ce.addAssistantMessageToHistory(agentResponse.Content)
+			}
+			return nil
+		},
+		agentsMap,
+		ce.crew.Routing,
+	)
 
 	if err != nil {
 		if workflowHandler != nil {
@@ -461,14 +480,8 @@ func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handl
 		return err
 	}
 
-	// Add agent response to history
-	if response != nil {
-		ce.addAssistantMessageToHistory(response.Content)
-
-		// Notify handler
-		if workflowHandler != nil {
-			_ = workflowHandler.HandleAgentResponse(response)
-		}
+	if response == nil {
+		return fmt.Errorf("workflow completed with no response")
 	}
 
 	// Trim history if needed
@@ -487,13 +500,16 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 	// Create adapter channel for workflow.StreamEvent
 	workflowStreamChan := make(chan *workflow.StreamEvent)
 
+	// Create a channel to signal when conversion goroutine is done
+	conversionDone := make(chan struct{})
+
 	// Start goroutine to convert workflow events to crewai events
-	// The handler closes workflowStreamChan when done
 	go func() {
 		defer func() {
+			close(conversionDone)
 			// Recover if streamChan is closed while we're sending
 			if r := recover(); r != nil {
-				log.Printf("[STREAM] Stream channel closed during conversion")
+				// Channel closed, exit gracefully
 			}
 		}()
 
@@ -511,7 +527,7 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				case <-ctx.Done():
 					return
 				default:
-					// Try to send, but don't panic if channel is closed
+					// Try to send (blocking, with panic recovery)
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
@@ -523,12 +539,18 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 				}
 			}
 		}
-		// workflowStreamChan is closed by the handler, conversion is complete
-		// The caller is responsible for closing streamChan
 	}()
 
 	handler := workflow.NewStreamHandler(workflowStreamChan)
 	result := ce.executeWorkflow(ctx, input, handler)
+
+	// Wait for conversion goroutine to finish sending all events before returning
+	select {
+	case <-conversionDone:
+		// Conversion complete
+	case <-ctx.Done():
+		// Context cancelled
+	}
 
 	if err, ok := result.(error); ok {
 		return err
