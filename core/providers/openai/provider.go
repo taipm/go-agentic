@@ -192,9 +192,20 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.Completion
 	content := message.Content
 	toolCalls := extractToolCallsFromResponse(message, content)
 
+	// Step 5: Extract usage information from response
+	var usage *providers.UsageInfo
+	if completion.Usage.TotalTokens > 0 {
+		usage = &providers.UsageInfo{
+			InputTokens:  int(completion.Usage.PromptTokens),
+			OutputTokens: int(completion.Usage.CompletionTokens),
+			TotalTokens:  int(completion.Usage.TotalTokens),
+		}
+	}
+
 	return &providers.CompletionResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
+		Usage:     usage,
 	}, nil
 }
 

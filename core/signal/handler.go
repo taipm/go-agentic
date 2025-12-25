@@ -3,10 +3,12 @@ package signal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 )
 
 // Handler provides core signal handling functionality
@@ -129,6 +131,16 @@ func (h *Handler) ProcessSignal(ctx context.Context, signal *Signal) (*common.Ro
 			return nil, err
 		}
 	}
+
+	// Log: handler.match
+	logging.GetLogger().InfoContext(ctx, "handler.match",
+		slog.String("event", "handler.match"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.String("signal_name", signal.Name),
+		slog.String("handler_id", handler.ID),
+		slog.String("handler_name", handler.Name),
+		slog.String("target_agent", handler.TargetAgent),
+	)
 
 	// Record match in history
 	h.recordMatch(&SignalMatch{

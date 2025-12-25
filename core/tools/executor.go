@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 )
 
 // ExecuteTool executes a single tool with the provided arguments and returns the result.
@@ -82,14 +84,37 @@ func ExecuteToolCalls(ctx context.Context, toolCalls []common.ToolCall, agentToo
 			continue
 		}
 
+		// Log: tool.start
+		logging.GetLogger().InfoContext(ctx, "tool.start",
+			slog.String("event", "tool.start"),
+			slog.String("trace_id", logging.GetTraceID(ctx)),
+			slog.String("tool_name", call.ToolName),
+		)
+
 		// Execute the tool
 		result, err := ExecuteTool(ctx, call.ToolName, tool, call.Arguments)
 		if err != nil {
 			errMsg := fmt.Sprintf("tool '%s' failed: %v", call.ToolName, err)
 			executionErrors = append(executionErrors, errMsg)
 			log.Printf("[TOOL] %s", errMsg)
+
+			// Log: tool.error
+			logging.GetLogger().InfoContext(ctx, "tool.error",
+				slog.String("event", "tool.error"),
+				slog.String("trace_id", logging.GetTraceID(ctx)),
+				slog.String("tool_name", call.ToolName),
+				slog.String("error", err.Error()),
+			)
 			continue
 		}
+
+		// Log: tool.end
+		logging.GetLogger().InfoContext(ctx, "tool.end",
+			slog.String("event", "tool.end"),
+			slog.String("trace_id", logging.GetTraceID(ctx)),
+			slog.String("tool_name", call.ToolName),
+			slog.String("status", "success"),
+		)
 
 		// Store successful result
 		results[call.ToolName] = result

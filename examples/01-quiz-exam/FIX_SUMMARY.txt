@@ -1,0 +1,244 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                     QUIZ EXAM - 5W2H FIX ANALYSIS SUMMARY                   ║
+║                                                                              ║
+║                     📊 Full Analysis: 5W2H_ANALYSIS.md                      ║
+║                     🚀 Quick Start: QUICK_FIX_GUIDE.md                      ║
+║                     🎯 Decision: CORE_vs_EXAMPLE_DECISION.md                ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. THE PROBLEM (5W2H Framework)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT?  ➜ Questions and student answers stored as empty strings/nil
+WHERE? ➜ Question text never reaches RecordAnswer tool
+WHY?   ➜ LLM generates questions but doesn't include them in tool call
+WHEN?  ➜ Starting from Question 1, persists through all 10 questions
+WHO?   ➜ Both LLM (confusion) and Tool (no validation)
+HOW?   ➜ (1) Unclear agent prompt, (2) No validation, (3) Auto-save redundancy
+COST?  ➜ 60 minutes to fix critical issues
+
+Result: Exam completes with 10/10 but report shows no questions/answers
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. ROOT CAUSE ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Data Flow Breakdown:
+
+    [Teacher Agent]
+         ↓
+         ✅ Generates: "Số nào là 2+2?"
+         ↓
+    [Stream Event]
+         ↓
+         ✅ Content shows question text
+         ↓
+    [Main.go]  ❌ DISCONNECT HERE
+         ↓
+         Logs question to stderr, but doesn't forward to tool
+         ↓
+    [RecordAnswer Tool]
+         ↓
+         ❌ Receives: { question: "", student_answer: "", is_correct: true }
+         ↓
+    [Report]
+         ↓
+         ❌ Writes: "**Câu hỏi:** " (empty)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. CRITICAL FIXES (3 Issues - 60 Minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FIX #1: AGENT PROMPT - config/agents/teacher.yaml (20 min)                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ Problem:  LLM doesn't understand to include question in tool call           │
+│ Solution: Rewrite system_prompt with explicit 4-step workflow               │
+│ Impact:   ✅ LLM now explicitly extracts question text into tool parameter  │
+│ Location: Lines 28-74 (entire system_prompt section)                       │
+│                                                                              │
+│ NEW PROMPT:                                                                 │
+│   STEP 1: Check remaining questions with QuizExam(action="get_status")     │
+│   STEP 2: Ask question and emit [QUESTION]                                 │
+│   STEP 3: Call QuizExam(action="record_answer",                            │
+│            question="[EXACT TEXT]",                                         │
+│            student_answer="[STUDENT RESPONSE]",                            │
+│            is_correct=true/false)                                           │
+│   STEP 4: If questions_remaining > 0, loop to STEP 1                       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FIX #2: ADD VALIDATION - internal/tools.go (30 min)                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ Problem:  RecordAnswer accepts empty question="" without error              │
+│ Solution: Add validation checks that REJECT invalid data                    │
+│ Impact:   ❌ LLM gets error, forced to include proper data                 │
+│ Location: RecordAnswer Func, lines 347-410                                 │
+│                                                                              │
+│ ADD THESE CHECKS:                                                           │
+│   ✅ question must not be empty or nil                                     │
+│   ✅ student_answer must not be empty or nil                               │
+│   ✅ is_correct must be explicitly true/false (no defaults)                │
+│                                                                              │
+│ When LLM violates: Return error JSON for LLM to see and fix                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FIX #3: REMOVE AUTO-SAVE - internal/tools.go (10 min)                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ Problem:  Report written after EACH question = 10 incomplete files          │
+│ Solution: DELETE auto-save from RecordAnswer, only write at end             │
+│ Impact:   ✅ Single clean report with complete data                        │
+│ Location: Lines 424-428 (delete entire if block)                           │
+│                                                                              │
+│ DELETE:                                                                     │
+│   if err := state.WriteReportToFile(""); err != nil { ... }               │
+│                                                                              │
+│ Why:  Report written after EACH question has incomplete data               │
+│       Better to write ONCE at end with ALL answers recorded                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+TOTAL TIME: 60 minutes
+ALL CRITICAL ISSUES RESOLVED ✅
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. OPTIONAL IMPROVEMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIX #4: CODE SIMPLIFICATION (90 min)
+  • Consolidate 5 tools → 2 tools
+  • Reduce from 200 lines → 100 lines
+  • Single entry point per function
+  • See: 5W2H_ANALYSIS.md Phase 2
+
+FIX #5: CORE ENHANCEMENT (170 min) - OPTIONAL
+  • Add validation framework to core/tools/
+  • Makes validation reusable across all examples
+  • Backward compatible (opt-in)
+  • See: 5W2H_ANALYSIS.md Phase 3 & CORE_vs_EXAMPLE_DECISION.md
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. CORE vs EXAMPLE DECISION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Question: Should we modify CORE or EXAMPLE?
+
+Answer: EXAMPLE ONLY (80%), CORE optional (20%)
+
+Why?
+  • LLM prompt issue → EXAMPLE specific (teacher.yaml)
+  • Tool validation → EXAMPLE specific (quiz-exam tools)
+  • Auto-save pattern → EXAMPLE specific (quiz workflow)
+  • Code complexity → EXAMPLE specific (design choice)
+  • Validation framework → CORE optional (would benefit all)
+
+Recommendation:
+  Phase 1: Fix EXAMPLE only (60 min) ← START HERE
+  Phase 2: Optional tool consolidation (90 min)
+  Phase 3: Optional CORE enhancement (170 min) ← ONLY IF NEEDED
+
+No breaking changes to CORE ✅
+All fixes stay in /examples/01-quiz-exam/ ✅
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. FILES TO MODIFY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CRITICAL (MUST CHANGE):
+  ✏️  config/agents/teacher.yaml
+      - Rewrite system_prompt (lines 28-74)
+
+  ✏️  internal/tools.go
+      - Add validation (lines 347-410)
+      - Remove auto-save (delete lines 424-428)
+
+OPTIONAL (NICE-TO-HAVE):
+  ✏️  internal/tools.go
+      - Consolidate tools (refactor entire CreateQuizTools)
+
+  📝 core/tools/validator.go
+      - New file for validation framework
+      - Only if implementing CORE enhancement
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. VERIFICATION CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After applying Fix #1-3, verify:
+
+  ☐ Teacher.yaml has new system_prompt workflow
+  ☐ RecordAnswer has question validation
+  ☐ RecordAnswer has student_answer validation
+  ☐ RecordAnswer has is_correct validation
+  ☐ Auto-save WriteReportToFile removed from RecordAnswer
+  ☐ Tests pass: go run ./cmd/main.go
+
+Verify output shows:
+  ☐ [TOOL] RecordAnswer output shows: "Câu hỏi: ..." (NOT empty)
+  ☐ [TOOL] RecordAnswer output shows: "Trả lời: ..." (NOT <nil>)
+  ☐ Report file shows actual questions and answers (NOT empty)
+  ☐ Exam completes with 10/10 (or actual score if some wrong)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. DOCUMENTATION FILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5W2H_ANALYSIS.md (THIS DIRECTORY)
+  ├─ WHAT? - Data bị sai như nào
+  ├─ WHERE? - Ở đâu bỏ lỡ dữ liệu
+  ├─ WHY? - Tại sao lại sai (5 levels deep)
+  ├─ WHEN? - Timeline of failure
+  ├─ WHO? - Component responsibility
+  ├─ HOW? - Fix strategy (Chi tiết từng fix)
+  └─ HOW MUCH? - Phạm vi + effort estimate
+
+QUICK_FIX_GUIDE.md (THIS DIRECTORY)
+  ├─ 1-minute problem summary
+  ├─ 3 critical fixes with code snippets
+  ├─ Testing checklist
+  ├─ Effort estimate: 60 minutes
+  └─ Next steps
+
+CORE_vs_EXAMPLE_DECISION.md (THIS DIRECTORY)
+  ├─ Decision matrix: CORE or EXAMPLE?
+  ├─ Why each fix belongs where
+  ├─ 2 strategy comparisons
+  ├─ Optional CORE enhancements
+  └─ Final recommendation: EXAMPLE only
+
+FIX_SUMMARY.txt (THIS FILE)
+  └─ One-page reference of everything
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. QUICK START
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Read: QUICK_FIX_GUIDE.md (5 minutes)
+2. Read: CORE_vs_EXAMPLE_DECISION.md (5 minutes)
+3. Apply: Fix #1 to config/agents/teacher.yaml (20 minutes)
+4. Apply: Fix #2 to internal/tools.go (30 minutes)
+5. Apply: Fix #3 to internal/tools.go (10 minutes)
+6. Test:  go run ./cmd/main.go (5 minutes)
+7. Verify: Check output and report file (5 minutes)
+
+TOTAL: ~60 minutes to working state ✅
+
+
+════════════════════════════════════════════════════════════════════════════════
+Tư duy 5W2H: Phân tích hệ thống, xác định đúng vị trí cần sửa, giảm thiểu rủi ro
+════════════════════════════════════════════════════════════════════════════════

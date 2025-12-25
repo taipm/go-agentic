@@ -3,10 +3,12 @@ package signal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 )
 
 // Error message constant to avoid duplication
@@ -117,6 +119,14 @@ func (sr *SignalRegistry) Emit(signal *Signal) error {
 	default:
 		// Buffer full, skip queuing
 	}
+
+	// Log: registry.signal_emitted
+	logging.GetLogger().InfoContext(context.Background(), "registry.signal_emitted",
+		slog.String("event", "registry.signal_emitted"),
+		slog.String("trace_id", logging.GetTraceID(context.Background())),
+		slog.String("signal_name", signal.Name),
+		slog.String("agent_id", signal.AgentID),
+	)
 
 	// Notify listeners
 	sr.notifyListeners(signal)

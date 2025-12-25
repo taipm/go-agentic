@@ -63,8 +63,8 @@ routing:
       parallel_execution: false
 
 settings:
-  max_rounds: 21      # ✅ SAFETY FIX: 10 questions × 2 (Q+A) + 1 ([END_EXAM]) = 21 rounds max
-  max_handoffs: 21    # ✅ Prevents infinite loop if [END_EXAM] signal fails
+  max_rounds: 100     # ✅ Increased: Allow LLM to adapt to validation errors through feedback loop
+  max_handoffs: 100   # ✅ Prevents infinite loop if [END_EXAM] signal fails
   config_mode: strict
 
   # Timeout parameters

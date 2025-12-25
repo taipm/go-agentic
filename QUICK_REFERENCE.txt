@@ -1,0 +1,190 @@
+================================================================================
+                   CORE LIBRARY WEAKNESSES - QUICK REFERENCE
+================================================================================
+
+PROBLEM STATEMENT:
+──────────────────
+The Go Agentic framework's infinite loop in the quiz example reveals a 
+fundamental architectural flaw: STATE MANAGEMENT is not orchestrated by the 
+framework, only AGENT EXECUTION is orchestrated.
+
+RESULT:
+  ✓ Agents execute fine
+  ✗ Tool results lost
+  ✗ State never persists
+  ✗ Infinite loops on stateful workflows
+
+
+WHAT HAPPENS IN QUIZ EXAMPLE:
+──────────────────────────────
+
+Round 1: Teacher asks Q1, Student answers
+  ├─ agent.ExecuteAgent() returns: [QUESTION], [ANSWER], [END_EXAM] signals
+  ├─ Tools to execute: GetQuizStatus, RecordAnswer
+  ├─ 🔴 BUT: Tools never executed from workflow
+  ├─ 🔴 AND: GetQuizStatus() called, returns "10 questions remain"
+  └─ → State never updated, returns initial state
+
+Round 2: Teacher asks Q1 AGAIN
+  ├─ Input unchanged (empty string passed in handoff)
+  ├─ History unchanged (tool results never added)
+  ├─ Agent sees same context
+  ├─ Makes same response
+  └─ → Calls GetQuizStatus() again → Still "10 questions"
+
+Round 3-∞: Infinite loop
+  ├─ Cost grows: $0.10 → $0.13 → $0.15 → ...
+  ├─ Tokens grow: 3,112 → 3,387 → 3,650 → 4,161 → ...
+  ├─ questions_remaining frozen at 10
+  └─ Eventually hits max rounds or runs out of budget
+
+
+ROOT CAUSE (3 Mechanisms):
+──────────────────────────
+
+1. STATE ISOLATION
+   ├─ QuizState is local to tool handler
+   ├─ Not shared with ExecutionContext
+   ├─ GetQuizStatus() reads from unchanging initial state
+   └─ → State pointer 0x1400007ab40 never changes
+
+2. TOOL RESULTS NOT PROPAGATED
+   ├─ ExecuteToolCalls() exists but never called
+   ├─ Tool results not added to ExecutionContext.History
+   ├─ Next agent doesn't see tool outputs
+   └─ → Next agent repeats same logic, makes same decisions
+
+3. SIGNALS WITHOUT STATE VERIFICATION
+   ├─ [ANSWER] signal emitted
+   ├─ But RecordAnswer() tool not called
+   ├─ State not updated despite signal
+   └─ → Signal = decoration, not action
+
+
+CRITICAL WEAKNESSES (Tier 1):
+──────────────────────────────
+
+#1: State Persistence Architecture
+    Problem: Core library doesn't define how to persist domain state
+    Impact:  State lost between rounds, infinite loops
+    Code:    core/state-management/execution_state.go (metrics only)
+    Severity: 🔴 CRITICAL
+
+#2: Tool Result Integration Gap  
+    Problem: Tool execution results not integrated into workflow
+    Impact:  Tool side effects lost, agents see stale context
+    Code:    core/tools/executor.go (orphaned, never called)
+    Severity: 🔴 CRITICAL
+
+#3: Signal-State Synchronization
+    Problem: Signals emitted without state update verification
+    Impact:  Signals unreliable, no guarantee of side effects
+    Code:    core/signal/registry.go, core/workflow/execution.go
+    Severity: 🔴 CRITICAL
+
+
+MAJOR WEAKNESSES (Tier 2):
+──────────────────────────
+
+#4: Infinite Loop Conditions
+    Problem: No domain-aware termination logic
+    Impact:  Cost explosion, time explosion, hanging workflows
+    Fix:     CheckTermination() with domain state awareness
+
+#5: Recursive Context Reset
+    Problem: Handoff passes empty input and unchanged history
+    Impact:  Agent doesn't know state changed
+    Fix:     Format state summary for next agent
+
+#6: No Tool Orchestration Layer
+    Problem: Tools executed in agent layer, not workflow layer
+    Impact:  Tool execution bypassed, results lost
+    Fix:     Create middleware layer between agent & tools
+
+
+MODERATE WEAKNESSES (Tier 3):
+──────────────────────────────
+
+#7: Message Type Flexibility
+#8: Cost Tracking Enforcement  
+#9: Signal Registry Coupling
+#10: Agent Configuration Validation
+
+
+USE CASES BROKEN:
+─────────────────
+✗ Quiz/exam systems
+✗ Data collection workflows
+✗ Multi-step tasks with rollback
+✗ Cost-sensitive applications
+✗ Long-running workflows
+
+
+USE CASES STILL WORKING:
+────────────────────────
+✓ Single-agent task execution
+✓ Simple LLM chains
+✓ Stateless workflows
+
+
+SOLUTION: 3 Missing Layers
+──────────────────────────
+
+Layer 1: STATE MANAGEMENT
+├─ Persist domain state
+├─ Record snapshots
+├─ Atomic updates
+└─ Enable rollback
+
+Layer 2: TOOL ORCHESTRATION
+├─ Execute in workflow context
+├─ Capture results
+├─ Integrate to history
+└─ Handle errors
+
+Layer 3: TERMINATION LOGIC
+├─ Domain-aware checks
+├─ Signal-based termination
+├─ State-based termination
+└─ Prevent infinite loops
+
+
+IMPLEMENTATION EFFORT:
+──────────────────────
+Phase 1 (CRITICAL):  Weeks 1-2
+Phase 2 (MAJOR):     Weeks 2-3  
+Phase 3 (ENHANCE):   Weeks 3-4
+Total:               4-6 weeks
+
+
+KEY DOCUMENTS:
+──────────────
+📄 CORE_WEAKNESSES_ANALYSIS.md
+   └─ Full 5W2H analysis with rankings
+
+📄 CORE_WEAKNESSES_DETAILED_ANALYSIS.md
+   └─ Code examples and architecture diagrams
+
+📄 ANALYSIS_SUMMARY.md
+   └─ Executive summary with recommendations
+
+
+FINAL VERDICT:
+──────────────
+The infinite loop is NOT a bug in the example.
+It's a PREDICTABLE CONSEQUENCE of incomplete architecture.
+
+The framework needs to define and implement:
+  1. State persistence contracts
+  2. Tool orchestration orchestration
+  3. Domain termination logic
+
+Without these, any stateful multi-agent workflow will fail identically.
+
+
+KEY INSIGHT:
+────────────
+"The framework orchestrates AGENT EXECUTION but NOT STATE MANAGEMENT.
+ State treated as external = predictable failures in stateful workflows."
+
+================================================================================

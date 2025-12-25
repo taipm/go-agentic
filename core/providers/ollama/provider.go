@@ -156,9 +156,20 @@ func (p *OllamaProvider) Complete(ctx context.Context, req *providers.Completion
 		}
 	}
 
+	// Extract usage information from response
+	var usage *providers.UsageInfo
+	if ollamaResp.PromptEvalCount > 0 || ollamaResp.EvalCount > 0 {
+		usage = &providers.UsageInfo{
+			InputTokens:  int(ollamaResp.PromptEvalCount),
+			OutputTokens: int(ollamaResp.EvalCount),
+			TotalTokens:  int(ollamaResp.PromptEvalCount + ollamaResp.EvalCount),
+		}
+	}
+
 	return &providers.CompletionResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
+		Usage:     usage,
 	}, nil
 }
 

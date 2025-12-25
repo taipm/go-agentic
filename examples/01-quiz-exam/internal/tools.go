@@ -347,31 +347,25 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] RecordAnswer() called with args: %v\n", args)
 
-			// ✅ PHASE 3.6: Auto-infer question_number from current state
-			var questionNum int
-
-			if qn, exists := args["question_number"]; exists && qn != nil {
-				// LLM cung cấp question_number - sử dụng giá trị này
-				switch v := qn.(type) {
-				case float64:
-					questionNum = int(v)
-				case int64:
-					questionNum = int(v)
-				case int:
-					questionNum = v
-				default:
-					// Fallback: Suy ra từ state (KHÔNG DÙNG - sẽ auto-infer trong RecordAnswer)
-					questionNum = 0
+			// ✅ FIX #2: VALIDATION #1 - question must not be empty
+			question, ok := args["question"].(string)
+			if !ok || strings.TrimSpace(question) == "" {
+				fmt.Printf("\n[VALIDATION ERROR] RecordAnswer FAILED\n")
+				fmt.Printf("  ❌ question parameter cannot be empty or missing\n")
+				fmt.Printf("  Received: %v\n", args["question"])
+				fmt.Printf("  Hint: Include the EXACT question text from STEP 2\n\n")
+				fmt.Fprintf(os.Stderr, "[VALIDATION FAILED] question is empty: %v\n\n", args["question"])
+				errResult := map[string]interface{}{
+					"error":       "VALIDATION FAILED: question cannot be empty",
+					"received":    args["question"],
+					"hint":        "Include the exact question text you asked in STEP 2",
+					"is_complete": false,
 				}
-			} else {
-				// LLM không cung cấp - tự động suy ra từ trạng thái hiện tại trong RecordAnswer
-				questionNum = 0
+				jsonBytes, _ := json.Marshal(errResult)
+				return string(jsonBytes), nil
 			}
 
-			// Parse question
-			question, _ := args["question"].(string)
-
-			// Parse student_answer (handle both string and numeric types)
+			// ✅ FIX #2: VALIDATION #2 - student_answer must not be empty
 			var studentAnswer string
 			switch v := args["student_answer"].(type) {
 			case string:
@@ -386,12 +380,59 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				studentAnswer = fmt.Sprintf("%v", v)
 			}
 
-			// ✅ PHASE 3.6: Auto-detect is_correct (fallback to true if not provided)
-			isCorrect := true  // Default: assume answer is correct
-			if ic, exists := args["is_correct"]; exists && ic != nil {
-				if b, ok := ic.(bool); ok {
-					isCorrect = b
+			if strings.TrimSpace(studentAnswer) == "" {
+				fmt.Printf("\n[VALIDATION ERROR] RecordAnswer FAILED\n")
+				fmt.Printf("  ❌ student_answer parameter cannot be empty or missing\n")
+				fmt.Printf("  Received: %v\n", args["student_answer"])
+				fmt.Printf("  Hint: Extract the student's actual response from their [ANSWER]\n\n")
+				fmt.Fprintf(os.Stderr, "[VALIDATION FAILED] student_answer is empty: %v\n\n", args["student_answer"])
+				errResult := map[string]interface{}{
+					"error":       "VALIDATION FAILED: student_answer cannot be empty",
+					"received":    args["student_answer"],
+					"hint":        "Extract the student's actual response text from their [ANSWER] message",
+					"is_complete": false,
 				}
+				jsonBytes, _ := json.Marshal(errResult)
+				return string(jsonBytes), nil
+			}
+
+			// ✅ FIX #2: VALIDATION #3 - is_correct must be explicitly provided
+			isCorrect, exists := args["is_correct"].(bool)
+			if !exists {
+				fmt.Printf("\n[VALIDATION ERROR] RecordAnswer FAILED\n")
+				fmt.Printf("  ❌ is_correct parameter must be explicitly true or false (not defaults!)\n")
+				fmt.Printf("  Received: %v\n", args["is_correct"])
+				fmt.Printf("  Hint: Evaluate the answer and provide explicit true or false\n\n")
+				fmt.Fprintf(os.Stderr, "[VALIDATION FAILED] is_correct not provided or not boolean: %v\n\n", args["is_correct"])
+				errResult := map[string]interface{}{
+					"error":       "VALIDATION FAILED: is_correct must be explicitly true or false",
+					"received":    args["is_correct"],
+					"hint":        "Evaluate the student's answer and provide true (correct) or false (wrong)",
+					"is_complete": false,
+				}
+				jsonBytes, _ := json.Marshal(errResult)
+				return string(jsonBytes), nil
+			}
+
+			// ✅ PHASE 3.6: Auto-infer question_number from current state
+			var questionNum int
+
+			if qn, exists := args["question_number"]; exists && qn != nil {
+				// LLM cung cấp question_number - sử dụng giá trị này
+				switch v := qn.(type) {
+				case float64:
+					questionNum = int(v)
+				case int64:
+					questionNum = int(v)
+				case int:
+					questionNum = v
+				default:
+					// Fallback: Suy ra từ state
+					questionNum = 0
+				}
+			} else {
+				// LLM không cung cấp - tự động suy ra từ trạng thái hiện tại
+				questionNum = 0
 			}
 
 			// Parse teacher_comment (optional)
@@ -421,11 +462,9 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Printf("  Còn lại: %d câu\n", result["questions_remaining"])
 			fmt.Printf("  [DEBUG] state pointer: %p, CorrectAnswers: %d, CurrentQuestion: %d\n\n", state, state.CorrectAnswers, state.CurrentQuestion)
 
-			// ✅ AUTO-SAVE: Write report after each answer to ensure file is updated
-			if err := state.WriteReportToFile(""); err != nil {
-				fmt.Printf("  [Auto-save] Lỗi lưu biên bản: %v\n", err)
-				fmt.Fprintf(os.Stderr, "[TOOL ERROR] WriteReportToFile failed: %v\n", err)
-			}
+			// ✅ FIX #3: REMOVED AUTO-SAVE
+			// Report will be written ONCE at end of exam (when is_complete = true)
+			// This prevents incomplete/partial reports from being written 10 times
 
 			fmt.Fprintf(os.Stderr, "[TOOL EXIT] RecordAnswer() returning: is_complete=%v, questions_remaining=%d\n\n", result["is_complete"], result["questions_remaining"])
 			jsonBytes, _ := json.Marshal(result)

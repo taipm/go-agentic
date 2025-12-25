@@ -4,10 +4,20 @@ package executor
 import (
 	"context"
 	"log"
+	"log/slog"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 	"github.com/taipm/go-agentic/core/workflow"
 )
+
+// truncateString truncates a string to a maximum length
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
 
 // Executor orchestrates the execution of a crew
 type Executor struct {
@@ -94,6 +104,16 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 		}
 	}
 
+	// Log workflow start
+	traceID := logging.GetTraceID(ctx)
+	logging.GetLogger().InfoContext(ctx, "workflow.start",
+		slog.String("event", "workflow.start"),
+		slog.String("trace_id", traceID),
+		slog.String("entry_agent_id", entryAgent.ID),
+		slog.String("entry_agent_name", entryAgent.Name),
+		slog.String("input_preview", truncateString(input, 100)),
+	)
+
 	// Execute workflow
 	history := []common.Message{}
 	response, err := workflow.ExecuteWorkflow(ctx, entryAgent, input, history, handler, nil, e.apiKey, nil)
@@ -109,11 +129,21 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 		log.Printf("[EXECUTOR] Execution completed: %s", response.Content)
 	}
 
+	// Log workflow end
+	logging.GetLogger().InfoContext(ctx, "workflow.end",
+		slog.String("event", "workflow.end"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.String("final_agent_id", response.AgentID),
+		slog.String("final_agent_name", response.AgentName),
+		slog.String("status", "completed"),
+	)
+
 	// Convert agent response to crew response
 	crewResponse := &common.CrewResponse{
 		AgentID:   response.AgentID,
 		AgentName: response.AgentName,
 		Content:   response.Content,
+		Cost:      response.Cost, // Pass through cost information
 	}
 
 	return crewResponse, nil

@@ -3,10 +3,12 @@ package routing
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 )
 
 // ParallelResult represents the result of executing an agent in parallel
@@ -52,6 +54,13 @@ func (pge *ParallelGroupExecutor) ExecuteParallel(
 		return nil, common.NewValidationError("agents", "no agents provided for parallel execution")
 	}
 
+	// Log: parallel.start
+	logging.GetLogger().InfoContext(ctx, "parallel.start",
+		slog.String("event", "parallel.start"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.Int("agent_count", len(agents)),
+	)
+
 	// Create context with timeout
 	execCtx, cancel := context.WithTimeout(ctx, pge.Timeout)
 	defer cancel()
@@ -70,9 +79,39 @@ func (pge *ParallelGroupExecutor) ExecuteParallel(
 		go func(ag *common.Agent) {
 			defer wg.Done()
 
+			// Log: parallel.agent_start
+			logging.GetLogger().InfoContext(ctx, "parallel.agent_start",
+				slog.String("event", "parallel.agent_start"),
+				slog.String("trace_id", logging.GetTraceID(ctx)),
+				slog.String("agent_id", ag.ID),
+				slog.String("agent_name", ag.Name),
+			)
+
 			startTime := time.Now()
 			response, err := executeAgentConcurrent(execCtx, ag, input, history, apiKey)
 			duration := time.Since(startTime)
+
+			// Log: parallel.agent_end
+			if err == nil {
+				logging.GetLogger().InfoContext(ctx, "parallel.agent_end",
+					slog.String("event", "parallel.agent_end"),
+					slog.String("trace_id", logging.GetTraceID(ctx)),
+					slog.String("agent_id", ag.ID),
+					slog.String("agent_name", ag.Name),
+					slog.Int64("duration_ms", duration.Milliseconds()),
+					slog.String("status", "success"),
+				)
+			} else {
+				logging.GetLogger().InfoContext(ctx, "parallel.agent_end",
+					slog.String("event", "parallel.agent_end"),
+					slog.String("trace_id", logging.GetTraceID(ctx)),
+					slog.String("agent_id", ag.ID),
+					slog.String("agent_name", ag.Name),
+					slog.Int64("duration_ms", duration.Milliseconds()),
+					slog.String("status", "error"),
+					slog.String("error", err.Error()),
+				)
+			}
 
 			resultsChan <- ParallelResult{
 				AgentID:  ag.ID,
@@ -94,6 +133,13 @@ func (pge *ParallelGroupExecutor) ExecuteParallel(
 	for result := range resultsChan {
 		results = append(results, result)
 	}
+
+	// Log: parallel.end
+	logging.GetLogger().InfoContext(ctx, "parallel.end",
+		slog.String("event", "parallel.end"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.Int("completed_count", len(results)),
+	)
 
 	return results, nil
 }

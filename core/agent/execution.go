@@ -4,10 +4,12 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 	providers "github.com/taipm/go-agentic/core/providers"
 	_ "github.com/taipm/go-agentic/core/providers/openai"  // Register OpenAI provider
 	_ "github.com/taipm/go-agentic/core/providers/ollama"  // Register Ollama provider
@@ -137,16 +139,56 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 		return nil, fmt.Errorf("failed to get LLM provider '%s': %w", modelConfig.Provider, err)
 	}
 
+	// Log: LLM call start
+	traceID := logging.GetTraceID(ctx)
+	logging.GetLogger().InfoContext(ctx, "llm_call",
+		slog.String("event", "llm_call"),
+		slog.String("trace_id", traceID),
+		slog.String("agent_id", agent.ID),
+		slog.String("agent_name", agent.Name),
+		slog.String("model", modelConfig.Model),
+	)
+
 	startTime := time.Now()
 	response, err := provider.Complete(ctx, request)
-	_ = time.Since(startTime) // Execution duration for metrics in full implementation
+	duration := time.Since(startTime)
 
 	if err != nil {
 		return nil, err
 	}
 
+	// Log: LLM response with actual cost
+	if response.Usage != nil {
+		actualCost := agent.CalculateCost(response.Usage.InputTokens, response.Usage.OutputTokens)
+
+		logging.GetLogger().InfoContext(ctx, "llm_response",
+			slog.String("event", "llm_response"),
+			slog.String("trace_id", traceID),
+			slog.String("agent_id", agent.ID),
+			slog.String("agent_name", agent.Name),
+			slog.String("model", modelConfig.Model),
+			slog.Int("input_tokens", response.Usage.InputTokens),
+			slog.Int("output_tokens", response.Usage.OutputTokens),
+			slog.Int("total_tokens", response.Usage.TotalTokens),
+			slog.Float64("cost_usd", actualCost),
+			slog.Int64("duration_ms", duration.Milliseconds()),
+		)
+	}
+
 	// Extract signals from response content
 	signals := ExtractSignalsFromContent(response.Content)
+
+	// Build cost summary
+	var cost *common.CostSummary
+	if response.Usage != nil {
+		actualCost := agent.CalculateCost(response.Usage.InputTokens, response.Usage.OutputTokens)
+		cost = &common.CostSummary{
+			InputTokens:  response.Usage.InputTokens,
+			OutputTokens: response.Usage.OutputTokens,
+			TotalTokens:  response.Usage.TotalTokens,
+			CostUSD:      actualCost,
+		}
+	}
 
 	return &common.AgentResponse{
 		AgentID:   agent.ID,
@@ -154,6 +196,7 @@ func executeWithModelConfig(ctx context.Context, agent *common.Agent, systemProm
 		Content:   response.Content,
 		ToolCalls: ConvertToolCallsFromProvider(response.ToolCalls),
 		Signals:   signals,
+		Cost:      cost,
 	}, nil
 }
 

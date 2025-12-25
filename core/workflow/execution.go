@@ -4,11 +4,13 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/taipm/go-agentic/core/agent"
 	"github.com/taipm/go-agentic/core/common"
+	"github.com/taipm/go-agentic/core/logging"
 	"github.com/taipm/go-agentic/core/signal"
 )
 
@@ -75,18 +77,42 @@ func ExecuteWorkflow(ctx context.Context, entryAgent *common.Agent, input string
 		handler = NewNoOpHandler()
 	}
 
+	// Generate trace ID and add to context for log correlation
+	traceID := uuid.New().String()
+	ctx = logging.WithTraceID(ctx, traceID)
+
 	execCtx := &ExecutionContext{
 		CurrentAgent:   entryAgent,
 		History:        history,
 		MaxHandoffs:    DefaultMaxHandoffs,
 		MaxRounds:      DefaultMaxRounds,
 		StartTime:      time.Now(),
-		CorrelationID:  uuid.New().String(), // Generate unique correlation ID for request tracing
+		CorrelationID:  traceID, // Use same trace_id for backward compatibility
 		handler:        handler,
 		SignalRegistry: signalRegistry,
 	}
 
-	return executeAgent(ctx, execCtx, input, apiKey, agents)
+	response, err := executeAgent(ctx, execCtx, input, apiKey, agents)
+
+	// Log workflow end
+	if response != nil {
+		logging.GetLogger().InfoContext(ctx, "workflow.end",
+			slog.String("event", "workflow.end"),
+			slog.String("trace_id", traceID),
+			slog.String("final_agent_id", response.AgentID),
+			slog.String("final_agent_name", response.AgentName),
+			slog.String("status", "completed"),
+		)
+	} else if err != nil {
+		logging.GetLogger().InfoContext(ctx, "workflow.end",
+			slog.String("event", "workflow.end"),
+			slog.String("trace_id", traceID),
+			slog.String("status", "error"),
+			slog.String("error", err.Error()),
+		)
+	}
+
+	return response, err
 }
 
 // executeAgent executes the current agent and handles routing
@@ -97,6 +123,15 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	}
 
 	execCtx.RoundCount++
+
+	// Log round start
+	logging.GetLogger().InfoContext(ctx, "round.start",
+		slog.String("event", "round.start"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.String("agent_id", execCtx.CurrentAgent.ID),
+		slog.String("agent_name", execCtx.CurrentAgent.Name),
+		slog.Int("round", execCtx.RoundCount),
+	)
 
 	// Add user input to history on first iteration
 	if execCtx.RoundCount == 1 {
@@ -112,6 +147,15 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		"input": input,
 	})
 
+	// Log: agent.start
+	logging.GetLogger().InfoContext(ctx, "agent.start",
+		slog.String("event", "agent.start"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.String("agent_id", execCtx.CurrentAgent.ID),
+		slog.String("agent_name", execCtx.CurrentAgent.Name),
+		slog.Int("round", execCtx.RoundCount),
+	)
+
 	// Execute current agent
 	startTime := time.Now()
 	response, err := agent.ExecuteAgent(ctx, execCtx.CurrentAgent, input, execCtx.History, apiKey)
@@ -122,6 +166,16 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		execCtx.emitSignal(signal.SignalAgentError, map[string]interface{}{
 			"error": err.Error(),
 		})
+
+		// Log: error.agent_execution
+		logging.GetLogger().InfoContext(ctx, "error.agent_execution",
+			slog.String("event", "error.agent_execution"),
+			slog.String("trace_id", logging.GetTraceID(ctx)),
+			slog.String("agent_id", execCtx.CurrentAgent.ID),
+			slog.String("agent_name", execCtx.CurrentAgent.Name),
+			slog.String("error", err.Error()),
+			slog.Int("round", execCtx.RoundCount),
+		)
 
 		handler := execCtx.handler
 		if handler != nil {
@@ -146,9 +200,28 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		"duration_ms": execCtx.LastAgentTime.Milliseconds(),
 	})
 
+	// Log: agent.end
+	logging.GetLogger().InfoContext(ctx, "agent.end",
+		slog.String("event", "agent.end"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.String("agent_id", execCtx.CurrentAgent.ID),
+		slog.String("agent_name", execCtx.CurrentAgent.Name),
+		slog.Int64("duration_ms", execCtx.LastAgentTime.Milliseconds()),
+		slog.Int("round", execCtx.RoundCount),
+	)
+
 	// SIGNAL 4: Process custom signals from agent response
 	var routingDecision *common.RoutingDecision
 	if execCtx.SignalRegistry != nil && response.Signals != nil && len(response.Signals) > 0 {
+		// Log: signals.extracted
+		logging.GetLogger().InfoContext(ctx, "signals.extracted",
+			slog.String("event", "signals.extracted"),
+			slog.String("trace_id", logging.GetTraceID(ctx)),
+			slog.String("agent_id", execCtx.CurrentAgent.ID),
+			slog.String("agent_name", execCtx.CurrentAgent.Name),
+			slog.Int("signal_count", len(response.Signals)),
+		)
+
 		for _, sigName := range response.Signals {
 			sig := &signal.Signal{
 				Name:    sigName,
@@ -199,6 +272,31 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 			"routing_reason": routingDecision.Reason,
 		})
 
+		// Log: route.handoff
+		logging.GetLogger().InfoContext(ctx, "route.handoff",
+			slog.String("event", "route.handoff"),
+			slog.String("trace_id", logging.GetTraceID(ctx)),
+			slog.String("from_agent_id", execCtx.CurrentAgent.ID),
+			slog.String("from_agent_name", execCtx.CurrentAgent.Name),
+			slog.String("to_agent_id", routingDecision.NextAgentID),
+			slog.String("routing_type", "signal"),
+			slog.String("reason", routingDecision.Reason),
+			slog.Int("round", execCtx.RoundCount),
+		)
+
+		// Log: Routing decision
+		traceID := logging.GetTraceID(ctx)
+		logging.GetLogger().InfoContext(ctx, "routing_decision",
+			slog.String("event", "routing_decision"),
+			slog.String("trace_id", traceID),
+			slog.String("from_agent", execCtx.CurrentAgent.ID),
+			slog.String("to_agent", routingDecision.NextAgentID),
+			slog.Bool("is_terminal", routingDecision.IsTerminal),
+			slog.String("reason", routingDecision.Reason),
+			slog.String("routing_type", "signal"),
+			slog.Int("round", execCtx.RoundCount),
+		)
+
 		// Phase 5 Implementation: Look up next agent and continue execution
 		nextAgent, err := lookupNextAgent(agents, routingDecision.NextAgentID, execCtx.CurrentAgent.ID)
 		if err != nil {
@@ -206,6 +304,17 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		}
 
 		if nextAgent != nil {
+			// Log: handoff.execute (signal-based)
+			logging.GetLogger().InfoContext(ctx, "handoff.execute",
+				slog.String("event", "handoff.execute"),
+				slog.String("trace_id", logging.GetTraceID(ctx)),
+				slog.String("from_agent_id", execCtx.CurrentAgent.ID),
+				slog.String("to_agent_id", nextAgent.ID),
+				slog.String("to_agent_name", nextAgent.Name),
+				slog.String("handoff_type", "signal"),
+				slog.Int("handoff_count", execCtx.HandoffCount+1),
+			)
+
 			// Update execution context for next agent
 			execCtx.CurrentAgent = nextAgent
 			execCtx.HandoffCount++
@@ -225,6 +334,17 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		execCtx.emitSignal(signal.SignalTerminal, map[string]interface{}{
 			"reason": "agent marked as terminal",
 		})
+
+		// Log: route.terminal
+		logging.GetLogger().InfoContext(ctx, "route.terminal",
+			slog.String("event", "route.terminal"),
+			slog.String("trace_id", logging.GetTraceID(ctx)),
+			slog.String("agent_id", execCtx.CurrentAgent.ID),
+			slog.String("agent_name", execCtx.CurrentAgent.Name),
+			slog.String("reason", "agent marked as terminal"),
+			slog.Int("round", execCtx.RoundCount),
+		)
+
 		return response, nil
 	}
 
@@ -246,6 +366,17 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 		}
 
 		if nextAgent != nil {
+			// Log: handoff.execute (default handoff targets)
+			logging.GetLogger().InfoContext(ctx, "handoff.execute",
+				slog.String("event", "handoff.execute"),
+				slog.String("trace_id", logging.GetTraceID(ctx)),
+				slog.String("from_agent_id", execCtx.CurrentAgent.ID),
+				slog.String("to_agent_id", nextAgent.ID),
+				slog.String("to_agent_name", nextAgent.Name),
+				slog.String("handoff_type", "handoff_target"),
+				slog.Int("handoff_count", execCtx.HandoffCount+1),
+			)
+
 			// Update execution context for next agent
 			execCtx.CurrentAgent = nextAgent
 			execCtx.HandoffCount++
@@ -262,6 +393,16 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 	execCtx.emitSignal(signal.SignalTerminal, map[string]interface{}{
 		"reason": "no handoff targets configured",
 	})
+
+	// Log: route.terminal
+	logging.GetLogger().InfoContext(ctx, "route.terminal",
+		slog.String("event", "route.terminal"),
+		slog.String("trace_id", logging.GetTraceID(ctx)),
+		slog.String("agent_id", execCtx.CurrentAgent.ID),
+		slog.String("agent_name", execCtx.CurrentAgent.Name),
+		slog.String("reason", "no handoff targets configured"),
+		slog.Int("round", execCtx.RoundCount),
+	)
 
 	return response, nil
 }

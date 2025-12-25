@@ -72,13 +72,22 @@ type ToolCall struct {
 	Arguments map[string]interface{}
 }
 
+// CostSummary contains token usage and cost information for a response
+type CostSummary struct {
+	InputTokens  int     `json:"input_tokens"`
+	OutputTokens int     `json:"output_tokens"`
+	TotalTokens  int     `json:"total_tokens"`
+	CostUSD      float64 `json:"cost_usd"`
+}
+
 // AgentResponse represents a response from an agent
 type AgentResponse struct {
 	AgentID   string
 	AgentName string
 	Content   string
 	ToolCalls []ToolCall
-	Signals   []string // Signals emitted by agent (e.g., "[END_EXAM]")
+	Signals   []string     // Signals emitted by agent (e.g., "[END_EXAM]")
+	Cost      *CostSummary `json:"cost,omitempty"` // Token usage and cost information
 }
 
 // CrewResponse represents the final response from the crew
@@ -88,7 +97,8 @@ type CrewResponse struct {
 	Content       string
 	ToolCalls     []ToolCall
 	IsTerminal    bool
-	PausedAgentID string // Agent ID that paused, used for resume functionality
+	PausedAgentID string       // Agent ID that paused, used for resume functionality
+	Cost          *CostSummary `json:"cost,omitempty"` // Cumulative token usage and cost
 }
 
 // Crew represents a group of agents working together
