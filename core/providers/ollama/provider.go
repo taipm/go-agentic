@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	providers "github.com/taipm/go-agentic/core/providers"
+	"github.com/taipm/go-agentic/core/tools"
 )
 
 // OllamaProvider implements LLMProvider interface using Ollama API
@@ -379,7 +380,7 @@ func parseToolArguments(argsStr string) map[string]interface{} {
 	}
 
 	// Try to parse key=value format (e.g., question_number=1, question="Q")
-	parts := splitArguments(argsStr)
+	parts := tools.SplitArguments(argsStr)
 	hasKeyValue := false
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -418,55 +419,12 @@ func parseToolArguments(argsStr string) map[string]interface{} {
 	return result
 }
 
-// splitArguments splits arguments respecting nested brackets and quotes
+// splitArguments delegates to shared tools package implementation
 func splitArguments(argsStr string) []string {
-	var parts []string
-	var current strings.Builder
-	bracketDepth := 0
-	quoteChar := rune(0)
-
-	for _, ch := range argsStr {
-		switch ch {
-		case '"', '\'':
-			if quoteChar == 0 {
-				quoteChar = ch
-			} else if quoteChar == ch {
-				quoteChar = 0
-			}
-			current.WriteRune(ch)
-		case '[', '{':
-			if quoteChar == 0 {
-				bracketDepth++
-			}
-			current.WriteRune(ch)
-		case ']', '}':
-			if quoteChar == 0 {
-				bracketDepth--
-			}
-			current.WriteRune(ch)
-		case ',':
-			if bracketDepth == 0 && quoteChar == 0 {
-				part := strings.TrimSpace(current.String())
-				if part != "" {
-					parts = append(parts, part)
-				}
-				current.Reset()
-			} else {
-				current.WriteRune(ch)
-			}
-		default:
-			current.WriteRune(ch)
-		}
-	}
-
-	if part := strings.TrimSpace(current.String()); part != "" {
-		parts = append(parts, part)
-	}
-
-	return parts
+	return tools.SplitArguments(argsStr)
 }
 
-// isAlphanumeric checks if a rune is alphanumeric or underscore
+// isAlphanumeric delegates to shared tools package implementation
 func isAlphanumeric(ch rune) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+	return tools.IsAlphanumeric(ch)
 }

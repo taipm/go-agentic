@@ -4,19 +4,22 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/taipm/go-agentic/core/config"
 )
 
-// ConfigMode defines how the system handles missing configuration values
-type ConfigMode string
+// ConfigMode re-exports from config package for backward compatibility
+type ConfigMode = config.ConfigMode
 
+// ConfigMode constants - re-exported from config package
 const (
 	// PermissiveMode allows missing config values and uses defaults
 	// System runs smoothly, no errors for missing config
-	PermissiveMode ConfigMode = "permissive"
+	PermissiveMode ConfigMode = config.ConfigModePermissive
 
 	// StrictMode requires all config values to be explicitly set
 	// System fails with clear error messages if values are missing
-	StrictMode ConfigMode = "strict"
+	StrictMode ConfigMode = config.ConfigModeStrict
 
 	// DefaultConfigMode is PermissiveMode for backward compatibility
 	DefaultConfigMode ConfigMode = PermissiveMode

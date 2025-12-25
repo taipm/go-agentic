@@ -12,6 +12,7 @@ import (
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	providers "github.com/taipm/go-agentic/core/providers"
+	"github.com/taipm/go-agentic/core/tools"
 )
 
 // clientEntry represents a cached OpenAI client with expiry time
@@ -441,81 +442,17 @@ func extractToolCallsFromText(text string) []providers.ToolCall {
 	return calls
 }
 
-// parseToolArguments splits tool arguments respecting nested brackets
+// parseToolArguments delegates to shared tools package implementation
 func parseToolArguments(argsStr string) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	if argsStr == "" {
-		return result
-	}
-
-	// Simple approach: try to parse as JSON first (handles complex types)
-	// If that fails, treat as simple string arguments
-	var jsonArgs map[string]interface{}
-	if err := json.Unmarshal([]byte("{"+argsStr+"}"), &jsonArgs); err == nil {
-		return jsonArgs
-	}
-
-	// Fallback: parse as comma-separated positional arguments
-	parts := splitArguments(argsStr)
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.Trim(part, `"'`)
-		result[fmt.Sprintf("arg%d", i)] = part
-	}
-
-	return result
+	return tools.ParseArguments(argsStr)
 }
 
-// splitArguments splits arguments respecting nested brackets and quotes
+// splitArguments delegates to shared tools package implementation
 func splitArguments(argsStr string) []string {
-	var parts []string
-	var current strings.Builder
-	bracketDepth := 0
-	quoteChar := rune(0)
-
-	for _, ch := range argsStr {
-		switch ch {
-		case '"', '\'':
-			if quoteChar == 0 {
-				quoteChar = ch
-			} else if quoteChar == ch {
-				quoteChar = 0
-			}
-			current.WriteRune(ch)
-		case '[', '{':
-			if quoteChar == 0 {
-				bracketDepth++
-			}
-			current.WriteRune(ch)
-		case ']', '}':
-			if quoteChar == 0 {
-				bracketDepth--
-			}
-			current.WriteRune(ch)
-		case ',':
-			if bracketDepth == 0 && quoteChar == 0 {
-				part := strings.TrimSpace(current.String())
-				if part != "" {
-					parts = append(parts, part)
-				}
-				current.Reset()
-			} else {
-				current.WriteRune(ch)
-			}
-		default:
-			current.WriteRune(ch)
-		}
-	}
-
-	if part := strings.TrimSpace(current.String()); part != "" {
-		parts = append(parts, part)
-	}
-
-	return parts
+	return tools.SplitArguments(argsStr)
 }
 
-// isAlphanumeric checks if a rune is alphanumeric or underscore
+// isAlphanumeric delegates to shared tools package implementation
 func isAlphanumeric(ch rune) bool {
-	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+	return tools.IsAlphanumeric(ch)
 }

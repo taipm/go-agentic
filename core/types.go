@@ -67,6 +67,9 @@ type AgentMemoryMetrics = common.AgentMemoryMetrics
 // AgentPerformanceMetrics - re-export from common package for backward compatibility
 type AgentPerformanceMetrics = common.AgentPerformanceMetrics
 
+// StreamEvent - re-export from common package for backward compatibility
+type StreamEvent = common.StreamEvent
+
 // HistoryManager - re-export from executor package for backward compatibility
 type HistoryManager = executor.HistoryManager
 
@@ -189,13 +192,4 @@ type Crew struct {
 	MaxToolOutputChars      int            // ✅ FIX #5: Max characters per tool output (default: 2000)
 	MaxTotalToolOutputChars int            // ✅ FIX: Max TOTAL characters for all tools combined (default: 4000)
 	Routing                 *RoutingConfig // Routing configuration from crew.yaml
-}
-
-// StreamEvent represents a streaming event sent to the client
-type StreamEvent struct {
-	Type      string      `json:"type"`      // "agent_start", "agent_response", "tool_start", "tool_result", "pause", "error"
-	Agent     string      `json:"agent"`     // Agent ID/Name
-	Content   string      `json:"content"`   // Main message
-	Timestamp time.Time   `json:"timestamp"` // When this happened
-	Metadata  interface{} `json:"metadata"`  // Extra data (tool results, etc.)
 }

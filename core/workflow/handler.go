@@ -8,7 +8,7 @@ import (
 // OutputHandler defines the interface for handling workflow output
 type OutputHandler interface {
 	// HandleStreamEvent processes a stream event during execution
-	HandleStreamEvent(event *StreamEvent) error
+	HandleStreamEvent(event *common.StreamEvent) error
 
 	// HandleAgentResponse processes an agent response
 	HandleAgentResponse(response *common.AgentResponse) error
@@ -18,14 +18,6 @@ type OutputHandler interface {
 
 	// GetFinalResponse returns the final response
 	GetFinalResponse() interface{}
-}
-
-// StreamEvent represents an event streamed during workflow execution
-type StreamEvent struct {
-	Type      string // "agent_response", "tool_result", "error", "status", etc.
-	AgentName string
-	Message   string
-	Timestamp int64
 }
 
 // SyncHandler handles synchronous execution
@@ -40,7 +32,7 @@ func NewSyncHandler() *SyncHandler {
 }
 
 // HandleStreamEvent processes a stream event synchronously
-func (sh *SyncHandler) HandleStreamEvent(event *StreamEvent) error {
+func (sh *SyncHandler) HandleStreamEvent(event *common.StreamEvent) error {
 	if event == nil {
 		return nil
 	}
@@ -73,20 +65,20 @@ func (sh *SyncHandler) GetFinalResponse() interface{} {
 
 // StreamHandler handles streaming execution with a channel
 type StreamHandler struct {
-	streamChan    chan *StreamEvent
+	streamChan    chan *common.StreamEvent
 	finalResponse interface{}
 	lastError     error
 }
 
 // NewStreamHandler creates a new streaming handler
-func NewStreamHandler(streamChan chan *StreamEvent) *StreamHandler {
+func NewStreamHandler(streamChan chan *common.StreamEvent) *StreamHandler {
 	return &StreamHandler{
 		streamChan: streamChan,
 	}
 }
 
 // HandleStreamEvent sends a stream event to the channel
-func (sh *StreamHandler) HandleStreamEvent(event *StreamEvent) error {
+func (sh *StreamHandler) HandleStreamEvent(event *common.StreamEvent) error {
 	if sh.streamChan == nil {
 		return nil
 	}
@@ -105,10 +97,10 @@ func (sh *StreamHandler) HandleAgentResponse(response *common.AgentResponse) err
 		return nil
 	}
 
-	event := &StreamEvent{
-		Type:      "agent_response",
-		AgentName: response.AgentName,
-		Message:   response.Content,
+	event := &common.StreamEvent{
+		Type:    "agent_response",
+		Agent:   response.AgentName,
+		Content: response.Content,
 	}
 
 	return sh.HandleStreamEvent(event)
@@ -122,9 +114,9 @@ func (sh *StreamHandler) HandleError(err error) error {
 		return nil
 	}
 
-	event := &StreamEvent{
+	event := &common.StreamEvent{
 		Type:    "error",
-		Message: err.Error(),
+		Content: err.Error(),
 	}
 
 	return sh.HandleStreamEvent(event)
@@ -139,7 +131,7 @@ func (sh *StreamHandler) GetFinalResponse() interface{} {
 type NoOpHandler struct{}
 
 // HandleStreamEvent does nothing
-func (nh *NoOpHandler) HandleStreamEvent(event *StreamEvent) error {
+func (nh *NoOpHandler) HandleStreamEvent(event *common.StreamEvent) error {
 	return nil
 }
 

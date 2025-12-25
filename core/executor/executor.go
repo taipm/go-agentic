@@ -121,7 +121,7 @@ func (e *Executor) Execute(ctx context.Context, input string) (*common.CrewRespo
 }
 
 // ExecuteStream runs the executor with streaming output
-func (e *Executor) ExecuteStream(ctx context.Context, input string, streamChan chan *workflow.StreamEvent) error {
+func (e *Executor) ExecuteStream(ctx context.Context, input string, streamChan chan *common.StreamEvent) error {
 	if e == nil {
 		return fmt.Errorf("executor is nil")
 	}

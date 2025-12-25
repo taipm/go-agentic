@@ -231,7 +231,7 @@ func executeAgent(ctx context.Context, execCtx *ExecutionContext, input string, 
 }
 
 // ExecuteWorkflowStream executes the workflow with streaming output
-func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, streamChan chan *StreamEvent, signalRegistry *signal.SignalRegistry, apiKey string) error {
+func ExecuteWorkflowStream(ctx context.Context, entryAgent *common.Agent, input string, history []common.Message, streamChan chan *common.StreamEvent, signalRegistry *signal.SignalRegistry, apiKey string) error {
 	if entryAgent == nil {
 		return fmt.Errorf("entry agent cannot be nil")
 	}

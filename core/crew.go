@@ -518,8 +518,8 @@ func (ce *CrewExecutor) executeWorkflow(ctx context.Context, input string, handl
 
 // ExecuteStream runs the crew with streaming events
 func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamChan chan *StreamEvent) error {
-	// Create adapter channel for workflow.StreamEvent
-	workflowStreamChan := make(chan *workflow.StreamEvent)
+	// Create adapter channel for common.StreamEvent
+	workflowStreamChan := make(chan *common.StreamEvent)
 
 	// Create a channel to signal when conversion goroutine is done
 	conversionDone := make(chan struct{})
@@ -538,9 +538,9 @@ func (ce *CrewExecutor) ExecuteStream(ctx context.Context, input string, streamC
 			if event != nil {
 				streamEvent := &StreamEvent{
 					Type:      event.Type,
-					Agent:     event.AgentName,
-					Content:   event.Message,
-					Timestamp: time.Unix(0, event.Timestamp),
+					Agent:     event.Agent,
+					Content:   event.Content,
+					Timestamp: event.Timestamp,
 				}
 
 				// Use select with context to safely send without panicking

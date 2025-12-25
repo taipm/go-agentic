@@ -19,12 +19,12 @@ routing:
   signals:
     teacher:
       - signal: "[QUESTION]"
-        target: [student, reporter]  # ✅ FIXED: Question goes to BOTH student & reporter (for parallel recording)
+        target: parallel_question  # ✅ FIXED: Use parallel group to invoke student & reporter
       - signal: "[END_EXAM]"
         target: ""  # ✅ Terminate workflow immediately when exam ends
     student:
       - signal: "[ANSWER]"
-        target: [teacher, reporter]  # ✅ FIXED: Answers go to BOTH teacher & reporter (for recording)
+        target: parallel_answer  # ✅ FIXED: Use parallel group to invoke teacher & reporter
     reporter:
       - signal: "[OK]"
         target: ""  # Just acknowledge, don't route
@@ -35,11 +35,11 @@ routing:
 
   # Parallel groups
   parallel_groups:
-    parallel_question:
+    parallel_question:  # ✅ FIXED: Triggered by Teacher's [QUESTION] signal
       agents: [student, reporter]
       wait_for_all: false
       timeout_seconds: 30
-    parallel_answer:
+    parallel_answer:    # ✅ FIXED: Triggered by Student's [ANSWER] signal
       agents: [teacher, reporter]
       wait_for_all: false
       timeout_seconds: 30
