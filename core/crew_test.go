@@ -8,6 +8,17 @@ import (
 	"time"
 )
 
+// copyHistory creates a deep copy of message history to ensure thread safety
+// Moved from deprecated tool_validation.go for test use
+func copyHistory(original []Message) []Message {
+	if len(original) == 0 {
+		return []Message{}
+	}
+	copied := make([]Message, len(original))
+	copy(copied, original)
+	return copied
+}
+
 // ===== Issue #4: History Mutation Bug Tests =====
 
 // TestCopyHistoryEdgeCases verifies copyHistory handles all edge cases correctly
@@ -275,7 +286,7 @@ func TestSafeExecuteToolPanicWithRuntimeError(t *testing.T) {
 		Handler: func(ctx context.Context, args map[string]interface{}) (string, error) {
 			// This will panic at runtime
 			arr := []int{1, 2, 3}
-			_ = arr[10]  // Index out of bounds → runtime panic
+			_ = arr[10] // Index out of bounds → runtime panic
 			return "should not reach here", nil
 		},
 	}
