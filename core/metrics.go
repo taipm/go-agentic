@@ -10,16 +10,19 @@ import (
 // ✅ FIX for Issue #14 (Metrics & Observability)
 // This file implements comprehensive metrics collection for production monitoring
 
-// ToolMetrics tracks per-tool statistics
+// ToolMetrics tracks per-tool statistics including cost
 type ToolMetrics struct {
-	ToolName        string        // Name of the tool
-	ExecutionCount  int64         // Total executions
-	SuccessCount    int64         // Successful executions
-	ErrorCount      int64         // Failed executions
-	TotalDuration   time.Duration // Total time spent
-	AverageDuration time.Duration // Average per execution
-	MinDuration     time.Duration // Fastest execution
-	MaxDuration     time.Duration // Slowest execution
+	ToolName         string        // Name of the tool
+	ExecutionCount   int64         // Total executions
+	SuccessCount     int64         // Successful executions
+	ErrorCount       int64         // Failed executions
+	TotalDuration    time.Duration // Total time spent
+	AverageDuration  time.Duration // Average per execution
+	MinDuration      time.Duration // Fastest execution
+	MaxDuration      time.Duration // Slowest execution
+	TotalInputTokens int           // Total input tokens used
+	TotalOutputTokens int          // Total output tokens used
+	TotalCost        float64       // Total cost in USD
 }
 
 // AgentMetrics tracks per-agent statistics
@@ -158,6 +161,72 @@ func (mc *MetricsCollector) RecordLLMCall(agentID string, tokens int, cost float
 	mc.systemMetrics.SessionTokens += tokens
 	mc.systemMetrics.SessionCost += cost
 	mc.systemMetrics.LLMCallCount++
+}
+
+// RecordToolExecution records execution of a tool with cost tracking
+// Tracks per-tool metrics including tokens and cost
+func (mc *MetricsCollector) RecordToolExecution(agentID, toolName string, duration time.Duration, success bool, inputTokens, outputTokens int, cost float64) {
+	if !mc.enabled {
+		return
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	// Get or create agent metrics
+	agent, exists := mc.systemMetrics.AgentMetrics[agentID]
+	if !exists {
+		agent = &AgentMetrics{
+			AgentID:     agentID,
+			MinDuration: duration,
+			MaxDuration: duration,
+			ToolMetrics: make(map[string]*ToolMetrics),
+		}
+		mc.systemMetrics.AgentMetrics[agentID] = agent
+	}
+
+	// Get or create tool metrics within agent
+	tool, toolExists := agent.ToolMetrics[toolName]
+	if !toolExists {
+		tool = &ToolMetrics{
+			ToolName:    toolName,
+			MinDuration: duration,
+			MaxDuration: duration,
+		}
+		agent.ToolMetrics[toolName] = tool
+	}
+
+	// Update tool metrics
+	tool.ExecutionCount++
+	tool.TotalDuration += duration
+	tool.TotalInputTokens += inputTokens
+	tool.TotalOutputTokens += outputTokens
+	tool.TotalCost += cost
+
+	if success {
+		tool.SuccessCount++
+	} else {
+		tool.ErrorCount++
+	}
+
+	// Update min/max duration
+	if duration < tool.MinDuration {
+		tool.MinDuration = duration
+	}
+	if duration > tool.MaxDuration {
+		tool.MaxDuration = duration
+	}
+
+	// Update average duration
+	if tool.ExecutionCount > 0 {
+		tool.AverageDuration = tool.TotalDuration / time.Duration(tool.ExecutionCount)
+	}
+
+	// Also update system-level metrics
+	mc.systemMetrics.TotalTokens += (inputTokens + outputTokens)
+	mc.systemMetrics.TotalCost += cost
+	mc.systemMetrics.SessionTokens += (inputTokens + outputTokens)
+	mc.systemMetrics.SessionCost += cost
 }
 
 // ResetSessionCost resets session-level cost tracking (called on ClearHistory)

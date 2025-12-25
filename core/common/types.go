@@ -574,7 +574,10 @@ func (a *Agent) CheckCostLimits(estimatedTokens int) error {
 
 	// Check max cost per day (estimated)
 	if a.Quota.MaxCostPerDay > 0 {
-		estimatedCost := a.CalculateCost(estimatedTokens)
+		// Estimate input/output split: typically 60% input, 40% output
+		estimatedInputTokens := int(float64(estimatedTokens) * 0.6)
+		estimatedOutputTokens := estimatedTokens - estimatedInputTokens
+		estimatedCost := a.CalculateCost(estimatedInputTokens, estimatedOutputTokens)
 		if a.CostMetrics.DailyCost+estimatedCost > a.Quota.MaxCostPerDay {
 			return fmt.Errorf(
 				"agent '%s': daily cost ($%.4f) would exceed limit ($%.4f)",
@@ -660,20 +663,23 @@ func (a *Agent) CheckMemoryQuota() error {
 	return nil
 }
 
-// CalculateCost estimates cost from token count
-// Uses approximate pricing per token
-func (a *Agent) CalculateCost(tokenCount int) float64 {
-	if a == nil || a.Quota == nil {
+// CalculateCost estimates cost from input and output token counts
+// Uses pricing: $30/1M input tokens, $60/1M output tokens (typical GPT-4 pricing)
+// Agent-specific pricing can be configured via CostLimits in agent YAML
+func (a *Agent) CalculateCost(inputTokens, outputTokens int) float64 {
+	if a == nil {
 		return 0
 	}
 
-	// Default pricing approximation (varies by model)
-	// GPT-4: ~$30/1M input tokens, ~$60/1M output tokens
-	// Assume 60% input, 40% output = average $42/1M
-	averagePricePerMillion := 0.042
+	// Default pricing per 1M tokens (standard GPT-4 pricing)
+	// These should match the defaults in agent YAML configuration
+	inputPrice := 30.0 / 1_000_000.0  // $30 per 1M input tokens
+	outputPrice := 60.0 / 1_000_000.0 // $60 per 1M output tokens
 
-	costPerToken := averagePricePerMillion / 1_000_000.0
-	return float64(tokenCount) * costPerToken
+	// Calculate cost separately for input and output tokens
+	inputCost := float64(inputTokens) * inputPrice
+	outputCost := float64(outputTokens) * outputPrice
+	return inputCost + outputCost
 }
 
 // UpdateCostMetrics updates cost tracking after execution
