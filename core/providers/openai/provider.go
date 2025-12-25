@@ -385,58 +385,19 @@ func extractFromOpenAIToolCalls(toolCalls interface{}) []providers.ToolCall {
 
 // extractToolCallsFromText extracts tool calls from response text
 // ⚠️ FALLBACK METHOD: Uses text parsing (for models without tool_use support)
+// Delegates to shared tools.ExtractToolCallsFromText() for unified extraction
 func extractToolCallsFromText(text string) []providers.ToolCall {
+	// Use shared extraction utility
+	extractedCalls := tools.ExtractToolCallsFromText(text)
+
+	// Convert from tools.ExtractedToolCall to providers.ToolCall
 	var calls []providers.ToolCall
-	toolCallPattern := make(map[string]bool) // Track unique tool calls
-
-	// Look for patterns like: ToolName(...)
-	// Match word characters followed by parentheses
-	lines := strings.Split(text, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// Look for function call patterns: Word(...)
-		for i := 0; i < len(line); i++ {
-			if line[i] == '(' {
-				// Found opening paren, look back for function name
-				j := i - 1
-
-				// Skip backwards over alphanumeric and underscore
-				for j >= 0 && isAlphanumeric(rune(line[j])) {
-					j--
-				}
-
-				// Check if we found a valid identifier
-				if j < i-1 {
-					toolName := line[j+1 : i]
-
-					// Validate tool name starts with uppercase (convention for functions)
-					if len(toolName) > 0 && toolName[0] >= 'A' && toolName[0] <= 'Z' {
-						// Look for closing paren
-						endIdx := strings.Index(line[i:], ")")
-						if endIdx != -1 {
-							endIdx += i
-							argsStr := line[i+1 : endIdx]
-
-							// Create tool call entry (avoid duplicates)
-							callKey := fmt.Sprintf("%s:%s", toolName, argsStr)
-							if !toolCallPattern[callKey] {
-								toolCallPattern[callKey] = true
-								calls = append(calls, providers.ToolCall{
-									ID:        fmt.Sprintf("%s_%d", toolName, len(calls)),
-									ToolName:  toolName,
-									Arguments: parseToolArguments(argsStr),
-								})
-							}
-						}
-					}
-				}
-			}
-		}
+	for i, extracted := range extractedCalls {
+		calls = append(calls, providers.ToolCall{
+			ID:        fmt.Sprintf("%s_%d", extracted.ToolName, i),
+			ToolName:  extracted.ToolName,
+			Arguments: extracted.Arguments,
+		})
 	}
 
 	return calls
