@@ -11,6 +11,7 @@ import (
 	"time"
 
 	agenticcore "github.com/taipm/go-agentic/core"
+	agentictools "github.com/taipm/go-agentic/core/tools"
 )
 
 // QuizState tracks the state of the quiz exam
@@ -297,7 +298,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] GetQuizStatus() called\n")
 			result := state.GetStatus()
 
@@ -310,7 +311,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
-		},
+		}),
 	}
 
 	// Tool 2: RecordAnswer - Record answer result with full details
@@ -343,7 +344,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			},
 			"required": []string{"question", "student_answer", "is_correct"},
 		},
-		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] RecordAnswer() called with args: %v\n", args)
 
 			// ✅ PHASE 3.6: Auto-infer question_number from current state
@@ -429,7 +430,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			fmt.Fprintf(os.Stderr, "[TOOL EXIT] RecordAnswer() returning: is_complete=%v, questions_remaining=%d\n\n", result["is_complete"], result["questions_remaining"])
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
-		},
+		}),
 	}
 
 	// Tool 3: GetFinalResult - Get final exam result
@@ -440,7 +441,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] GetFinalResult() called\n")
 			result := state.GetFinalResult()
 
@@ -456,7 +457,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
-		},
+		}),
 	}
 
 	// Tool 4: WriteExamReport - Write/update exam report to markdown file
@@ -472,7 +473,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				},
 			},
 		},
-		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			fmt.Fprintf(os.Stderr, "[TOOL ENTRY] WriteExamReport() called\n")
 
 			// Parse teacher_final_comment (optional)
@@ -510,7 +511,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			}
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
-		},
+		}),
 	}
 
 	// Tool 5: SetExamInfo - Set student name and exam topic
@@ -530,7 +531,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 				},
 			},
 		},
-		Func: func(ctx context.Context, args map[string]interface{}) (string, error) {
+		Func: agentictools.ToolHandler(func(ctx context.Context, args map[string]interface{}) (string, error) {
 			studentName, _ := args["student_name"].(string)
 			examTopic, _ := args["exam_topic"].(string)
 
@@ -552,7 +553,7 @@ func CreateQuizTools(state *QuizState) map[string]*agenticcore.Tool {
 			}
 			jsonBytes, _ := json.Marshal(result)
 			return string(jsonBytes), nil
-		},
+		}),
 	}
 
 	return tools
