@@ -107,21 +107,24 @@ func init() {
 	}
 }
 
-// Complete sends a synchronous chat completion request to OpenAI
-// Implements LLMProvider.Complete()
-func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.CompletionRequest) (*providers.CompletionResponse, error) {
+// validateCompletionRequest validates the completion request
+// Returns error if validation fails
+func validateCompletionRequest(req *providers.CompletionRequest) error {
 	if req == nil {
-		return nil, fmt.Errorf("completion request cannot be nil")
+		return fmt.Errorf("completion request cannot be nil")
 	}
 
 	if req.Model == "" {
-		return nil, fmt.Errorf("model name cannot be empty")
+		return fmt.Errorf("model name cannot be empty")
 	}
 
-	// Convert provider-agnostic messages to OpenAI format
+	return nil
+}
+
+// buildChatCompletionParams builds OpenAI ChatCompletionNewParams from a completion request
+func buildChatCompletionParams(req *providers.CompletionRequest) openai.ChatCompletionNewParams {
 	messages := convertToOpenAIMessages(req.Messages, req.SystemPrompt)
 
-	// Create completion request
 	params := openai.ChatCompletionNewParams{
 		Model:    req.Model,
 		Messages: messages,
@@ -132,7 +135,46 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.Completion
 		params.Temperature = openai.Float(req.Temperature)
 	}
 
-	// Call OpenAI API
+	return params
+}
+
+// extractToolCallsFromResponse extracts tool calls from OpenAI response message
+// Uses hybrid approach: PRIMARY (native tool_calls) + FALLBACK (text parsing)
+func extractToolCallsFromResponse(message openai.ChatCompletionMessage, content string) []providers.ToolCall {
+	var toolCalls []providers.ToolCall
+
+	// PRIMARY: Check if completion has tool_calls (OpenAI's structured format)
+	if message.ToolCalls != nil {
+		toolCalls = extractFromOpenAIToolCalls(message.ToolCalls)
+		if len(toolCalls) > 0 {
+			log.Printf("[TOOL PARSE] OpenAI native tool_calls: %d calls extracted", len(toolCalls))
+			return toolCalls
+		}
+	}
+
+	// FALLBACK: Extract from text response (for models without tool_use support)
+	if content != "" {
+		toolCalls = extractToolCallsFromText(content)
+		if len(toolCalls) > 0 {
+			log.Printf("[TOOL PARSE] Fallback text parsing: %d calls extracted", len(toolCalls))
+		}
+	}
+
+	return toolCalls
+}
+
+// Complete sends a synchronous chat completion request to OpenAI
+// Implements LLMProvider.Complete()
+func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.CompletionRequest) (*providers.CompletionResponse, error) {
+	// Step 1: Validate request
+	if err := validateCompletionRequest(req); err != nil {
+		return nil, err
+	}
+
+	// Step 2: Build OpenAI parameters
+	params := buildChatCompletionParams(req)
+
+	// Step 3: Call OpenAI API
 	completion, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
@@ -145,35 +187,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, req *providers.Completion
 	choice := completion.Choices[0]
 	message := choice.Message
 
-	// Extract response content
+	// Step 4: Extract tool calls from response
 	content := message.Content
-
-	// ✅ FIX for Issue #9 (Tool Call Extraction): Hybrid approach
-	// PRIMARY: Use OpenAI's native tool_calls if available (preferred, validated by OpenAI)
-	// FALLBACK: Parse text response (for edge cases, legacy support)
-
-	var toolCalls []providers.ToolCall
-
-	// Check if completion has tool_calls (OpenAI's structured format)
-	if message.ToolCalls != nil {
-		// Message has tool_calls field - use it
-		toolCalls = extractFromOpenAIToolCalls(message.ToolCalls)
-		if len(toolCalls) > 0 {
-			log.Printf("[TOOL PARSE] OpenAI native tool_calls: %d calls extracted", len(toolCalls))
-			return &providers.CompletionResponse{
-				Content:   content,
-				ToolCalls: toolCalls,
-			}, nil
-		}
-	}
-
-	// FALLBACK: Extract from text response (rare, for models without tool_use support)
-	if content != "" {
-		toolCalls = extractToolCallsFromText(content)
-		if len(toolCalls) > 0 {
-			log.Printf("[TOOL PARSE] Fallback text parsing: %d calls extracted", len(toolCalls))
-		}
-	}
+	toolCalls := extractToolCallsFromResponse(message, content)
 
 	return &providers.CompletionResponse{
 		Content:   content,
